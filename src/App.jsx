@@ -1,488 +1,3573 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import "./App.css";
-import { supabase } from "./lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 
-/*
-  HEXA NEXUS — NEXT LEVEL APP.JSX
-  ------------------------------------------------------------
-  Communication + creation workspace:
-  Chat, Groups, Communities, Channels, Status, Calls,
-  Projects, Game Studio, App Studio, CodeSpace, AI + Offline Reserve.
-  Existing Supabase authentication/profile/project/group/community
-  tables are preserved. New communication surfaces gracefully use
-  local state until their backend tables are connected.
-*/
+/* =========================================================
+   HEXA — COMPLETE SINGLE FILE APP
+   No App.css required.
+   ========================================================= */
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_PUBLISHABLE_KEY =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+const supabase =
+  SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          flowType: "pkce",
+        },
+      })
+    : null;
+
+/* =========================================================
+   DATA
+   ========================================================= */
+
+const DEFAULT_USER = {
+  display_name: "HEXA User",
+  username: "hexa_user",
+  avatar_url: "",
+};
+
+const ACCENTS = {
+  Violet: "#7c5cff",
+  Blue: "#3b82f6",
+  Cyan: "#06b6d4",
+  Green: "#22c55e",
+  Orange: "#f97316",
+  Pink: "#ec4899",
+};
 
 const NAV = [
-  { id: "overview", icon: "⌂", label: "Nexus" },
-  { id: "chat", icon: "◉", label: "Chat" },
-  { id: "groups", icon: "◎", label: "Groups" },
-  { id: "communities", icon: "◇", label: "Communities" },
-  { id: "channels", icon: "◈", label: "Channels" },
-  { id: "status", icon: "◌", label: "Status" },
-  { id: "calls", icon: "⌁", label: "Calls" },
-  { id: "projects", icon: "◆", label: "Projects" },
+  ["nexus", "⌂", "Nexus"],
+  ["chat", "◌", "Chat"],
+  ["groups", "◎", "Groups"],
+  ["communities", "◈", "Communities"],
+  ["status", "◉", "Status"],
+  ["notes", "✎", "Notes"],
+  ["documents", "▤", "Documents"],
+  ["projects", "◆", "Projects"],
+  ["kora", "✦", "Kora AI"],
+  ["developer", "</>", "Developer Hub"],
 ];
 
-const CREATE_NAV = [
-  { id: "game", icon: "▣", label: "Game Studio" },
-  { id: "app", icon: "▤", label: "App Studio" },
-  { id: "code", icon: "</>", label: "CodeSpace" },
+const sampleChats = [
+  {
+    id: "hexagroup",
+    name: "THE HEXA GROUP",
+    members: 3,
+    type: "group",
+    avatar: "H",
+    messages: [
+      {
+        id: 1,
+        sender: "Kora",
+        text: "Welcome to HEXA. Your workspace is ready.",
+        time: "Now",
+      },
+    ],
+  },
 ];
 
-const GAME_ENGINES = [
-  { id: "unreal", name: "Unreal Engine", icon: "UE", desc: "High-end 3D, cinematic and multiplayer development." },
-  { id: "unity", name: "Unity", icon: "U", desc: "2D/3D games, mobile, XR and cross-platform projects." },
-  { id: "godot", name: "Godot", icon: "G", desc: "Open-source 2D/3D game development." },
-  { id: "vscode", name: "VS Code", icon: "</>", desc: "Build with your own engine, framework or custom stack." },
+const FEED_TYPES = [
+  {
+    name: "For You",
+    description: "Personalized updates from your HEXA network.",
+    icon: "✦",
+  },
+  {
+    name: "Following",
+    description: "Posts and Status updates from people you follow.",
+    icon: "♡",
+  },
+  {
+    name: "Trending",
+    description: "What's getting attention across HEXA.",
+    icon: "↗",
+  },
+  {
+    name: "Latest",
+    description: "Fresh posts in chronological order.",
+    icon: "◷",
+  },
+  {
+    name: "Communities",
+    description: "Content from communities you belong to.",
+    icon: "◈",
+  },
+  {
+    name: "Projects",
+    description: "Updates from projects and collaborators.",
+    icon: "◆",
+  },
 ];
 
-const APP_STACKS = [
-  { id: "vscode", name: "VS Code", icon: "</>", desc: "Flexible development workspace." },
-  { id: "react", name: "React", icon: "R", desc: "Modern web interfaces and products." },
-  { id: "react-native", name: "React Native", icon: "RN", desc: "Cross-platform mobile applications." },
-  { id: "flutter", name: "Flutter", icon: "F", desc: "Cross-platform apps from one codebase." },
-  { id: "electron", name: "Electron", icon: "E", desc: "Desktop applications with web technology." },
-];
+/* =========================================================
+   HELPERS
+   ========================================================= */
 
-const STATUS_SEED = [
-  { id: "s1", name: "HEXA", handle: "@hexa", type: "text", text: "Build. Connect. Create.", time: "2h", seen: false },
-  { id: "s2", name: "HEXA Developers", handle: "@developers", type: "text", text: "Shipping something new today.", time: "4h", seen: false },
-  { id: "s3", name: "Creative Lab", handle: "@creative", type: "text", text: "Design mode: ON", time: "7h", seen: true },
-];
-
-const CHANNEL_SEED = [
-  { id: "c1", name: "HEXA Official", handle: "@hexa", followers: "12.4K", verified: true, description: "Official HEXA announcements and releases.", posts: [{ id: "p1", text: "Welcome to HEXA NEXUS. One space. Everything.", time: "Today", likes: 84 }] },
-  { id: "c2", name: "HEXA Developers", handle: "@hexadev", followers: "4.8K", verified: true, description: "Code, engines, projects and developer news.", posts: [{ id: "p2", text: "Game Studio now supports Unreal, Unity, Godot and VS Code workflows.", time: "Today", likes: 51 }] },
-];
-
-const LOCAL_MESSAGES = [
-  { id: "m1", sender_id: "other", text: "Welcome to HEXA. What are you building?", created_at: new Date(Date.now() - 3600000).toISOString(), mine: false },
-  { id: "m2", sender_id: "me", text: "Something much bigger than a chat app.", created_at: new Date(Date.now() - 3300000).toISOString(), mine: true },
-];
-
-const STARTER_CODE = `import React from "react";
-
-export default function App() {
-  return (
-    <main>
-      <h1>HEXA</h1>
-      <p>Build something great.</p>
-    </main>
-  );
-}`;
-
-const styles = `
-*{box-sizing:border-box}
-:root{
-  --hx-bg:#06070a;--hx-bg2:#090b10;--hx-panel:#0d1016;--hx-panel2:#11151d;
-  --hx-panel3:#151a23;--hx-border:rgba(255,255,255,.075);--hx-border2:rgba(255,255,255,.14);
-  --hx-text:#f6f8fb;--hx-muted:#858d9a;--hx-soft:#b8bec8;--hx-green:#61e6a2;
-  --hx-purple:#9d8cff;--hx-blue:#7eb8ff;--hx-red:#ff7373;--hx-radius:18px;
-}
-html,body,#root{margin:0;min-height:100%;background:var(--hx-bg)}
-body{color:var(--hx-text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-button,input,textarea,select{font:inherit}button{cursor:pointer}
-button:disabled{cursor:not-allowed;opacity:.5}
-.hx-app{min-height:100vh;background:
- radial-gradient(circle at 78% -10%,rgba(130,110,255,.15),transparent 30%),
- radial-gradient(circle at 10% 20%,rgba(255,255,255,.035),transparent 25%),#06070a}
-.hx-auth{min-height:100vh;display:grid;grid-template-columns:1.08fr .92fr;overflow:hidden}
-.hx-auth-visual{position:relative;padding:48px;display:flex;flex-direction:column;justify-content:space-between;border-right:1px solid var(--hx-border);background:radial-gradient(circle at 55% 40%,rgba(155,140,255,.18),transparent 26%),radial-gradient(circle at 20% 80%,rgba(97,230,162,.07),transparent 24%),#08090d}
-.hx-grid{position:absolute;inset:0;opacity:.22;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:48px 48px;mask-image:linear-gradient(to bottom,black,transparent)}
-.hx-auth-logo,.hx-auth-hero,.hx-auth-footer{position:relative;z-index:2}
-.hx-auth-logo{display:flex;align-items:center;gap:12px}.hx-logo-box{width:42px;height:42px;border:1px solid rgba(255,255,255,.2);border-radius:13px;display:grid;place-items:center;font-weight:900;background:rgba(255,255,255,.055);box-shadow:0 0 35px rgba(255,255,255,.06)}
-.hx-logo-word{font-size:17px;font-weight:800;letter-spacing:.18em}.hx-auth-hero{max-width:700px}.hx-auth-kicker,.hx-chip{display:inline-flex;border:1px solid var(--hx-border2);padding:7px 10px;border-radius:999px;color:#c8cdd6;font-size:10px;font-weight:800;letter-spacing:.15em;background:rgba(255,255,255,.035)}
-.hx-auth-hero h1{margin:22px 0 15px;font-size:clamp(48px,6vw,92px);line-height:.92;letter-spacing:-.07em}.hx-auth-hero p{color:var(--hx-muted);max-width:560px;font-size:16px;line-height:1.7}.hx-auth-orbit{width:230px;height:230px;position:absolute;right:12%;top:31%;border:1px solid rgba(255,255,255,.12);border-radius:50%;box-shadow:0 0 100px rgba(155,140,255,.13)}.hx-auth-orbit:before,.hx-auth-orbit:after{content:"";position:absolute;inset:26px;border:1px solid rgba(255,255,255,.08);border-radius:50%}.hx-auth-orbit:after{inset:76px;background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.2)}
-.hx-auth-footer{color:#666d78;font-size:11px;letter-spacing:.12em}.hx-auth-panel{min-width:0;display:flex;align-items:center;justify-content:center;padding:30px;background:#090a0e}.hx-auth-card{width:min(430px,100%)}.hx-auth-card h2{margin:0;font-size:38px;letter-spacing:-.045em}.hx-auth-card>p{margin:9px 0 28px;color:var(--hx-muted)}
-.hx-auth-tabs{display:grid;grid-template-columns:1fr 1fr;padding:4px;border:1px solid var(--hx-border);background:#0d0f13;border-radius:12px;margin-bottom:25px}.hx-auth-tabs button{border:0;background:transparent;color:#727985;padding:11px;border-radius:8px}.hx-auth-tabs button.active{background:#1a1d23;color:white}
-.hx-field{margin-bottom:16px}.hx-field label{display:block;margin-bottom:8px;font-size:10px;font-weight:800;letter-spacing:.14em;color:#969daa}.hx-input-wrap{position:relative}.hx-input-wrap span{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#6e7580}.hx-input{width:100%;border:1px solid var(--hx-border);outline:none;background:#0d0f14;color:white;border-radius:12px;padding:13px 14px;transition:.2s}.hx-input.has-icon{padding-left:40px}.hx-input:focus{border-color:rgba(255,255,255,.27);box-shadow:0 0 0 3px rgba(255,255,255,.035)}
-.hx-password-row{display:flex;justify-content:space-between;align-items:center}.hx-link{color:#a9a0ff;background:none;border:0;padding:0;font-size:12px}.hx-check{display:flex;gap:8px;color:#818894;font-size:12px;align-items:center;margin:5px 0 18px}.hx-main-btn{width:100%;border:0;border-radius:12px;padding:14px;color:#08090b;background:#f4f5f7;font-weight:800;transition:.2s}.hx-main-btn:hover{transform:translateY(-1px);box-shadow:0 12px 30px rgba(255,255,255,.08)}
-.hx-divider{display:flex;align-items:center;gap:12px;margin:23px 0;color:#5d636e;font-size:10px;letter-spacing:.13em}.hx-divider:before,.hx-divider:after{content:"";flex:1;height:1px;background:var(--hx-border)}.hx-socials{display:grid;grid-template-columns:1fr 1fr;gap:10px}.hx-social{border:1px solid var(--hx-border);background:#0d0f14;color:white;border-radius:11px;padding:12px}.hx-auth-switch{text-align:center;margin-top:22px;color:#666d78;font-size:12px}.hx-auth-switch button{border:0;background:none;color:white;font-weight:700}.hx-error{padding:11px 13px;border:1px solid rgba(255,90,90,.22);background:rgba(255,70,70,.07);color:#ff9a9a;border-radius:10px;margin-bottom:15px;font-size:12px}
-.hx-shell{min-height:100vh;display:grid;grid-template-columns:248px 1fr}.hx-sidebar{position:fixed;inset:0 auto 0 0;width:248px;border-right:1px solid var(--hx-border);background:rgba(7,8,11,.86);backdrop-filter:blur(28px);padding:20px 13px;display:flex;flex-direction:column;z-index:50}.hx-side-brand{display:flex;align-items:center;gap:10px;padding:2px 10px 22px}.hx-side-brand .hx-logo-box{width:36px;height:36px;border-radius:11px}.hx-side-brand strong{font-size:14px;letter-spacing:.16em}.hx-side-label{color:#555c67;font-size:9px;font-weight:900;letter-spacing:.18em;padding:0 11px 8px}.hx-nav{display:grid;gap:3px}.hx-nav button{position:relative;border:0;background:transparent;color:#777e89;display:flex;align-items:center;gap:12px;padding:10px 11px;border-radius:10px;text-align:left;transition:.18s;width:100%}.hx-nav button:hover{background:rgba(255,255,255,.035);color:white}.hx-nav button.active{color:white;background:linear-gradient(90deg,rgba(255,255,255,.09),rgba(255,255,255,.035))}.hx-nav button.active:before{content:"";position:absolute;left:0;width:2px;height:18px;background:white;border-radius:2px}.hx-nav-icon{width:21px;text-align:center}.hx-sidebar-bottom{margin-top:auto}.hx-user-mini{border-top:1px solid var(--hx-border);padding:15px 8px 4px;display:flex;align-items:center;gap:10px}.hx-user-mini div{min-width:0}.hx-user-mini strong,.hx-user-mini span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hx-user-mini strong{font-size:12px}.hx-user-mini span{font-size:10px;color:#656c77}
-.hx-content{grid-column:2;min-width:0}.hx-topbar{height:72px;border-bottom:1px solid var(--hx-border);display:flex;align-items:center;justify-content:space-between;gap:15px;padding:0 30px;position:sticky;top:0;z-index:30;background:rgba(7,8,11,.72);backdrop-filter:blur(24px)}.hx-search{width:min(520px,55vw);display:flex;align-items:center;gap:9px;background:#0c0e12;border:1px solid var(--hx-border);padding:9px 12px;border-radius:11px}.hx-search span{color:#606772}.hx-search input{width:100%;border:0;outline:0;background:none;color:white}.hx-top-actions{display:flex;align-items:center;gap:8px}.hx-icon-btn{width:36px;height:36px;border:1px solid var(--hx-border);border-radius:10px;background:#0c0e12;color:#a0a7b2}.hx-icon-btn:hover{border-color:var(--hx-border2);color:white}.hx-page{max-width:1500px;margin:auto;padding:38px 40px 70px}.hx-heading{display:flex;justify-content:space-between;gap:30px;align-items:flex-end;margin-bottom:30px}.hx-eyebrow{color:#747b86;font-size:10px;font-weight:900;letter-spacing:.2em}.hx-heading h1{margin:8px 0 7px;font-size:clamp(36px,4vw,58px);letter-spacing:-.06em;line-height:1}.hx-heading p{margin:0;color:#777e89}
-.hx-hero{position:relative;overflow:hidden;min-height:310px;border:1px solid var(--hx-border);border-radius:25px;background:radial-gradient(circle at 82% 35%,rgba(155,140,255,.18),transparent 25%),radial-gradient(circle at 70% 100%,rgba(97,230,162,.07),transparent 25%),linear-gradient(135deg,#101218,#0a0c10);padding:36px;display:flex;flex-direction:column;justify-content:center}.hx-hero:before{content:"HEXA";position:absolute;right:5%;bottom:-35px;font-size:170px;font-weight:900;letter-spacing:-.09em;color:rgba(255,255,255,.018)}.hx-hero:after{content:"";position:absolute;width:340px;height:340px;right:-110px;top:-130px;border:1px solid rgba(255,255,255,.08);border-radius:50%;box-shadow:0 0 0 35px rgba(255,255,255,.015),0 0 0 70px rgba(255,255,255,.01)}.hx-hero h2,.hx-hero p,.hx-actions{position:relative;z-index:2}.hx-hero h2{margin:8px 0;font-size:clamp(32px,4vw,58px);letter-spacing:-.06em;max-width:720px}.hx-hero p{color:#858c97;max-width:600px}.hx-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:22px}.hx-action,.hx-btn{border:1px solid var(--hx-border2);background:rgba(255,255,255,.055);color:white;border-radius:10px;padding:10px 14px}.hx-action:hover,.hx-btn:hover{border-color:rgba(255,255,255,.24);transform:translateY(-1px)}.hx-action.primary,.hx-btn.light{background:#f1f2f4;color:#08090b;border-color:#f1f2f4;font-weight:800}
-.hx-section-title{display:flex;justify-content:space-between;align-items:center;margin:32px 0 14px}.hx-section-title span{font-size:10px;color:#646b76;font-weight:900;letter-spacing:.18em}.hx-grid-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.hx-feature{min-height:165px;border:1px solid var(--hx-border);border-radius:17px;background:#0d0f14;padding:21px;transition:.2s}.hx-feature:hover{transform:translateY(-3px);border-color:var(--hx-border2);background:#101218;box-shadow:0 20px 50px rgba(0,0,0,.2)}.hx-feature-top{display:flex;justify-content:space-between;color:#707782}.hx-feature-icon,.hx-empty-icon{width:38px;height:38px;display:grid;place-items:center;border-radius:11px;background:#171a20;color:#e6e8ec}.hx-feature h3{margin:26px 0 5px;font-size:16px}.hx-feature p{margin:0;color:#6f7681;font-size:12px;line-height:1.55}
-.hx-two{display:grid;grid-template-columns:1fr 1fr;gap:14px}.hx-panel{border:1px solid var(--hx-border);background:#0c0e12;border-radius:17px;padding:20px}.hx-panel-head{display:flex;justify-content:space-between;color:#727985;font-size:10px;font-weight:800;letter-spacing:.12em;margin-bottom:16px}.hx-list{border:1px solid var(--hx-border);border-radius:17px;overflow:hidden;background:#0c0e12}.hx-list-row{display:flex;justify-content:space-between;align-items:center;padding:15px 17px;border-bottom:1px solid var(--hx-border)}.hx-list-row:last-child{border-bottom:0}.hx-list-info{display:flex;align-items:center;gap:12px}.hx-list-info strong{display:block;font-size:13px}.hx-list-info span{display:block;color:#686f7a;font-size:11px;margin-top:3px}.hx-status{color:var(--hx-green);font-size:10px;font-weight:800}
-.hx-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}.hx-project{min-height:200px;border:1px solid var(--hx-border);border-radius:17px;padding:20px;background:#0d0f14;display:flex;flex-direction:column;justify-content:space-between;transition:.2s}.hx-project:hover{border-color:var(--hx-border2);transform:translateY(-2px)}.hx-project-type{color:#777e88;font-size:9px;font-weight:900;letter-spacing:.15em}.hx-project h3{margin:28px 0 5px}.hx-project p{color:#676e79;font-size:12px;margin:0;line-height:1.5}
-.hx-empty{min-height:260px;border:1px dashed rgba(255,255,255,.1);border-radius:18px;display:grid;place-items:center;text-align:center;padding:35px;background:rgba(255,255,255,.015)}.hx-empty-icon{margin:auto;color:#a9a0ff}.hx-empty h3{margin:15px 0 6px}.hx-empty p{margin:0 0 18px;color:#6d747f;font-size:13px}
-.hx-chat{height:calc(100vh - 72px);display:grid;grid-template-columns:320px 1fr}.hx-chat-sidebar{border-right:1px solid var(--hx-border);padding:18px;overflow:auto}.hx-chat-sidebar h3{font-size:13px;margin:0 0 13px}.hx-chat-search{display:flex;background:#0c0e12;border:1px solid var(--hx-border);border-radius:10px;padding:9px;gap:8px}.hx-chat-search input{background:none;border:0;outline:0;color:white;width:100%}.hx-person{width:100%;margin-top:6px;padding:10px;display:flex;align-items:center;gap:10px;border:0;border-radius:10px;color:white;background:transparent;text-align:left}.hx-person:hover,.hx-person.active{background:rgba(255,255,255,.06)}.hx-person strong,.hx-person span{display:block}.hx-person strong{font-size:12px}.hx-person span{font-size:10px;color:#666d77;margin-top:3px}.hx-chat-window{min-width:0;display:flex;flex-direction:column}.hx-chat-head{min-height:70px;padding:12px 20px;border-bottom:1px solid var(--hx-border);display:flex;justify-content:space-between;align-items:center}.hx-chat-user{display:flex;align-items:center;gap:10px}.hx-chat-user strong,.hx-chat-user span{display:block}.hx-chat-user strong{font-size:13px}.hx-chat-user span{font-size:10px;color:#69707b}.hx-presence-dot{width:8px;height:8px;border-radius:50%;background:var(--hx-green);display:inline-block;margin-left:5px;box-shadow:0 0 12px rgba(97,230,162,.5)}.hx-messages{flex:1;padding:25px;overflow:auto;display:flex;flex-direction:column;gap:9px}.hx-message{max-width:min(600px,75%);align-self:flex-start;position:relative}.hx-message.mine{align-self:flex-end}.hx-message p{margin:0;padding:11px 13px;background:#11141a;border:1px solid var(--hx-border);border-radius:13px 13px 13px 4px;font-size:13px;line-height:1.5}.hx-message.mine p{background:#e9eaed;color:#08090b;border-radius:13px 13px 4px 13px}.hx-message small{display:block;margin-top:4px;color:#555c66;font-size:9px}.hx-message-menu{position:absolute;z-index:90;min-width:180px;background:#151922;border:1px solid var(--hx-border2);border-radius:13px;box-shadow:0 25px 70px rgba(0,0,0,.55);padding:6px}.hx-message-menu button{width:100%;border:0;background:transparent;color:#dfe3e9;text-align:left;padding:9px;border-radius:8px;font-size:12px}.hx-message-menu button:hover{background:rgba(255,255,255,.07)}.hx-composer{margin:13px;border:1px solid var(--hx-border2);background:#0c0e12;border-radius:14px;padding:7px;display:flex;gap:7px;align-items:end}.hx-composer textarea{flex:1;resize:none;background:none;color:white;border:0;outline:0;min-height:38px;padding:9px}.hx-composer button{width:38px;height:38px;border:0;border-radius:9px;background:#161920;color:#aaa}.hx-composer .send{background:white;color:black;font-weight:900}
-.hx-tool-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.hx-tool{border:1px solid var(--hx-border);background:linear-gradient(145deg,#0e1117,#0a0c10);border-radius:18px;padding:18px;min-height:170px;transition:.2s}.hx-tool:hover{border-color:var(--hx-border2);transform:translateY(-2px)}.hx-tool.selected{border-color:rgba(157,140,255,.6);box-shadow:0 0 0 1px rgba(157,140,255,.15),0 20px 55px rgba(90,70,200,.12)}.hx-tool-icon{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;background:#171b24;font-weight:900}.hx-tool h3{margin:22px 0 5px;font-size:15px}.hx-tool p{margin:0;color:#717985;font-size:12px;line-height:1.55}
-.hx-studio{border:1px solid var(--hx-border);border-radius:20px;overflow:hidden;background:#0b0d11}.hx-studio-bar{min-height:56px;border-bottom:1px solid var(--hx-border);display:flex;align-items:center;justify-content:space-between;padding:0 15px;gap:10px}.hx-studio-body{padding:25px}.hx-studio-launch{display:grid;grid-template-columns:1.25fr .75fr;gap:14px}.hx-launch-card{border:1px solid var(--hx-border);border-radius:18px;background:#0d1016;padding:24px}.hx-launch-card h2{margin:8px 0;font-size:27px;letter-spacing:-.04em}.hx-launch-card p{color:#737b87;line-height:1.6}.hx-step{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--hx-border)}.hx-step:last-child{border-bottom:0}.hx-step-num{width:25px;height:25px;border-radius:8px;background:#171b23;display:grid;place-items:center;font-size:10px;font-weight:900}
-.hx-code{height:calc(100vh - 72px);display:grid;grid-template-columns:220px 1fr 270px}.hx-code-tree{border-right:1px solid var(--hx-border);padding:18px;background:#090b0e}.hx-code-tree span{color:#666d77;font-size:9px;font-weight:900;letter-spacing:.15em}.hx-code-tree button{width:100%;display:block;text-align:left;border:0;background:transparent;color:#828995;padding:9px;border-radius:7px;margin-top:3px;font-size:12px}.hx-code-tree button:hover{background:#11141a;color:white}.hx-code-editor{min-width:0;display:flex;flex-direction:column}.hx-code-tabs{height:48px;border-bottom:1px solid var(--hx-border);display:flex;align-items:center;gap:10px;padding:0 13px;color:#8d949f;font-size:12px}.hx-code-area{flex:1;border:0;resize:none;outline:0;background:#080a0d;color:#cdd2da;padding:22px;font-family:"JetBrains Mono","Cascadia Code",monospace;font-size:13px;line-height:1.7}.hx-code-side{border-left:1px solid var(--hx-border);padding:17px;background:#090b0f;overflow:auto}.hx-code-side h4{margin:0 0 12px;font-size:10px;letter-spacing:.15em;color:#737a85}.hx-terminal{background:#07090c;border:1px solid var(--hx-border);border-radius:11px;padding:12px;color:#8d96a3;font:11px/1.7 monospace;min-height:110px}
-.hx-status-layout{display:grid;grid-template-columns:360px 1fr;gap:15px}.hx-status-list,.hx-status-view{border:1px solid var(--hx-border);border-radius:18px;background:#0c0f14}.hx-status-list{padding:12px}.hx-status-view{min-height:520px;padding:24px;position:relative;overflow:hidden}.hx-status-card{display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:transparent;border:0;color:white;width:100%;text-align:left}.hx-status-card:hover,.hx-status-card.active{background:rgba(255,255,255,.06)}.hx-ring{width:48px;height:48px;border-radius:50%;padding:2px;background:linear-gradient(135deg,#9d8cff,#61e6a2)}.hx-ring-inner{width:100%;height:100%;border-radius:50%;display:grid;place-items:center;background:#11151b;border:2px solid #0c0f14}.hx-status-preview{min-height:420px;border-radius:22px;background:radial-gradient(circle at 70% 20%,rgba(157,140,255,.25),transparent 28%),linear-gradient(145deg,#11151d,#080a0e);display:flex;align-items:flex-end;padding:30px}.hx-status-preview h2{font-size:38px;letter-spacing:-.05em;margin:5px 0}.hx-status-preview p{color:#9ca4af}
-.hx-channel-hero{border:1px solid var(--hx-border);border-radius:20px;padding:24px;background:radial-gradient(circle at 80% 10%,rgba(157,140,255,.16),transparent 28%),#0c0f14;margin-bottom:15px}.hx-channel-row{display:flex;align-items:center;gap:14px}.hx-channel-avatar{width:58px;height:58px;border-radius:17px;display:grid;place-items:center;background:linear-gradient(135deg,#222836,#11151b);border:1px solid var(--hx-border2);font-weight:900}.hx-post{border:1px solid var(--hx-border);background:#0c0f14;border-radius:17px;padding:18px;margin-top:10px}.hx-post p{line-height:1.6;color:#dce0e6}.hx-post-actions{display:flex;gap:7px;margin-top:12px}
-.hx-call{min-height:calc(100vh - 72px);padding:28px}.hx-call-stage{min-height:560px;border:1px solid var(--hx-border);border-radius:22px;background:radial-gradient(circle at 50% 30%,rgba(157,140,255,.14),transparent 30%),#090c11;display:grid;place-items:center;position:relative;overflow:hidden}.hx-call-avatar{width:105px;height:105px;border-radius:30px;display:grid;place-items:center;background:linear-gradient(135deg,#252b38,#11151b);border:1px solid var(--hx-border2);font-size:30px;font-weight:900}.hx-call-controls{position:absolute;bottom:25px;display:flex;gap:10px}.hx-call-control{width:48px;height:48px;border-radius:15px;border:1px solid var(--hx-border2);background:#171b23;color:white}.hx-call-control.end{background:#e65c67;border-color:#e65c67}.hx-call-mini{position:absolute;top:18px;right:18px;width:190px;height:120px;border-radius:14px;background:#06080b;border:1px solid var(--hx-border2);overflow:hidden}.hx-call-mini video{width:100%;height:100%;object-fit:cover}.hx-call-grid{display:grid;grid-template-columns:1fr 300px;gap:14px}
-.hx-profile{display:grid;grid-template-columns:280px 1fr;gap:15px}.hx-profile-card,.hx-form{border:1px solid var(--hx-border);border-radius:18px;padding:26px;background:#0c0e12}.hx-profile-card{text-align:center}.hx-profile-card h2{margin:17px 0 4px}.hx-profile-card p{margin:0;color:#696f7a;font-size:12px}
-.hx-modal-backdrop{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.72);backdrop-filter:blur(12px);display:grid;place-items:center;padding:20px}.hx-modal{width:min(560px,100%);max-height:90vh;overflow:auto;border:1px solid var(--hx-border2);background:#101218;border-radius:20px;padding:25px;box-shadow:0 30px 100px rgba(0,0,0,.5)}.hx-modal h2{margin:5px 0 23px}.hx-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
-.hx-offline{display:flex;align-items:center;gap:8px;border:1px solid var(--hx-border);background:#0c0f14;border-radius:10px;padding:7px 10px;font-size:10px;color:#aeb5c0}.hx-offline strong{color:#61e6a2}.hx-offline.offline strong{color:#ffcc75}.hx-pulse{width:7px;height:7px;border-radius:50%;background:#61e6a2;box-shadow:0 0 10px #61e6a2}.hx-offline.offline .hx-pulse{background:#ffcc75;box-shadow:0 0 10px #ffcc75}
-.hx-mobile{display:none}
-@media(max-width:1150px){.hx-grid-cards{grid-template-columns:repeat(2,1fr)}.hx-code{grid-template-columns:190px 1fr}.hx-code-side{display:none}}
-@media(max-width:900px){.hx-auth{grid-template-columns:1fr}.hx-auth-visual{display:none}.hx-shell{display:block}.hx-sidebar{transform:translateX(-100%);transition:.25s}.hx-sidebar.open{transform:translateX(0)}.hx-content{margin-left:0}.hx-mobile{display:block}.hx-grid-cards{grid-template-columns:1fr}.hx-two,.hx-profile,.hx-studio-launch,.hx-status-layout,.hx-call-grid{grid-template-columns:1fr}.hx-chat{grid-template-columns:1fr}.hx-chat-sidebar{display:none}.hx-page{padding:28px 18px 50px}.hx-topbar{padding:0 14px}.hx-search{width:48px}.hx-search input{display:none}.hx-code{grid-template-columns:1fr}.hx-code-tree{display:none}.hx-status-view{min-height:450px}}
-`;
-
-export default function App() {
-  const [session, setSession] = useState(null);
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    async function init() {
-      try {
-        const { data } = await supabase.auth.getSession();
-        if (mounted) {
-          setSession(data?.session || null);
-          setReady(true);
-        }
-      } catch (err) {
-        console.error(err);
-        if (mounted) setReady(true);
-      }
-    }
-    init();
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession || null));
-    return () => {
-      mounted = false;
-      data?.subscription?.unsubscribe();
-    };
-  }, []);
-
-  if (!ready) return <><style>{styles}</style><LoadingScreen /></>;
-  if (!session) return <><style>{styles}</style><AuthPage /></>;
-  return <><style>{styles}</style><Workspace session={session} /></>;
+function initials(name = "HEXA") {
+  return name
+    .split(" ")
+    .map((x) => x[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 }
 
-function LoadingScreen() {
-  return <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#06070a", color: "white" }}>
-    <div style={{ textAlign: "center" }}>
-      <div className="hx-logo-box" style={{ margin: "auto", width: 62, height: 62 }}>H</div>
-      <p style={{ color: "#707782", letterSpacing: ".15em", fontSize: 10 }}>INITIALIZING HEXA CORE</p>
+function Avatar({ user, size = 42 }) {
+  const name = user?.display_name || user?.name || "HEXA";
+
+  return user?.avatar_url ? (
+    <img
+      src={user.avatar_url}
+      alt=""
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        objectFit: "cover",
+        border: "1px solid var(--border)",
+      }}
+    />
+  ) : (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        display: "grid",
+        placeItems: "center",
+        background:
+          "linear-gradient(135deg,var(--accent),#111827)",
+        color: "white",
+        fontWeight: 900,
+        fontSize: size * 0.34,
+        border: "1px solid var(--border)",
+        flexShrink: 0,
+      }}
+    >
+      {initials(name)}
     </div>
-  </div>;
+  );
 }
 
-function AuthPage() {
-  const [mode, setMode] = useState("signin");
+function Button({
+  children,
+  onClick,
+  variant = "secondary",
+  disabled = false,
+  style = {},
+}) {
+  const variants = {
+    primary: {
+      background: "var(--accent)",
+      color: "white",
+      border: "none",
+    },
+    secondary: {
+      background: "var(--panel2)",
+      color: "var(--text)",
+      border: "1px solid var(--border)",
+    },
+    ghost: {
+      background: "transparent",
+      color: "var(--muted)",
+      border: "1px solid transparent",
+    },
+    danger: {
+      background: "rgba(239,68,68,.12)",
+      color: "#ef4444",
+      border: "1px solid rgba(239,68,68,.2)",
+    },
+  };
+
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        ...variants[variant],
+        padding: "10px 14px",
+        borderRadius: 12,
+        cursor: disabled ? "not-allowed" : "pointer",
+        fontWeight: 750,
+        transition: ".18s",
+        opacity: disabled ? 0.5 : 1,
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* =========================================================
+   AUTH
+   ========================================================= */
+
+function AuthScreen({ onAuth }) {
+  const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+
+  async function google() {
+    if (!supabase) {
+      setError("Supabase environment variables are missing.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+
+    const { error: authError } =
+      await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: window.location.origin,
+          queryParams: {
+            prompt: "select_account",
+          },
+        },
+      });
+
+    if (authError) {
+      setError(authError.message);
+      setBusy(false);
+    }
+  }
 
   async function submit(e) {
     e.preventDefault();
-    setError(""); setMessage("");
-    if (!email.trim() || !password) return setError("Enter your email and password.");
-    if (mode === "signup" && (!name.trim() || !username.trim())) return setError("Enter your name and choose a username.");
+
+    if (!supabase) {
+      setError(
+        "Supabase is not configured. Check your VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY."
+      );
+      return;
+    }
+
     setBusy(true);
+    setError("");
+
     try {
-      if (mode === "signin") {
-        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-        if (error) throw error;
+      if (mode === "login") {
+        const { error: authError } =
+          await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
+
+        if (authError) throw authError;
       } else {
-        const cleanUsername = username.trim().replace(/^@/, "").toLowerCase();
-        const { data, error } = await supabase.auth.signUp({
-          email: email.trim(), password,
-          options: { data: { full_name: name.trim(), username: cleanUsername } }
-        });
-        if (error) throw error;
+        const { data, error: authError } =
+          await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              emailRedirectTo: window.location.origin,
+              data: {
+                display_name:
+                  displayName || email.split("@")[0],
+                username:
+                  username ||
+                  email
+                    .split("@")[0]
+                    .replace(/[^a-zA-Z0-9_]/g, ""),
+              },
+            },
+          });
+
+        if (authError) throw authError;
+
         if (!data.session) {
-          setMessage("Account created. Check your email to confirm your account, then sign in.");
-        } else {
-          await supabase.from("profiles").upsert({ id: data.user.id, full_name: name.trim(), username: cleanUsername });
+          setError(
+            "Account created. Check your email if email confirmation is enabled."
+          );
         }
       }
     } catch (err) {
-      setError(err?.message || "Authentication failed.");
-    } finally { setBusy(false); }
+      setError(err.message || "Authentication failed.");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  async function oauth(provider) {
-    setError("");
-    const { error } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: window.location.origin } });
-    if (error) setError(error.message);
-  }
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background:
+          "radial-gradient(circle at 15% 10%,rgba(124,92,255,.2),transparent 30%),var(--bg)",
+        display: "grid",
+        placeItems: "center",
+        padding: 24,
+        color: "var(--text)",
+      }}
+    >
+      <div
+        style={{
+          width: "min(460px,100%)",
+          background: "rgba(18,21,31,.88)",
+          border: "1px solid var(--border)",
+          borderRadius: 28,
+          padding: 32,
+          boxShadow: "0 30px 100px rgba(0,0,0,.4)",
+        }}
+      >
+        <div style={{ marginBottom: 28 }}>
+          <div
+            style={{
+              fontSize: 38,
+              fontWeight: 950,
+              letterSpacing: -2,
+            }}
+          >
+            HEXA
+          </div>
 
-  async function forgotPassword() {
-    if (!email.trim()) return setError("Enter your email address first.");
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/reset-password` });
-    if (error) setError(error.message); else setMessage("Password reset instructions have been sent.");
-  }
-
-  return <div className="hx-auth">
-    <section className="hx-auth-visual">
-      <div className="hx-grid" /><div className="hx-auth-orbit" />
-      <div className="hx-auth-logo"><div className="hx-logo-box">H</div><span className="hx-logo-word">HEXA</span></div>
-      <div className="hx-auth-hero">
-        <span className="hx-auth-kicker">HEXA NEXUS / CORE</span>
-        <h1>One space.<br />Everything.</h1>
-        <p>Chat, communities, channels, status, calls, documents, projects, code and creation tools inside one intelligent workspace.</p>
-      </div>
-      <div className="hx-auth-footer">HEXA NEXUS · COMMUNICATE / CREATE / BUILD</div>
-    </section>
-    <section className="hx-auth-panel">
-      <form className="hx-auth-card" onSubmit={submit}>
-        <h2>{mode === "signin" ? "Welcome back." : "Create your account."}</h2>
-        <p>{mode === "signin" ? "Enter your workspace and continue building." : "Start your HEXA workspace today."}</p>
-        <div className="hx-auth-tabs">
-          <button type="button" className={mode === "signin" ? "active" : ""} onClick={() => { setMode("signin"); setError(""); setMessage(""); }}>Sign in</button>
-          <button type="button" className={mode === "signup" ? "active" : ""} onClick={() => { setMode("signup"); setError(""); setMessage(""); }}>Sign up</button>
+          <div style={{ color: "var(--muted)", marginTop: 6 }}>
+            Your digital workspace.
+          </div>
         </div>
-        {error && <div className="hx-error">{error}</div>}
-        {message && <div className="hx-error" style={{ borderColor: "rgba(97,230,162,.2)", color: "#8ff0bc", background: "rgba(97,230,162,.05)" }}>{message}</div>}
-        {mode === "signup" && <>
-          <Field label="FULL NAME" value={name} setValue={setName} placeholder="Your name" />
-          <Field label="USERNAME" value={username} setValue={setUsername} placeholder="@username" />
-        </>}
-        <div className="hx-field"><label>EMAIL ADDRESS</label><div className="hx-input-wrap"><span>✉</span><input className="hx-input has-icon" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" /></div></div>
-        <div className="hx-field"><div className="hx-password-row"><label>PASSWORD</label>{mode === "signin" && <button type="button" className="hx-link" onClick={forgotPassword}>Forgot password?</button>}</div><input className="hx-input" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your password" /></div>
-        <button className="hx-main-btn" disabled={busy}>{busy ? "Please wait..." : mode === "signin" ? "Sign in →" : "Create account →"}</button>
-        <div className="hx-divider">OR CONTINUE WITH</div>
-        <div className="hx-socials"><button type="button" className="hx-social" onClick={() => oauth("google")}>G&nbsp; Google</button><button type="button" className="hx-social" onClick={() => oauth("github")}>◈&nbsp; GitHub</button></div>
-        <div className="hx-auth-switch">{mode === "signin" ? "Don't have a HEXA account?" : "Already have a HEXA account?"}{" "}<button type="button" onClick={() => setMode(mode === "signin" ? "signup" : "signin")}>{mode === "signin" ? "Create one" : "Sign in"}</button></div>
-      </form>
-    </section>
-  </div>;
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 6,
+            background: "var(--panel2)",
+            padding: 5,
+            borderRadius: 14,
+            marginBottom: 22,
+          }}
+        >
+          <button
+            onClick={() => setMode("login")}
+            style={{
+              border: 0,
+              borderRadius: 10,
+              padding: 11,
+              cursor: "pointer",
+              background:
+                mode === "login"
+                  ? "var(--panel)"
+                  : "transparent",
+              color: "var(--text)",
+              fontWeight: 800,
+            }}
+          >
+            Sign in
+          </button>
+
+          <button
+            onClick={() => setMode("signup")}
+            style={{
+              border: 0,
+              borderRadius: 10,
+              padding: 11,
+              cursor: "pointer",
+              background:
+                mode === "signup"
+                  ? "var(--panel)"
+                  : "transparent",
+              color: "var(--text)",
+              fontWeight: 800,
+            }}
+          >
+            Create account
+          </button>
+        </div>
+
+        <form onSubmit={submit}>
+          {mode === "signup" && (
+            <>
+              <Field
+                label="Display name"
+                value={displayName}
+                onChange={setDisplayName}
+                placeholder="Your name"
+              />
+
+              <Field
+                label="Username"
+                value={username}
+                onChange={setUsername}
+                placeholder="username"
+              />
+            </>
+          )}
+
+          <Field
+            label="Email"
+            type="email"
+            value={email}
+            onChange={setEmail}
+            placeholder="you@example.com"
+          />
+
+          <Field
+            label="Password"
+            type="password"
+            value={password}
+            onChange={setPassword}
+            placeholder="••••••••"
+          />
+
+          {error && (
+            <div
+              style={{
+                background: "rgba(239,68,68,.1)",
+                color: "#fca5a5",
+                border: "1px solid rgba(239,68,68,.2)",
+                padding: 12,
+                borderRadius: 12,
+                marginBottom: 14,
+                fontSize: 13,
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          <Button
+            variant="primary"
+            disabled={busy}
+            style={{ width: "100%", marginBottom: 12 }}
+          >
+            {busy
+              ? "Working..."
+              : mode === "login"
+              ? "Enter HEXA"
+              : "Create HEXA account"}
+          </Button>
+        </form>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            margin: "10px 0 14px",
+            color: "var(--muted)",
+            fontSize: 12,
+          }}
+        >
+          <span style={{ height: 1, flex: 1, background: "var(--border)" }} />
+          OR
+          <span style={{ height: 1, flex: 1, background: "var(--border)" }} />
+        </div>
+
+        <Button
+          onClick={google}
+          disabled={busy}
+          style={{ width: "100%" }}
+        >
+          G&nbsp;&nbsp; Continue with Google
+        </Button>
+      </div>
+    </div>
+  );
 }
 
-function Workspace({ session }) {
-  const userId = session?.user?.id;
-  const [page, setPage] = useState("overview");
-  const [profile, setProfile] = useState(null);
-  const [groups, setGroups] = useState([]);
-  const [communities, setCommunities] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [search, setSearch] = useState("");
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [error, setError] = useState("");
-  const [online, setOnline] = useState(navigator.onLine);
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+}) {
+  return (
+    <label
+      style={{
+        display: "block",
+        marginBottom: 14,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          color: "var(--muted)",
+          marginBottom: 7,
+          fontWeight: 700,
+        }}
+      >
+        {label}
+      </div>
+
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          width: "100%",
+          boxSizing: "border-box",
+          background: "var(--panel2)",
+          color: "var(--text)",
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+          padding: "12px 13px",
+          outline: "none",
+        }}
+      />
+    </label>
+  );
+}
+
+/* =========================================================
+   APP
+   ========================================================= */
+
+export default function App() {
+  const [session, setSession] = useState(null);
+  const [profile, setProfile] = useState(DEFAULT_USER);
+  const [loading, setLoading] = useState(true);
+
+  const [page, setPage] = useState("nexus");
+  const [theme, setTheme] = useState("dark");
+  const [accent, setAccent] = useState("Violet");
+
+  const [toast, setToast] = useState("");
 
   useEffect(() => {
-    loadEverything();
-    const up = () => setOnline(true), down = () => setOnline(false);
-    window.addEventListener("online", up); window.addEventListener("offline", down);
-    return () => { window.removeEventListener("online", up); window.removeEventListener("offline", down); };
-  }, [userId]);
+    document.body.style.margin = "0";
 
-  async function loadEverything() {
-    await Promise.all([loadProfile(), loadGroups(), loadCommunities(), loadProjects()]);
-  }
-  async function loadProfile() {
-    const { data } = await supabase.from("profiles").select("id,username,full_name,avatar_url").eq("id", userId).maybeSingle();
-    if (data) setProfile(data);
-  }
-  async function loadGroups() {
-    const { data } = await supabase.from("conversation_members").select("conversation_id,conversations(id,name,type,created_at)").eq("user_id", userId);
-    if (data) setGroups(data.map(x => x.conversations).filter(x => x?.type === "group"));
-  }
-  async function loadCommunities() {
-    const { data } = await supabase.from("community_members").select("community_id,communities(id,name,description,created_at)").eq("user_id", userId);
-    if (data) setCommunities(data.map(x => x.communities).filter(Boolean));
-  }
-  async function loadProjects() {
-    const { data } = await supabase.from("projects").select("*").eq("created_by", userId).order("created_at", { ascending: false });
-    if (data) setProjects(data);
+    const savedTheme =
+      localStorage.getItem("hexa-theme") || "dark";
+    const savedAccent =
+      localStorage.getItem("hexa-accent") || "Violet";
+
+    setTheme(savedTheme);
+    setAccent(savedAccent);
+
+    if (!supabase) {
+      setLoading(false);
+      return;
+    }
+
+    supabase.auth.getSession().then(async ({ data }) => {
+      setSession(data.session);
+
+      if (data.session?.user) {
+        setProfileFromUser(data.session.user);
+      }
+
+      setLoading(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(
+      async (_event, nextSession) => {
+        setSession(nextSession);
+
+        if (nextSession?.user) {
+          setProfileFromUser(nextSession.user);
+        } else {
+          setProfile(DEFAULT_USER);
+        }
+
+        setLoading(false);
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("hexa-theme", theme);
+    localStorage.setItem("hexa-accent", accent);
+  }, [theme, accent]);
+
+  function setProfileFromUser(user) {
+    const metadata = user.user_metadata || {};
+
+    setProfile({
+      display_name:
+        metadata.display_name ||
+        metadata.full_name ||
+        metadata.name ||
+        user.email?.split("@")[0] ||
+        "HEXA User",
+
+      username:
+        metadata.username ||
+        user.email?.split("@")[0] ||
+        "hexa_user",
+
+      avatar_url:
+        metadata.avatar_url ||
+        metadata.picture ||
+        "",
+    });
   }
 
-  const displayName = profile?.full_name || session?.user?.email?.split("@")[0] || "HEXA User";
-  const initials = displayName.split(" ").filter(Boolean).slice(0, 2).map(x => x[0]).join("").toUpperCase();
+  async function logout() {
+    if (supabase) await supabase.auth.signOut();
+    setSession(null);
+  }
 
-  function navigate(next) { setPage(next); setMobileOpen(false); }
-  async function signOut() { await supabase.auth.signOut(); }
+  function notify(text) {
+    setToast(text);
+    setTimeout(() => setToast(""), 2400);
+  }
 
-  return <div className="hx-app"><div className="hx-shell">
-    <aside className={`hx-sidebar ${mobileOpen ? "open" : ""}`}>
-      <div className="hx-side-brand"><div className="hx-logo-box">H</div><strong>HEXA</strong></div>
-      <div className="hx-side-label">NEXUS</div>
-      <nav className="hx-nav">{NAV.map(item => <NavButton key={item.id} item={item} page={page} onClick={navigate} />)}</nav>
-      <div className="hx-side-label" style={{ marginTop: 22 }}>CREATE</div>
-      <nav className="hx-nav">{CREATE_NAV.map(item => <NavButton key={item.id} item={item} page={page} onClick={navigate} />)}</nav>
-      <div className="hx-sidebar-bottom">
-        <nav className="hx-nav">
-          <button onClick={() => navigate("profile")}><span className="hx-nav-icon">◎</span>Profile</button>
-          <button onClick={() => navigate("ai")}><span className="hx-nav-icon">✦</span>HEXA AI</button>
-          <button onClick={signOut}><span className="hx-nav-icon">↪</span>Sign out</button>
-        </nav>
-        <div className="hx-user-mini"><Avatar profile={profile} initials={initials} /><div><strong>{displayName}</strong><span>@{profile?.username || "username"}</span></div></div>
+  if (loading) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          background: "#080a0f",
+          color: "white",
+          fontSize: 40,
+          fontWeight: 950,
+        }}
+      >
+        HEXA
       </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <ThemeRoot theme={theme} accent={accent}>
+        <AuthScreen />
+      </ThemeRoot>
+    );
+  }
+
+  return (
+    <ThemeRoot theme={theme} accent={accent}>
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "var(--bg)",
+          color: "var(--text)",
+          display: "flex",
+          fontFamily:
+            "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+        }}
+      >
+        <Sidebar
+          page={page}
+          setPage={setPage}
+          profile={profile}
+          onCreate={(x) => {
+            setPage(x);
+            notify(`Opening ${x}`);
+          }}
+        />
+
+        <main
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <Topbar
+            page={page}
+            profile={profile}
+            onSearch={() => notify("Global search opened")}
+            onProfile={() => setPage("profile")}
+          />
+
+          <div
+            style={{
+              padding: "26px clamp(18px,4vw,50px)",
+              maxWidth: 1500,
+              width: "100%",
+              boxSizing: "border-box",
+              margin: "0 auto",
+            }}
+          >
+            <PageRenderer
+              page={page}
+              profile={profile}
+              setPage={setPage}
+              notify={notify}
+              theme={theme}
+              setTheme={setTheme}
+              accent={accent}
+              setAccent={setAccent}
+              logout={logout}
+            />
+          </div>
+        </main>
+
+        {toast && (
+          <div
+            style={{
+              position: "fixed",
+              right: 24,
+              bottom: 24,
+              padding: "13px 17px",
+              borderRadius: 14,
+              background: "var(--panel)",
+              border: "1px solid var(--border)",
+              boxShadow: "0 20px 50px rgba(0,0,0,.3)",
+              zIndex: 100,
+              fontWeight: 700,
+            }}
+          >
+            {toast}
+          </div>
+        )}
+      </div>
+    </ThemeRoot>
+  );
+}
+
+/* =========================================================
+   THEME
+   ========================================================= */
+
+function ThemeRoot({ children, theme, accent }) {
+  const white = theme === "white";
+
+  return (
+    <div
+      style={{
+        "--bg": white ? "#f4f6fa" : "#07090d",
+        "--panel": white ? "#ffffff" : "#10131a",
+        "--panel2": white ? "#eef1f6" : "#151922",
+        "--border": white
+          ? "rgba(15,23,42,.1)"
+          : "rgba(255,255,255,.08)",
+        "--text": white ? "#111827" : "#f8fafc",
+        "--muted": white ? "#64748b" : "#8993a6",
+        "--accent": ACCENTS[accent] || ACCENTS.Violet,
+        minHeight: "100vh",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/* =========================================================
+   SIDEBAR
+   ========================================================= */
+
+function Sidebar({ page, setPage, profile, onCreate }) {
+  return (
+    <aside
+      style={{
+        width: 250,
+        borderRight: "1px solid var(--border)",
+        background: "var(--panel)",
+        minHeight: "100vh",
+        padding: 18,
+        boxSizing: "border-box",
+        position: "sticky",
+        top: 0,
+        height: "100vh",
+        overflowY: "auto",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          marginBottom: 28,
+          padding: "8px 6px",
+        }}
+      >
+        <div
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 12,
+            display: "grid",
+            placeItems: "center",
+            background: "var(--accent)",
+            color: "white",
+            fontWeight: 950,
+          }}
+        >
+          H
+        </div>
+
+        <div>
+          <div style={{ fontWeight: 950, letterSpacing: -0.5 }}>
+            HEXA
+          </div>
+          <div
+            style={{
+              color: "var(--muted)",
+              fontSize: 10,
+              letterSpacing: 1.5,
+            }}
+          >
+            NEXUS
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          color: "var(--muted)",
+          fontSize: 10,
+          fontWeight: 900,
+          letterSpacing: 1.5,
+          padding: "0 9px",
+          marginBottom: 8,
+        }}
+      >
+        WORKSPACE
+      </div>
+
+      {NAV.map(([id, icon, label]) => (
+        <button
+          key={id}
+          onClick={() => setPage(id)}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "11px 12px",
+            marginBottom: 3,
+            borderRadius: 12,
+            border: 0,
+            cursor: "pointer",
+            background:
+              page === id
+                ? "color-mix(in srgb, var(--accent) 15%, transparent)"
+                : "transparent",
+            color:
+              page === id ? "var(--text)" : "var(--muted)",
+            fontWeight: page === id ? 850 : 650,
+            textAlign: "left",
+          }}
+        >
+          <span
+            style={{
+              width: 22,
+              textAlign: "center",
+              color:
+                page === id ? "var(--accent)" : "inherit",
+              fontSize: 17,
+            }}
+          >
+            {icon}
+          </span>
+          {label}
+        </button>
+      ))}
+
+      <div
+        style={{
+          height: 1,
+          background: "var(--border)",
+          margin: "20px 4px",
+        }}
+      />
+
+      <div
+        style={{
+          color: "var(--muted)",
+          fontSize: 10,
+          fontWeight: 900,
+          letterSpacing: 1.5,
+          padding: "0 9px",
+          marginBottom: 8,
+        }}
+      >
+        CREATE
+      </div>
+
+      <CreateButton
+        icon="+"
+        label="New Project"
+        onClick={() => onCreate("projects")}
+      />
+
+      <CreateButton
+        icon="+"
+        label="New Community"
+        onClick={() => onCreate("communities")}
+      />
+
+      <CreateButton
+        icon="+"
+        label="New Chat"
+        onClick={() => onCreate("chat")}
+      />
+
+      <CreateButton
+        icon="+"
+        label="New Status"
+        onClick={() => onCreate("status")}
+      />
+
+      <div
+        style={{
+          height: 1,
+          background: "var(--border)",
+          margin: "20px 4px",
+        }}
+      />
+
+      <div
+        style={{
+          color: "var(--muted)",
+          fontSize: 10,
+          fontWeight: 900,
+          letterSpacing: 1.5,
+          padding: "0 9px",
+          marginBottom: 8,
+        }}
+      >
+        ACCOUNT
+      </div>
+
+      <button
+        onClick={() => setPage("profile")}
+        style={{
+          width: "100%",
+          border: 0,
+          background: "transparent",
+          color: "var(--text)",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: 9,
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        <Avatar user={profile} size={34} />
+
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontWeight: 800,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {profile.display_name}
+          </div>
+
+          <div
+            style={{
+              color: "var(--muted)",
+              fontSize: 11,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            @{profile.username}
+          </div>
+        </div>
+      </button>
+
+      <button
+        onClick={() => setPage("settings")}
+        style={{
+          width: "100%",
+          marginTop: 6,
+          padding: 11,
+          border: 0,
+          background: "transparent",
+          color: "var(--muted)",
+          textAlign: "left",
+          cursor: "pointer",
+          borderRadius: 10,
+        }}
+      >
+        ⚙ Settings
+      </button>
     </aside>
-
-    <div className="hx-content">
-      <header className="hx-topbar">
-        <button className="hx-icon-btn hx-mobile" onClick={() => setMobileOpen(v => !v)}>☰</button>
-        <div className="hx-search"><span>⌕</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search HEXA..." /></div>
-        <OfflineBadge online={online} />
-        <div className="hx-top-actions"><button className="hx-icon-btn" onClick={() => navigate("ai")}>✦</button><button className="hx-icon-btn" onClick={() => navigate("profile")}>{initials || "H"}</button></div>
-      </header>
-      {error && <div style={{ padding: "16px 35px 0" }}><div className="hx-error">{error}<button onClick={() => setError("")} style={{ float:"right",background:"none",border:0,color:"inherit" }}>×</button></div></div>}
-
-      {page === "overview" && <NexusPage displayName={displayName} projects={projects} groups={groups} communities={communities} navigate={navigate} />}
-      {page === "chat" && <ChatPage userId={userId} profile={profile} setError={setError} />}
-      {page === "groups" && <GroupsPage groups={groups} setGroups={setGroups} userId={userId} setError={setError} />}
-      {page === "communities" && <CommunitiesPage communities={communities} setCommunities={setCommunities} userId={userId} setError={setError} />}
-      {page === "channels" && <ChannelsPage />}
-      {page === "status" && <StatusPage profile={profile} />}
-      {page === "calls" && <CallsPage />}
-      {page === "projects" && <ProjectsPage projects={projects} setProjects={setProjects} userId={userId} setError={setError} />}
-      {page === "profile" && <ProfilePage profile={profile} session={session} setProfile={setProfile} setError={setError} />}
-      {page === "game" && <StudioPage type="game" navigate={navigate} />}
-      {page === "app" && <StudioPage type="app" navigate={navigate} />}
-      {page === "code" && <CodeSpacePage />}
-      {page === "ai" && <AIPage />}
-    </div>
-  </div></div>;
+  );
 }
 
-function NavButton({ item, page, onClick }) {
-  return <button className={page === item.id ? "active" : ""} onClick={() => onClick(item.id)}><span className="hx-nav-icon">{item.icon}</span>{item.label}</button>;
+function CreateButton({ icon, label, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        gap: 11,
+        padding: "9px 12px",
+        border: 0,
+        background: "transparent",
+        color: "var(--muted)",
+        cursor: "pointer",
+        textAlign: "left",
+        borderRadius: 10,
+      }}
+    >
+      <span style={{ color: "var(--accent)", fontWeight: 900 }}>
+        {icon}
+      </span>
+      {label}
+    </button>
+  );
 }
 
-function NexusPage({ displayName, projects, groups, communities, navigate }) {
-  const features = [
-    ["◉","Chat","Real-time conversations, reactions, media and message actions.","chat"],
-    ["◎","Groups","Private spaces with members, admins, polls and events.","groups"],
-    ["◇","Communities","Organize multiple groups around shared interests.","communities"],
-    ["◈","Channels","Broadcast updates to followers from one place.","channels"],
-    ["◌","Status","Share temporary text, media and voice updates.","status"],
-    ["⌁","Calls","Voice, video, screen sharing and presentation mode.","calls"],
-    ["◆","Projects","Keep files, tasks, code and people together.","projects"],
-    ["✦","HEXA AI","Cloud AI plus an earned offline reserve.","ai"],
-  ];
-  return <main className="hx-page">
-    <div className="hx-heading"><div><span className="hx-eyebrow">NEXUS / HOME</span><h1>Good morning, {displayName.split(" ")[0]}.</h1><p>Your digital workspace is ready.</p></div></div>
-    <section className="hx-hero"><span className="hx-eyebrow">HEXA CORE / ONLINE</span><h2>Communicate. Create. Build.</h2><p>Everything from conversations and communities to games, apps, code and AI — connected inside one workspace.</p><div className="hx-actions"><button className="hx-action primary" onClick={() => navigate("chat")}>Open Chat</button><button className="hx-action" onClick={() => navigate("game")}>Create Game</button><button className="hx-action" onClick={() => navigate("app")}>Create App</button><button className="hx-action" onClick={() => navigate("ai")}>Ask HEXA AI</button></div></section>
-    <div className="hx-section-title"><span>HEXA ECOSYSTEM</span><span>{projects.length + groups.length + communities.length} ACTIVE SPACES</span></div>
-    <div className="hx-grid-cards">{features.map(([icon,title,text,id]) => <FeatureCard key={id} icon={icon} title={title} text={text} onClick={() => navigate(id)} />)}</div>
-    <div className="hx-section-title"><span>CREATION LAYER</span></div>
-    <div className="hx-two">
-      <div className="hx-panel"><div className="hx-panel-head"><span>GAME STUDIO</span><span>4 ENGINES</span></div><div className="hx-list-row"><div className="hx-list-info"><div className="hx-feature-icon">▣</div><div><strong>Unreal · Unity · Godot · VS Code</strong><span>Choose your development environment.</span></div></div><button className="hx-btn" onClick={() => navigate("game")}>Open →</button></div></div>
-      <div className="hx-panel"><div className="hx-panel-head"><span>APP STUDIO</span><span>5 STACKS</span></div><div className="hx-list-row"><div className="hx-list-info"><div className="hx-feature-icon">▤</div><div><strong>VS Code · React · RN · Flutter · Electron</strong><span>Build web, mobile and desktop products.</span></div></div><button className="hx-btn" onClick={() => navigate("app")}>Open →</button></div></div>
+/* =========================================================
+   TOPBAR
+   ========================================================= */
+
+function Topbar({ page, profile, onSearch, onProfile }) {
+  const label =
+    NAV.find((item) => item[0] === page)?.[2] ||
+    (page === "settings" ? "Settings" : "Profile");
+
+  return (
+    <header
+      style={{
+        height: 72,
+        borderBottom: "1px solid var(--border)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "0 clamp(18px,4vw,50px)",
+        background: "var(--panel)",
+        position: "sticky",
+        top: 0,
+        zIndex: 20,
+      }}
+    >
+      <div>
+        <div style={{ fontSize: 20, fontWeight: 900 }}>
+          {label}
+        </div>
+
+        <div
+          style={{
+            fontSize: 11,
+            color: "var(--muted)",
+            marginTop: 2,
+          }}
+        >
+          HEXA workspace
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+        }}
+      >
+        <button
+          onClick={onSearch}
+          style={{
+            width: 220,
+            background: "var(--panel2)",
+            color: "var(--muted)",
+            border: "1px solid var(--border)",
+            borderRadius: 12,
+            padding: "10px 13px",
+            textAlign: "left",
+            cursor: "pointer",
+          }}
+        >
+          ⌕ Search HEXA...
+        </button>
+
+        <button
+          onClick={onProfile}
+          style={{
+            border: 0,
+            background: "transparent",
+            cursor: "pointer",
+          }}
+        >
+          <Avatar user={profile} size={38} />
+        </button>
+      </div>
+    </header>
+  );
+}
+
+/* =========================================================
+   PAGE ROUTER
+   ========================================================= */
+
+function PageRenderer({
+  page,
+  profile,
+  setPage,
+  notify,
+  theme,
+  setTheme,
+  accent,
+  setAccent,
+  logout,
+}) {
+  const common = { profile, setPage, notify };
+
+  switch (page) {
+    case "nexus":
+      return <Nexus {...common} />;
+    case "chat":
+      return <Chat {...common} />;
+    case "groups":
+      return <Groups {...common} />;
+    case "communities":
+      return <Communities {...common} />;
+    case "status":
+      return <Status {...common} />;
+    case "notes":
+      return <Notes {...common} />;
+    case "documents":
+      return <Documents {...common} />;
+    case "projects":
+      return <Projects {...common} />;
+    case "kora":
+      return <Kora {...common} />;
+    case "developer":
+      return <DeveloperHub {...common} />;
+    case "profile":
+      return <Profile profile={profile} notify={notify} />;
+    case "settings":
+      return (
+        <Settings
+          theme={theme}
+          setTheme={setTheme}
+          accent={accent}
+          setAccent={setAccent}
+          logout={logout}
+          notify={notify}
+        />
+      );
+    default:
+      return <Nexus {...common} />;
+  }
+}
+
+/* =========================================================
+   NEXUS
+   ========================================================= */
+
+function Nexus({ profile, setPage, notify }) {
+  return (
+    <div>
+      <section
+        style={{
+          background:
+            "linear-gradient(135deg,color-mix(in srgb,var(--accent) 20%,var(--panel)),var(--panel))",
+          border: "1px solid var(--border)",
+          borderRadius: 24,
+          padding: "34px",
+          marginBottom: 22,
+        }}
+      >
+        <div
+          style={{
+            color: "var(--accent)",
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 2,
+          }}
+        >
+          PERSONAL WORKSPACE
+        </div>
+
+        <h1
+          style={{
+            fontSize: "clamp(30px,5vw,54px)",
+            letterSpacing: -3,
+            margin: "10px 0",
+          }}
+        >
+          Welcome back, {profile.display_name}.
+        </h1>
+
+        <p style={{ color: "var(--muted)", maxWidth: 650 }}>
+          One workspace for conversations, Status, documents,
+          projects, notes, communities and development.
+        </p>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+            marginTop: 22,
+          }}
+        >
+          <Button
+            variant="primary"
+            onClick={() => setPage("chat")}
+          >
+            Open Chat
+          </Button>
+
+          <Button onClick={() => setPage("status")}>
+            Create Status
+          </Button>
+
+          <Button onClick={() => setPage("documents")}>
+            New Document
+          </Button>
+        </div>
+      </section>
+
+      <SectionTitle
+        title="Everything in one place"
+        action={
+          <Button onClick={() => notify("Workspace refreshed")}>
+            Refresh
+          </Button>
+        }
+      />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            "repeat(auto-fit,minmax(220px,1fr))",
+          gap: 14,
+        }}
+      >
+        <FeatureCard
+          icon="◌"
+          title="Messages"
+          text="Private conversations, groups and calls."
+          onClick={() => setPage("chat")}
+        />
+
+        <FeatureCard
+          icon="◉"
+          title="Status"
+          text="Share and discover short-form updates."
+          onClick={() => setPage("status")}
+        />
+
+        <FeatureCard
+          icon="✎"
+          title="Notes"
+          text="Capture ideas without leaving HEXA."
+          onClick={() => setPage("notes")}
+        />
+
+        <FeatureCard
+          icon="▤"
+          title="Documents"
+          text="Build and organize your documents."
+          onClick={() => setPage("documents")}
+        />
+
+        <FeatureCard
+          icon="◆"
+          title="Projects"
+          text="Plan and build projects."
+          onClick={() => setPage("projects")}
+        />
+
+        <FeatureCard
+          icon="✦"
+          title="Kora AI"
+          text="Your HEXA AI workspace assistant."
+          onClick={() => setPage("kora")}
+        />
+      </div>
     </div>
-  </main>;
+  );
 }
 
 function FeatureCard({ icon, title, text, onClick }) {
-  return <button className="hx-feature" onClick={onClick} style={{ textAlign:"left",color:"inherit",width:"100%" }}><div className="hx-feature-top"><div className="hx-feature-icon">{icon}</div><span>↗</span></div><h3>{title}</h3><p>{text}</p></button>;
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: "var(--panel)",
+        color: "var(--text)",
+        border: "1px solid var(--border)",
+        borderRadius: 18,
+        padding: 20,
+        textAlign: "left",
+        cursor: "pointer",
+      }}
+    >
+      <div
+        style={{
+          width: 42,
+          height: 42,
+          borderRadius: 13,
+          display: "grid",
+          placeItems: "center",
+          background:
+            "color-mix(in srgb,var(--accent) 14%,transparent)",
+          color: "var(--accent)",
+          fontSize: 20,
+          marginBottom: 14,
+        }}
+      >
+        {icon}
+      </div>
+
+      <div style={{ fontWeight: 900, fontSize: 16 }}>
+        {title}
+      </div>
+
+      <div
+        style={{
+          color: "var(--muted)",
+          marginTop: 6,
+          lineHeight: 1.5,
+          fontSize: 13,
+        }}
+      >
+        {text}
+      </div>
+    </button>
+  );
 }
 
-function ChatPage({ userId, profile, setError }) {
-  const [query,setQuery] = useState(""); const [people,setPeople] = useState([]); const [active,setActive] = useState(null);
-  const [messages,setMessages] = useState(LOCAL_MESSAGES); const [text,setText] = useState(""); const [menu,setMenu] = useState(null);
-  useEffect(() => {
-    if (!query.trim()) { setPeople([]); return; }
-    const timer=setTimeout(async()=>{ const clean=query.replace(/^@/,""); const {data,error}=await supabase.from("profiles").select("id,username,full_name,avatar_url").ilike("username",`%${clean}%`).neq("id",userId).limit(15); if(!error)setPeople(data||[]); },300);
-    return ()=>clearTimeout(timer);
-  },[query,userId]);
-  function choose(person){setActive(person);setMessages(LOCAL_MESSAGES);setMenu(null)}
-  function send(){if(!text.trim()||!active)return;setMessages(cur=>[...cur,{id:crypto.randomUUID(),sender_id:userId,text:text.trim(),created_at:new Date().toISOString(),mine:true}]);setText("")}
-  function messageAction(action,message){
-    setMenu(null);
-    if(action==="delete")setMessages(cur=>cur.filter(m=>m.id!==message.id));
-    if(action==="copy")navigator.clipboard?.writeText(message.text);
-    if(action==="save")setMessages(cur=>cur.map(m=>m.id===message.id?{...m,saved:!m.saved}:m));
+/* =========================================================
+   CHAT
+   ========================================================= */
+
+function Chat({ notify }) {
+  const [selected, setSelected] = useState(sampleChats[0]);
+  const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState(
+    sampleChats[0].messages
+  );
+
+  function send() {
+    if (!message.trim()) return;
+
+    setMessages((old) => [
+      ...old,
+      {
+        id: Date.now(),
+        sender: "You",
+        text: message.trim(),
+        time: "Now",
+      },
+    ]);
+
+    setMessage("");
   }
-  return <main className="hx-chat">
-    <aside className="hx-chat-sidebar"><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><h3>MESSAGES</h3><span className="hx-chip">LIVE</span></div><div className="hx-chat-search"><span>⌕</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Find a HEXA username..." /></div>
-      <div style={{marginTop:15}}>{people.map(person=><button className={`hx-person ${active?.id===person.id?"active":""}`} key={person.id} onClick={()=>choose(person)}><Avatar profile={person}/><div><strong>{person.full_name||person.username}</strong><span>@{person.username}</span></div></button>)}</div>
-      {!query&&<div style={{color:"#5e6570",fontSize:11,padding:"25px 5px",lineHeight:1.6}}>Search for a real HEXA username. Presence is never faked.</div>}
-    </aside>
-    <section className="hx-chat-window">{!active?<div style={{flex:1,display:"grid",placeItems:"center",textAlign:"center",padding:30}}><div><div className="hx-empty-icon">◉</div><h2>HEXA Chat</h2><p style={{color:"#666d77"}}>Find a person and start a conversation.</p></div></div>:<>
-      <header className="hx-chat-head"><div className="hx-chat-user"><Avatar profile={active}/><div><strong>{active.full_name||active.username}<span className="hx-presence-dot"/></strong><span>@{active.username} · online</span></div></div><div><button className="hx-icon-btn" onClick={()=>window.dispatchEvent(new CustomEvent("hexa-call"))}>☎</button><button className="hx-icon-btn">⋯</button></div></header>
-      <div className="hx-messages" onClick={()=>setMenu(null)}>{messages.map(m=><div key={m.id} className={`hx-message ${m.sender_id===userId||m.mine?"mine":""}`} onContextMenu={e=>{e.preventDefault();setMenu({id:m.id,x:e.clientX,y:e.clientY,message:m})}} onTouchStart={()=>{}}><p>{m.text}{m.saved&&<span style={{marginLeft:7,color:"#9d8cff"}}>🔖</span>}</p><small>{new Date(m.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})} {m.mine?" · ✓✓":""}</small></div>)}</div>
-      <div className="hx-composer"><button title="Attach">＋</button><textarea rows={1} value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}}} placeholder="Write a message..." /><button title="Voice message">◉</button><button className="send" onClick={send}>↑</button></div>
-      {menu&&<div className="hx-message-menu" style={{position:"fixed",left:Math.min(menu.x,window.innerWidth-200),top:Math.min(menu.y,window.innerHeight-260)}}><button onClick={()=>messageAction("copy",menu.message)}>Copy</button><button onClick={()=>messageAction("save",menu.message)}>Save message</button><button onClick={()=>messageAction("reply",menu.message)}>↩ Reply</button><button onClick={()=>messageAction("forward",menu.message)}>↗ Forward</button><button onClick={()=>messageAction("pin",menu.message)}>📌 Pin</button><button onClick={()=>messageAction("delete",menu.message)}>🗑 Delete</button></div>}
-    </>}</section>
-  </main>;
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns:
+          "minmax(230px,280px) minmax(0,1fr)",
+        minHeight: "calc(100vh - 125px)",
+        border: "1px solid var(--border)",
+        borderRadius: 22,
+        overflow: "hidden",
+        background: "var(--panel)",
+      }}
+    >
+      <div
+        style={{
+          borderRight: "1px solid var(--border)",
+          padding: 14,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginBottom: 12,
+          }}
+        >
+          <b>Chats</b>
+
+          <Button
+            onClick={() => notify("New chat composer opened")}
+            style={{ padding: "7px 10px" }}
+          >
+            +
+          </Button>
+        </div>
+
+        {sampleChats.map((chat) => (
+          <button
+            key={chat.id}
+            onClick={() => {
+              setSelected(chat);
+              setMessages(chat.messages);
+            }}
+            style={{
+              width: "100%",
+              border: 0,
+              background:
+                selected.id === chat.id
+                  ? "var(--panel2)"
+                  : "transparent",
+              color: "var(--text)",
+              borderRadius: 13,
+              padding: 12,
+              display: "flex",
+              gap: 10,
+              textAlign: "left",
+              cursor: "pointer",
+            }}
+          >
+            <Avatar user={{ display_name: chat.name }} size={40} />
+
+            <div>
+              <div style={{ fontWeight: 800 }}>
+                {chat.name}
+              </div>
+
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--muted)",
+                  marginTop: 3,
+                }}
+              >
+                {chat.members} members
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          minWidth: 0,
+        }}
+      >
+        <div
+          style={{
+            padding: 15,
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <b>{selected.name}</b>
+            <div
+              style={{
+                color: "var(--muted)",
+                fontSize: 11,
+                marginTop: 3,
+              }}
+            >
+              🔒 End-to-end encryption layer
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 6 }}>
+            <Button onClick={() => notify("Voice call UI opened")}>
+              ☎
+            </Button>
+
+            <Button
+              onClick={() => notify("Video call UI opened")}
+            >
+              ◉
+            </Button>
+
+            <Button
+              onClick={() => notify("Add people panel opened")}
+            >
+              + Person
+            </Button>
+          </div>
+        </div>
+
+        <div
+          style={{
+            flex: 1,
+            padding: 22,
+            overflowY: "auto",
+          }}
+        >
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              style={{
+                marginBottom: 14,
+                display: "flex",
+                justifyContent:
+                  msg.sender === "You"
+                    ? "flex-end"
+                    : "flex-start",
+              }}
+            >
+              <div
+                style={{
+                  maxWidth: "70%",
+                  padding: "11px 14px",
+                  borderRadius: 16,
+                  background:
+                    msg.sender === "You"
+                      ? "var(--accent)"
+                      : "var(--panel2)",
+                  color:
+                    msg.sender === "You"
+                      ? "white"
+                      : "var(--text)",
+                }}
+              >
+                {msg.sender !== "You" && (
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 900,
+                      marginBottom: 4,
+                      color: "var(--accent)",
+                    }}
+                  >
+                    {msg.sender}
+                  </div>
+                )}
+
+                <div>{msg.text}</div>
+
+                <div
+                  style={{
+                    fontSize: 9,
+                    opacity: 0.6,
+                    marginTop: 5,
+                  }}
+                >
+                  {msg.time}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div
+          style={{
+            padding: 13,
+            borderTop: "1px solid var(--border)",
+            display: "flex",
+            gap: 8,
+          }}
+        >
+          <Button onClick={() => notify("Emoji picker opened")}>
+            🙂
+          </Button>
+
+          <Button onClick={() => notify("Attachment picker opened")}>
+            +
+          </Button>
+
+          <input
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") send();
+            }}
+            placeholder="Message HEXA..."
+            style={{
+              flex: 1,
+              minWidth: 0,
+              borderRadius: 13,
+              border: "1px solid var(--border)",
+              background: "var(--panel2)",
+              color: "var(--text)",
+              padding: "11px 13px",
+              outline: "none",
+            }}
+          />
+
+          <Button variant="primary" onClick={send}>
+            Send
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function GroupsPage({ groups,setGroups,userId,setError }) {
-  const [open,setOpen]=useState(false);const [name,setName]=useState("");
-  async function create(){if(!name.trim())return setError("Enter a group name.");const {data,error}=await supabase.from("conversations").insert({type:"group",name:name.trim(),created_by:userId}).select("id,name,type,created_at").single();if(error)return setError(error.message);await supabase.from("conversation_members").insert({conversation_id:data.id,user_id:userId,is_admin:true});setGroups(p=>[data,...p]);setName("");setOpen(false)}
-  return <main className="hx-page"><PageHeading eyebrow="NETWORK / GROUPS" title="Groups" text="Private spaces for your people."/><div style={{display:"flex",justifyContent:"flex-end",marginBottom:20}}><button className="hx-btn light" onClick={()=>setOpen(true)}>+ New group</button></div>{groups.length===0?<Empty icon="◎" title="No groups yet" text="Create your first private group." button="Create group" onClick={()=>setOpen(true)}/>:<div className="hx-cards">{groups.map(g=><div className="hx-project" key={g.id}><div><span className="hx-project-type">GROUP</span><h3>{g.name}</h3><p>Members · admins · polls · events · files · calls</p></div><button className="hx-btn">Open →</button></div>)}</div>}{open&&<Modal title="Create group" close={()=>setOpen(false)}><Field label="GROUP NAME" value={name} setValue={setName} placeholder="HEXA Developers"/><ModalButtons close={()=>setOpen(false)} action="Create group" onAction={create}/></Modal>}</main>;
+/* =========================================================
+   GROUPS
+   ========================================================= */
+
+function Groups({ notify }) {
+  const [showCreate, setShowCreate] = useState(false);
+
+  return (
+    <div>
+      <PageHeader
+        title="Groups"
+        description="Large conversations for people who need to stay together."
+        button={
+          <Button
+            variant="primary"
+            onClick={() => setShowCreate(true)}
+          >
+            + Create Group
+          </Button>
+        }
+      />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            "repeat(auto-fit,minmax(260px,1fr))",
+          gap: 15,
+        }}
+      >
+        <LargeCard
+          icon="H"
+          title="THE HEXA GROUP"
+          description="The default HEXA group."
+          meta="Up to 1,000+ members"
+          onClick={() => notify("THE HEXA GROUP opened")}
+        />
+      </div>
+
+      {showCreate && (
+        <Modal
+          title="Create Group"
+          onClose={() => setShowCreate(false)}
+        >
+          <Field
+            label="Group name"
+            placeholder="e.g. My Team"
+            onChange={() => {}}
+          />
+
+          <Button
+            variant="primary"
+            style={{ width: "100%" }}
+            onClick={() => {
+              setShowCreate(false);
+              notify("Group created");
+            }}
+          >
+            Create group
+          </Button>
+        </Modal>
+      )}
+    </div>
+  );
 }
 
-function CommunitiesPage({ communities,setCommunities,userId,setError }) {
-  const [open,setOpen]=useState(false);const [name,setName]=useState("");const [description,setDescription]=useState("");
-  async function create(){if(!name.trim())return setError("Enter a community name.");const {data,error}=await supabase.from("communities").insert({name:name.trim(),description:description.trim(),created_by:userId}).select("id,name,description,created_at").single();if(error)return setError(error.message);await supabase.from("community_members").insert({community_id:data.id,user_id:userId,is_admin:true});setCommunities(p=>[data,...p]);setName("");setDescription("");setOpen(false)}
-  return <main className="hx-page"><PageHeading eyebrow="NETWORK / COMMUNITIES" title="Communities" text="Build spaces around shared ideas."/><div style={{display:"flex",justifyContent:"flex-end",marginBottom:20}}><button className="hx-btn light" onClick={()=>setOpen(true)}>+ New community</button></div>{communities.length===0?<Empty icon="◇" title="No communities yet" text="Create a community and bring people together." button="Create community" onClick={()=>setOpen(true)}/>:<div className="hx-cards">{communities.map(c=><div className="hx-project" key={c.id}><div><span className="hx-project-type">COMMUNITY</span><h3>{c.name}</h3><p>{c.description||"HEXA community."}</p></div><button className="hx-btn">Open →</button></div>)}</div>}{open&&<Modal title="Create community" close={()=>setOpen(false)}><Field label="COMMUNITY NAME" value={name} setValue={setName} placeholder="HEXA Creators"/><Field label="DESCRIPTION" value={description} setValue={setDescription} placeholder="What is this community about?" textarea/><ModalButtons close={()=>setOpen(false)} action="Create community" onAction={create}/></Modal>}</main>;
+/* =========================================================
+   COMMUNITIES
+   ========================================================= */
+
+function Communities({ notify }) {
+  const [create, setCreate] = useState(false);
+
+  return (
+    <div>
+      <PageHeader
+        title="Communities"
+        description="Organize people around topics, interests and projects."
+        button={
+          <Button
+            variant="primary"
+            onClick={() => setCreate(true)}
+          >
+            + Create Community
+          </Button>
+        }
+      />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            "repeat(auto-fit,minmax(270px,1fr))",
+          gap: 15,
+        }}
+      >
+        <LargeCard
+          icon="◈"
+          title="Discover Communities"
+          description="Explore public HEXA communities."
+          meta="Find people"
+          onClick={() => notify("Community discovery opened")}
+        />
+
+        <LargeCard
+          icon="◆"
+          title="Project Communities"
+          description="Connect communities to projects."
+          meta="Collaboration"
+          onClick={() => notify("Project communities opened")}
+        />
+      </div>
+
+      {create && (
+        <Modal
+          title="Create Community"
+          onClose={() => setCreate(false)}
+        >
+          <Field
+            label="Community name"
+            placeholder="Community name"
+            onChange={() => {}}
+          />
+
+          <Field
+            label="Description"
+            placeholder="What is this community about?"
+            onChange={() => {}}
+          />
+
+          <Button
+            variant="primary"
+            style={{ width: "100%" }}
+            onClick={() => {
+              setCreate(false);
+              notify("Community created");
+            }}
+          >
+            Create community
+          </Button>
+        </Modal>
+      )}
+    </div>
+  );
 }
 
-function ChannelsPage(){
-  const [channels,setChannels]=useState(CHANNEL_SEED);const [active,setActive]=useState(CHANNEL_SEED[0]);const [following,setFollowing]=useState({});
-  return <main className="hx-page"><PageHeading eyebrow="BROADCAST / CHANNELS" title="Channels" text="Follow creators, teams and official broadcasts."/>
-    <div className="hx-channel-hero"><div className="hx-channel-row"><div className="hx-channel-avatar">◈</div><div><span className="hx-eyebrow">HEXA CHANNELS</span><h2 style={{margin:"5px 0"}}>Broadcast without the noise.</h2><p style={{margin:0,color:"#737b87"}}>One-way updates with reactions, media, followers and notifications.</p></div></div></div>
-    <div className="hx-two"><div className="hx-panel"><div className="hx-panel-head"><span>DISCOVER</span><span>{channels.length}</span></div>{channels.map(c=><button key={c.id} className={`hx-status-card ${active.id===c.id?"active":""}`} onClick={()=>setActive(c)}><div className="hx-channel-avatar" style={{width:44,height:44,borderRadius:13}}>◈</div><div style={{flex:1}}><strong>{c.name} {c.verified&&"✓"}</strong><div style={{color:"#6f7681",fontSize:11}}>{c.followers} followers · {c.handle}</div></div><button className="hx-btn" onClick={e=>{e.stopPropagation();setFollowing(x=>({...x,[c.id]:!x[c.id]}))}}>{following[c.id]?"Following":"Follow"}</button></button>)}</div>
-      <div className="hx-panel"><div className="hx-panel-head"><span>{active.name.toUpperCase()}</span><span>{active.followers}</span></div><h2 style={{marginTop:0}}>{active.name} {active.verified&&"✓"}</h2><p style={{color:"#747c88"}}>{active.description}</p>{active.posts.map(p=><div className="hx-post" key={p.id}><small style={{color:"#69717d"}}>{p.time}</small><p>{p.text}</p><div className="hx-post-actions"><button className="hx-btn">♡ {p.likes}</button><button className="hx-btn">↗ Share</button><button className="hx-btn">🔔 Notify</button></div></div>)}</div></div>
-  </main>;
+/* =========================================================
+   STATUS
+   ========================================================= */
+
+function Status({ profile, notify }) {
+  const [feed, setFeed] = useState("For You");
+  const [create, setCreate] = useState(false);
+  const [liked, setLiked] = useState(false);
+  const [comment, setComment] = useState("");
+  const [comments, setComments] = useState([]);
+
+  function postComment() {
+    if (!comment.trim()) return;
+
+    setComments((x) => [...x, comment.trim()]);
+    setComment("");
+  }
+
+  return (
+    <div>
+      <PageHeader
+        title="Status"
+        description="A spacious social feed for short-form updates."
+        button={
+          <Button
+            variant="primary"
+            onClick={() => setCreate(true)}
+          >
+            + Create Status
+          </Button>
+        }
+      />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            "minmax(0,1fr) 270px",
+          gap: 20,
+          alignItems: "start",
+        }}
+      >
+        <div>
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              overflowX: "auto",
+              paddingBottom: 10,
+              marginBottom: 14,
+            }}
+          >
+            {FEED_TYPES.map((type) => (
+              <button
+                key={type.name}
+                onClick={() => setFeed(type.name)}
+                style={{
+                  flexShrink: 0,
+                  border:
+                    feed === type.name
+                      ? "1px solid var(--accent)"
+                      : "1px solid var(--border)",
+                  background:
+                    feed === type.name
+                      ? "color-mix(in srgb,var(--accent) 12%,transparent)"
+                      : "var(--panel)",
+                  color: "var(--text)",
+                  borderRadius: 13,
+                  padding: "10px 14px",
+                  cursor: "pointer",
+                  fontWeight: 750,
+                }}
+              >
+                {type.icon} {type.name}
+              </button>
+            ))}
+          </div>
+
+          <div
+            style={{
+              background: "var(--panel)",
+              border: "1px solid var(--border)",
+              borderRadius: 22,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                height: 390,
+                display: "grid",
+                placeItems: "center",
+                background:
+                  "linear-gradient(145deg,#111827,color-mix(in srgb,var(--accent) 30%,#111827))",
+                position: "relative",
+              }}
+            >
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: 20,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 70,
+                    marginBottom: 10,
+                  }}
+                >
+                  ◉
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 24,
+                    fontWeight: 950,
+                  }}
+                >
+                  {feed}
+                </div>
+
+                <div
+                  style={{
+                    color: "rgba(255,255,255,.65)",
+                    marginTop: 7,
+                  }}
+                >
+                  Your Status feed appears here.
+                </div>
+              </div>
+            </div>
+
+            <div style={{ padding: 18 }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  alignItems: "center",
+                }}
+              >
+                <Avatar user={profile} size={40} />
+
+                <div style={{ flex: 1 }}>
+                  <b>{profile.display_name}</b>
+                  <div
+                    style={{
+                      color: "var(--muted)",
+                      fontSize: 11,
+                    }}
+                  >
+                    Just now · Public
+                  </div>
+                </div>
+              </div>
+
+              <p style={{ lineHeight: 1.6 }}>
+                Building the future inside HEXA. 🚀
+              </p>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  borderTop: "1px solid var(--border)",
+                  paddingTop: 12,
+                }}
+              >
+                <Button
+                  onClick={() => setLiked(!liked)}
+                  style={{
+                    color: liked
+                      ? "var(--accent)"
+                      : "var(--muted)",
+                  }}
+                >
+                  {liked ? "♥ Liked" : "♡ Like"}
+                </Button>
+
+                <Button
+                  onClick={() =>
+                    document
+                      .getElementById("status-comment")
+                      ?.focus()
+                  }
+                >
+                  ♡ Comment
+                </Button>
+
+                <Button
+                  onClick={() => notify("Status shared")}
+                >
+                  ↗ Share
+                </Button>
+              </div>
+
+              <div style={{ marginTop: 15 }}>
+                {comments.map((x, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: 10,
+                      background: "var(--panel2)",
+                      borderRadius: 10,
+                      marginBottom: 6,
+                    }}
+                  >
+                    {x}
+                  </div>
+                ))}
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    marginTop: 10,
+                  }}
+                >
+                  <input
+                    id="status-comment"
+                    value={comment}
+                    onChange={(e) =>
+                      setComment(e.target.value)
+                    }
+                    placeholder="Write a comment..."
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      padding: 11,
+                      borderRadius: 11,
+                      background: "var(--panel2)",
+                      color: "var(--text)",
+                      border: "1px solid var(--border)",
+                    }}
+                  />
+
+                  <Button onClick={postComment}>
+                    Post
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          style={{
+            background: "var(--panel)",
+            border: "1px solid var(--border)",
+            borderRadius: 18,
+            padding: 18,
+          }}
+        >
+          <b>Feed types</b>
+
+          <div style={{ marginTop: 13 }}>
+            {FEED_TYPES.map((x) => (
+              <div
+                key={x.name}
+                style={{
+                  padding: "11px 0",
+                  borderBottom: "1px solid var(--border)",
+                }}
+              >
+                <div style={{ fontWeight: 800 }}>
+                  {x.icon} {x.name}
+                </div>
+
+                <div
+                  style={{
+                    color: "var(--muted)",
+                    fontSize: 11,
+                    lineHeight: 1.4,
+                    marginTop: 4,
+                  }}
+                >
+                  {x.description}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {create && (
+        <Modal
+          title="Create Status"
+          onClose={() => setCreate(false)}
+        >
+          <div
+            style={{
+              border: "1px dashed var(--border)",
+              borderRadius: 16,
+              padding: 25,
+              textAlign: "center",
+              marginBottom: 14,
+            }}
+          >
+            <div style={{ fontSize: 35 }}>＋</div>
+            <div style={{ fontWeight: 800 }}>
+              Add photo or video
+            </div>
+          </div>
+
+          <Field
+            label="Status text"
+            placeholder="What's happening?"
+            onChange={() => {}}
+          />
+
+          <Button
+            variant="primary"
+            style={{ width: "100%" }}
+            onClick={() => {
+              setCreate(false);
+              notify("Status published");
+            }}
+          >
+            Publish Status
+          </Button>
+        </Modal>
+      )}
+    </div>
+  );
 }
 
-function StatusPage({ profile }){
-  const [statuses,setStatuses]=useState(STATUS_SEED);const [active,setActive]=useState(STATUS_SEED[0]);const [open,setOpen]=useState(false);const [text,setText]=useState("");
-  function post(){if(!text.trim())return;const s={id:crypto.randomUUID(),name:profile?.full_name||"You",handle:`@${profile?.username||"you"}`,type:"text",text:text.trim(),time:"now",seen:false};setStatuses(p=>[s,...p]);setActive(s);setText("");setOpen(false)}
-  return <main className="hx-page"><PageHeading eyebrow="MOMENTS / STATUS" title="Status" text="Share temporary updates that disappear after 24 hours."/>
-    <div style={{display:"flex",justifyContent:"flex-end",marginBottom:15}}><button className="hx-btn light" onClick={()=>setOpen(true)}>＋ Add status</button></div>
-    <div className="hx-status-layout"><div className="hx-status-list"><div className="hx-panel-head" style={{padding:"8px 8px 0"}}><span>RECENT UPDATES</span><span>24H</span></div>{statuses.map(s=><button key={s.id} className={`hx-status-card ${active.id===s.id?"active":""}`} onClick={()=>setActive(s)}><div className="hx-ring"><div className="hx-ring-inner">{s.name.slice(0,1)}</div></div><div><strong>{s.name}</strong><div style={{fontSize:10,color:"#6e7681"}}>{s.handle} · {s.time}</div></div></button>)}</div>
-      <div className="hx-status-view"><div className="hx-status-preview"><div><span className="hx-chip">STATUS · 24H</span><h2>{active.text}</h2><p>{active.name} · {active.time}</p><div className="hx-actions"><button className="hx-btn">♡ React</button><button className="hx-btn">↩ Reply</button><button className="hx-btn">⋯ More</button></div></div></div></div></div>
-    {open&&<Modal title="Create status" close={()=>setOpen(false)}><Field label="STATUS" value={text} setValue={setText} placeholder="What's happening?" textarea/><div style={{display:"flex",gap:8,flexWrap:"wrap"}}><button className="hx-btn">＋ Photo</button><button className="hx-btn">◉ Video</button><button className="hx-btn">GIF</button><button className="hx-btn">🎙 Voice</button></div><ModalButtons close={()=>setOpen(false)} action="Post status" onAction={post}/></Modal>}</main>;
+/* =========================================================
+   NOTES
+   ========================================================= */
+
+function Notes({ notify }) {
+  const [notes, setNotes] = useState([
+    {
+      id: 1,
+      title: "Welcome to HEXA",
+      body: "Your notes workspace.",
+    },
+  ]);
+
+  const [selected, setSelected] = useState(notes[0]);
+
+  function createNote() {
+    const note = {
+      id: Date.now(),
+      title: "Untitled note",
+      body: "",
+    };
+
+    setNotes((x) => [...x, note]);
+    setSelected(note);
+  }
+
+  function updateBody(value) {
+    const updated = {
+      ...selected,
+      body: value,
+    };
+
+    setSelected(updated);
+
+    setNotes((old) =>
+      old.map((x) => (x.id === selected.id ? updated : x))
+    );
+  }
+
+  return (
+    <div>
+      <PageHeader
+        title="Notes"
+        description="A focused place for ideas, drafts and quick thoughts."
+        button={
+          <Button variant="primary" onClick={createNote}>
+            + New Note
+          </Button>
+        }
+      />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            "240px minmax(0,1fr)",
+          minHeight: 600,
+          border: "1px solid var(--border)",
+          borderRadius: 20,
+          overflow: "hidden",
+          background: "var(--panel)",
+        }}
+      >
+        <div
+          style={{
+            borderRight: "1px solid var(--border)",
+            padding: 12,
+          }}
+        >
+          {notes.map((note) => (
+            <button
+              key={note.id}
+              onClick={() => setSelected(note)}
+              style={{
+                width: "100%",
+                textAlign: "left",
+                border: 0,
+                background:
+                  selected.id === note.id
+                    ? "var(--panel2)"
+                    : "transparent",
+                color: "var(--text)",
+                padding: 12,
+                borderRadius: 11,
+                cursor: "pointer",
+                marginBottom: 4,
+              }}
+            >
+              <b>{note.title}</b>
+
+              <div
+                style={{
+                  color: "var(--muted)",
+                  fontSize: 11,
+                  marginTop: 5,
+                  overflow: "hidden",
+                }}
+              >
+                {note.body || "Empty note"}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div style={{ padding: 28 }}>
+          <input
+            value={selected.title}
+            onChange={(e) => {
+              const updated = {
+                ...selected,
+                title: e.target.value,
+              };
+
+              setSelected(updated);
+
+              setNotes((old) =>
+                old.map((x) =>
+                  x.id === selected.id ? updated : x
+                )
+              );
+            }}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              border: 0,
+              outline: 0,
+              background: "transparent",
+              color: "var(--text)",
+              fontSize: 30,
+              fontWeight: 900,
+              marginBottom: 20,
+            }}
+          />
+
+          <textarea
+            value={selected.body}
+            onChange={(e) => updateBody(e.target.value)}
+            placeholder="Start writing..."
+            style={{
+              width: "100%",
+              minHeight: 420,
+              resize: "vertical",
+              boxSizing: "border-box",
+              border: 0,
+              outline: 0,
+              background: "transparent",
+              color: "var(--text)",
+              fontSize: 16,
+              lineHeight: 1.8,
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function CallsPage(){
-  const videoRef=useRef(null);const [calling,setCalling]=useState(false);const [video,setVideo]=useState(false);const [muted,setMuted]=useState(false);const [camera,setCamera]=useState(false);const [stream,setStream]=useState(null);
-  async function startVideo(){try{const s=await navigator.mediaDevices.getUserMedia({video:true,audio:true});setStream(s);setCamera(true);setVideo(true);setCalling(true);setTimeout(()=>{if(videoRef.current)videoRef.current.srcObject=s},0)}catch(e){setCalling(true)}}
-  function end(){stream?.getTracks().forEach(t=>t.stop());setStream(null);setCalling(false);setVideo(false);setCamera(false)}
-  return <main className="hx-call"><PageHeading eyebrow="REAL-TIME / CALLS" title="Calls" text="Voice, video, screen sharing and presentation mode."/>
-    <div className="hx-call-grid"><section className="hx-call-stage"><div style={{textAlign:"center"}}><div className="hx-call-avatar">H</div><h2>{calling?"HEXA Call":"Ready to connect"}</h2><p style={{color:"#737b87"}}>{calling?(video?"Video call in progress":"Voice call in progress"):"Start a voice or video call."}</p></div>{camera&&<div className="hx-call-mini"><video ref={videoRef} autoPlay muted playsInline/></div>}<div className="hx-call-controls">{!calling?<><button className="hx-call-control" onClick={()=>{setCalling(true)}}>☎</button><button className="hx-call-control" onClick={startVideo}>▣</button></>:<><button className="hx-call-control" onClick={()=>setMuted(x=>!x)}>{muted?"🔇":"🎙"}</button><button className="hx-call-control" onClick={()=>setCamera(x=>!x)}>▣</button><button className="hx-call-control">▤</button><button className="hx-call-control end" onClick={end}>×</button></>}</div></section>
-      <aside className="hx-panel"><div className="hx-panel-head"><span>CALL FEATURES</span><span>HEXA</span></div>{["1-to-1 voice","Video calling","Group calls","Screen sharing","Presentation mode","Call history","Speaker / Bluetooth"].map((x,i)=><div className="hx-step" key={x}><div className="hx-step-num">{i+1}</div><div><strong>{x}</strong><div style={{fontSize:11,color:"#6d7580",marginTop:3}}>{i<2?"Ready":"Workspace integration"}</div></div></div>)}</aside></div>
-  </main>;
+/* =========================================================
+   DOCUMENTS
+   ========================================================= */
+
+function Documents({ notify }) {
+  const [doc, setDoc] = useState("");
+
+  return (
+    <div>
+      <PageHeader
+        title="Documents"
+        description="Create polished documents inside your HEXA workspace."
+        button={
+          <Button
+            variant="primary"
+            onClick={() => notify("New document created")}
+          >
+            + New Document
+          </Button>
+        }
+      />
+
+      <div
+        style={{
+          background: "var(--panel)",
+          border: "1px solid var(--border)",
+          borderRadius: 20,
+          padding: 25,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            gap: 7,
+            flexWrap: "wrap",
+            paddingBottom: 15,
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
+          {[
+            "B",
+            "I",
+            "U",
+            "H1",
+            "H2",
+            "• List",
+            "☷",
+            "Link",
+            "Image",
+            "Table",
+          ].map((x) => (
+            <Button
+              key={x}
+              onClick={() => notify(`${x} tool selected`)}
+            >
+              {x}
+            </Button>
+          ))}
+        </div>
+
+        <input
+          placeholder="Document title"
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            border: 0,
+            outline: 0,
+            background: "transparent",
+            color: "var(--text)",
+            fontSize: 32,
+            fontWeight: 900,
+            margin: "25px 0",
+          }}
+        />
+
+        <textarea
+          value={doc}
+          onChange={(e) => setDoc(e.target.value)}
+          placeholder="Start your document..."
+          style={{
+            width: "100%",
+            minHeight: 500,
+            border: 0,
+            outline: 0,
+            resize: "vertical",
+            background: "transparent",
+            color: "var(--text)",
+            fontSize: 16,
+            lineHeight: 1.8,
+          }}
+        />
+      </div>
+    </div>
+  );
 }
 
-function ProjectsPage({projects,setProjects,userId,setError}){
-  const [open,setOpen]=useState(false);const [name,setName]=useState("");const [type,setType]=useState("app");
-  async function create(){if(!name.trim())return setError("Enter a project name.");const {data,error}=await supabase.from("projects").insert({name:name.trim(),project_type:type,created_by:userId}).select("*").single();if(error)return setError(error.message);setProjects(p=>[data,...p]);setName("");setOpen(false)}
-  return <main className="hx-page"><PageHeading eyebrow="WORK / PROJECTS" title="Projects" text="Everything you are building, connected to people and tools."/><div style={{display:"flex",justifyContent:"flex-end",marginBottom:20}}><button className="hx-btn light" onClick={()=>setOpen(true)}>+ New project</button></div>{projects.length===0?<Empty icon="◆" title="Your project universe is empty" text="Create your first HEXA project." button="Create project" onClick={()=>setOpen(true)}/>:<div className="hx-cards">{projects.map(p=><div className="hx-project" key={p.id}><div><span className="hx-project-type">{(p.project_type||"PROJECT").toUpperCase()}</span><h3>{p.name}</h3><p>Chat · Files · Documents · Tasks · Code · AI · Members</p></div><button className="hx-btn">Open workspace →</button></div>)}</div>}{open&&<Modal title="Create project" close={()=>setOpen(false)}><Field label="PROJECT NAME" value={name} setValue={setName} placeholder="My next project"/><label className="hx-field"><span style={{display:"block",marginBottom:8,fontSize:10,color:"#969daa",fontWeight:800}}>PROJECT TYPE</span><div style={{display:"flex",gap:8}}>{["app","game","web","code"].map(x=><button type="button" className={`hx-btn ${type===x?"light":""}`} key={x} onClick={()=>setType(x)}>{x}</button>)}</div></label><ModalButtons close={()=>setOpen(false)} action="Create project" onAction={create}/></Modal>}</main>;
+/* =========================================================
+   PROJECTS
+   ========================================================= */
+
+function Projects({ notify }) {
+  const [create, setCreate] = useState(false);
+
+  return (
+    <div>
+      <PageHeader
+        title="Projects"
+        description="Build, organize and track anything."
+        button={
+          <Button
+            variant="primary"
+            onClick={() => setCreate(true)}
+          >
+            + Create Project
+          </Button>
+        }
+      />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            "repeat(auto-fit,minmax(250px,1fr))",
+          gap: 15,
+        }}
+      >
+        <LargeCard
+          icon="◆"
+          title="New Project"
+          description="Start a new workspace."
+          meta="Ready to build"
+          onClick={() => setCreate(true)}
+        />
+
+        <LargeCard
+          icon="</>"
+          title="Development"
+          description="Connect code and development tools."
+          meta="VS Code · Unreal · Unity · Godot"
+          onClick={() => notify("Development project opened")}
+        />
+      </div>
+
+      {create && (
+        <Modal
+          title="Create Project"
+          onClose={() => setCreate(false)}
+        >
+          <Field
+            label="Project name"
+            placeholder="My Project"
+            onChange={() => {}}
+          />
+
+          <Field
+            label="Description"
+            placeholder="Project description"
+            onChange={() => {}}
+          />
+
+          <Button
+            variant="primary"
+            style={{ width: "100%" }}
+            onClick={() => {
+              setCreate(false);
+              notify("Project created");
+            }}
+          >
+            Create project
+          </Button>
+        </Modal>
+      )}
+    </div>
+  );
 }
 
-function StudioPage({type,navigate}){
-  const game=type==="game";const [selected,setSelected]=useState(game?GAME_ENGINES[0]:APP_STACKS[0]);const [name,setName]=useState("");const [created,setCreated]=useState(false);const options=game?GAME_ENGINES:APP_STACKS;
-  return <main className="hx-page"><PageHeading eyebrow={`CREATE / ${game?"GAME":"APP"} STUDIO`} title={game?"Game Studio":"App Studio"} text={game?"Choose Unreal, Unity, Godot or VS Code and build your game.":"Choose your application stack and build a product."}/>
-    <section className="hx-studio"><div className="hx-studio-bar"><span style={{fontSize:12,color:"#8a919b"}}>{game?"GAME_STUDIO":"APP_STUDIO"} / {selected.name.toUpperCase()}</span><div style={{display:"flex",gap:7}}><button className="hx-btn" onClick={()=>setCreated(false)}>New</button><button className="hx-btn light" onClick={()=>setCreated(true)}>Create</button></div></div><div className="hx-studio-body">
-      {!created?<><div className="hx-studio-launch"><div className="hx-launch-card"><span className="hx-eyebrow">STEP 01 / ENGINE</span><h2>{game?"Choose your game engine.":"Choose your app stack."}</h2><p>Your choice becomes the project's primary development environment. HEXA can hand the project off to installed desktop tools such as VS Code.</p><div className="hx-tool-grid">{options.map(o=><button className={`hx-tool ${selected.id===o.id?"selected":""}`} key={o.id} onClick={()=>setSelected(o)} style={{textAlign:"left",color:"inherit"}}><div className="hx-tool-icon">{o.icon}</div><h3>{o.name}</h3><p>{o.desc}</p></button>)}</div></div><div className="hx-launch-card"><span className="hx-eyebrow">STEP 02 / PROJECT</span><h2>Name your project.</h2><Field label="PROJECT NAME" value={name} setValue={setName} placeholder={game?"My Unreal Game":"My HEXA App"}/><div className="hx-step"><div className="hx-step-num">1</div><div><strong>Workspace created</strong><div style={{fontSize:11,color:"#6f7782"}}>Files, collaboration and AI context.</div></div></div><div className="hx-step"><div className="hx-step-num">2</div><div><strong>Open CodeSpace</strong><div style={{fontSize:11,color:"#6f7782"}}>Edit and inspect project files.</div></div></div><div className="hx-step"><div className="hx-step-num">3</div><div><strong>Launch external tool</strong><div style={{fontSize:11,color:"#6f7782"}}>{selected.name} integration/handoff.</div></div></div></div></div></>:<div style={{width:"100%",maxWidth:780,margin:"auto",textAlign:"left"}}><span className="hx-eyebrow">PROJECT READY</span><h2 style={{fontSize:42,letterSpacing:"-.06em",margin:"8px 0"}}>{name||"Untitled Project"}</h2><p style={{color:"#747c87"}}>{selected.name} workspace initialized. Connect your backend/project runner next.</p><div className="hx-actions"><button className="hx-btn light" onClick={()=>navigate("code")}>Open CodeSpace →</button><button className="hx-btn" onClick={()=>window.open("https://code.visualstudio.com","_blank")}>VS Code ↗</button><button className="hx-btn" onClick={()=>setCreated(false)}>Configure</button></div></div>}
-    </div></section>
-  </main>;
+/* =========================================================
+   KORA
+   ========================================================= */
+
+function Kora({ notify }) {
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState([
+    {
+      from: "Kora",
+      text: "Hi. I'm Kora, the HEXA AI workspace assistant.",
+    },
+  ]);
+
+  function send() {
+    if (!input.trim()) return;
+
+    const text = input.trim();
+
+    setMessages((old) => [
+      ...old,
+      { from: "You", text },
+      {
+        from: "Kora",
+        text:
+          "I received that. Connect your AI provider to give Kora real model responses.",
+      },
+    ]);
+
+    setInput("");
+  }
+
+  return (
+    <div>
+      <PageHeader
+        title="Kora AI"
+        description="HEXA's AI workspace."
+        button={
+          <Button onClick={() => notify("New Kora conversation")}>
+            + New conversation
+          </Button>
+        }
+      />
+
+      <div
+        style={{
+          maxWidth: 900,
+          margin: "0 auto",
+          border: "1px solid var(--border)",
+          borderRadius: 22,
+          background: "var(--panel)",
+          minHeight: 650,
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            padding: 18,
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            gap: 12,
+            alignItems: "center",
+          }}
+        >
+          <div
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 14,
+              display: "grid",
+              placeItems: "center",
+              background: "var(--accent)",
+              color: "white",
+              fontSize: 20,
+            }}
+          >
+            ✦
+          </div>
+
+          <div>
+            <b>Kora</b>
+            <div
+              style={{
+                color: "var(--muted)",
+                fontSize: 11,
+              }}
+            >
+              HEXA AI
+            </div>
+          </div>
+        </div>
+
+        <div
+          style={{
+            flex: 1,
+            padding: 22,
+            overflowY: "auto",
+          }}
+        >
+          {messages.map((m, i) => (
+            <div
+              key={i}
+              style={{
+                marginBottom: 15,
+                display: "flex",
+                justifyContent:
+                  m.from === "You"
+                    ? "flex-end"
+                    : "flex-start",
+              }}
+            >
+              <div
+                style={{
+                  maxWidth: "75%",
+                  background:
+                    m.from === "You"
+                      ? "var(--accent)"
+                      : "var(--panel2)",
+                  color:
+                    m.from === "You"
+                      ? "white"
+                      : "var(--text)",
+                  padding: 13,
+                  borderRadius: 15,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 10,
+                    opacity: 0.6,
+                    marginBottom: 4,
+                  }}
+                >
+                  {m.from}
+                </div>
+                {m.text}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div
+          style={{
+            padding: 13,
+            borderTop: "1px solid var(--border)",
+            display: "flex",
+            gap: 8,
+          }}
+        >
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") send();
+            }}
+            placeholder="Ask Kora..."
+            style={{
+              flex: 1,
+              minWidth: 0,
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid var(--border)",
+              background: "var(--panel2)",
+              color: "var(--text)",
+            }}
+          />
+
+          <Button variant="primary" onClick={send}>
+            Send
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function CodeSpacePage(){
-  const [code,setCode]=useState(STARTER_CODE);const [file,setFile]=useState("App.jsx");const [terminal,setTerminal]=useState("HEXA terminal ready.\\n$ ");
-  const files=["src","App.jsx","App.css","components","services","public","package.json","README.md"];
-  function run(){setTerminal(t=>`${t}\\n$ hexa run\\n✓ Workspace preview started.\\n`)}
-  function openVSCode(){window.location.href=`vscode://file/${encodeURIComponent("C:/HEXA")}`}
-  return <main className="hx-code"><aside className="hx-code-tree"><span>EXPLORER</span>{files.map((f,i)=><button key={f} onClick={()=>setFile(f)}>{i===0||f==="public"?"▾ ":"　"}{f}</button>)}<div style={{marginTop:20}}><span>SOURCE CONTROL</span><button>↻ Changes</button><button>⑂ Git</button></div></aside><section className="hx-code-editor"><div className="hx-code-tabs"><span>● {file}</span><button className="hx-btn" style={{marginLeft:"auto",padding:"6px 10px"}} onClick={run}>Run ▶</button><button className="hx-btn" style={{padding:"6px 10px"}} onClick={openVSCode}>Open VS Code ↗</button></div><textarea className="hx-code-area" value={code} onChange={e=>setCode(e.target.value)} spellCheck={false}/></section><aside className="hx-code-side"><h4>HEXA AI</h4><div className="hx-panel" style={{padding:13,marginBottom:12}}><strong>Code assistant</strong><p style={{fontSize:11,color:"#727a85",lineHeight:1.5}}>Ask HEXA to explain, refactor, debug or generate code.</p><button className="hx-btn light" style={{width:"100%"}}>Ask AI →</button></div><h4>TERMINAL</h4><div className="hx-terminal">{terminal}</div></aside></main>;
+/* =========================================================
+   DEVELOPER HUB
+   ========================================================= */
+
+function DeveloperHub({ notify }) {
+  const tools = [
+    {
+      name: "VS Code",
+      icon: "</>",
+      description: "Code and app development",
+      protocol: "vscode://",
+    },
+    {
+      name: "Unreal Engine",
+      icon: "U",
+      description: "AAA game development",
+      protocol: "unreal://",
+    },
+    {
+      name: "Unity Hub",
+      icon: "◇",
+      description: "Unity game development",
+      protocol: "unityhub://",
+    },
+    {
+      name: "Godot",
+      icon: "G",
+      description: "Open-source game engine",
+      protocol: "godot://",
+    },
+  ];
+
+  function launch(tool) {
+    /*
+      Browsers cannot guarantee launching arbitrary desktop
+      applications. These protocol links work only if the
+      operating system/application has registered the protocol.
+    */
+    try {
+      window.location.href = tool.protocol;
+      notify(`Attempting to open ${tool.name}`);
+    } catch {
+      notify(
+        `${tool.name} could not be launched by this browser`
+      );
+    }
+  }
+
+  return (
+    <div>
+      <PageHeader
+        title="Developer Hub"
+        description="Launch and organize your development tools."
+      />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            "repeat(auto-fit,minmax(260px,1fr))",
+          gap: 15,
+        }}
+      >
+        {tools.map((tool) => (
+          <div
+            key={tool.name}
+            style={{
+              background: "var(--panel)",
+              border: "1px solid var(--border)",
+              borderRadius: 20,
+              padding: 20,
+            }}
+          >
+            <div
+              style={{
+                width: 58,
+                height: 58,
+                borderRadius: 17,
+                background: "var(--panel2)",
+                display: "grid",
+                placeItems: "center",
+                color: "var(--accent)",
+                fontWeight: 950,
+                fontSize: 20,
+                marginBottom: 16,
+              }}
+            >
+              {tool.icon}
+            </div>
+
+            <div style={{ fontSize: 18, fontWeight: 900 }}>
+              {tool.name}
+            </div>
+
+            <div
+              style={{
+                color: "var(--muted)",
+                margin: "7px 0 18px",
+              }}
+            >
+              {tool.description}
+            </div>
+
+            <Button
+              variant="primary"
+              onClick={() => launch(tool)}
+              style={{ width: "100%" }}
+            >
+              Open {tool.name}
+            </Button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
-function AIPage(){
-  const [messages,setMessages]=useState([{role:"ai",text:"I'm HEXA AI. Ask me to plan, write, explain, debug or create."}]);const [text,setText]=useState("");
-  const [online,setOnline]=useState(navigator.onLine);const [reserve,setReserve]=useState(()=>Number(localStorage.getItem("hexaOfflineSeconds")||600));
-  useEffect(()=>{const up=()=>setOnline(true),down=()=>setOnline(false);window.addEventListener("online",up);window.addEventListener("offline",down);return()=>{window.removeEventListener("online",up);window.removeEventListener("offline",down)}},[]);
-  useEffect(()=>{localStorage.setItem("hexaOfflineSeconds",String(reserve))},[reserve]);
-  function send(){if(!text.trim())return;const q=text.trim();setMessages(m=>[...m,{role:"user",text:q},{role:"ai",text:online?`HEXA received: "${q}". Connect your AI provider here for cloud responses.`:`Offline HEXA received: "${q}". This message is stored locally and can sync when you reconnect.`}]);setText("");if(!online&&reserve>0)setReserve(s=>Math.max(0,s-60))}
-  const mins=Math.floor(reserve/60),secs=reserve%60;
-  return <main className="hx-page"><PageHeading eyebrow="INTELLIGENCE / HEXA AI" title="HEXA AI" text="Cloud intelligence with an earned offline reserve."/><div className="hx-two"><section className="hx-panel"><div className="hx-panel-head"><span>AI CHAT</span><span>{online?"ONLINE":"OFFLINE"}</span></div><div style={{minHeight:390,maxHeight:520,overflow:"auto",display:"flex",flexDirection:"column",gap:9}}>{messages.map((m,i)=><div key={i} style={{alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"80%",padding:"11px 13px",borderRadius:13,background:m.role==="user"?"#e9eaed":"#11151c",color:m.role==="user"?"#08090b":"#e3e7ed",fontSize:13,lineHeight:1.5}}>{m.text}</div>)}</div><div className="hx-composer" style={{margin:"14px 0 0"}}><textarea value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}}} placeholder={online?"Ask HEXA anything...":"Offline HEXA — limited reserve"} disabled={!online&&reserve<=0}/><button className="send" onClick={send}>↑</button></div></section><aside className="hx-panel"><div className="hx-panel-head"><span>OFFLINE RESERVE</span><span>3H → 10M</span></div><div style={{padding:"18px 0"}}><div style={{fontSize:46,fontWeight:900,letterSpacing:"-.06em"}}>{String(mins).padStart(2,"0")}:{String(secs).padStart(2,"0")}</div><p style={{color:"#747c87",lineHeight:1.6}}>Chat with HEXA online for 3 hours to earn 10 minutes of offline AI. The reserve is stored on this device.</p><div className={`hx-offline ${online?"":"offline"}`}><span className="hx-pulse"/><strong>{online?"ONLINE MODE":"OFFLINE MODE"}</strong><span>{online?"Cloud features available":"Local reserve active"}</span></div></div><div className="hx-step"><div className="hx-step-num">1</div><div><strong>3 hours active AI chat</strong><div style={{fontSize:11,color:"#6f7782"}}>Accumulate actual chat time, not idle time.</div></div></div><div className="hx-step"><div className="hx-step-num">2</div><div><strong>10 minutes offline</strong><div style={{fontSize:11,color:"#6f7782"}}>Continue with local/offline capabilities.</div></div></div><div className="hx-step"><div className="hx-step-num">3</div><div><strong>Sync when connected</strong><div style={{fontSize:11,color:"#6f7782"}}>Queued activity can be synchronized later.</div></div></div></aside></div></main>;
+/* =========================================================
+   PROFILE
+   ========================================================= */
+
+function Profile({ profile, notify }) {
+  const file = useRef(null);
+
+  return (
+    <div>
+      <PageHeader
+        title="Profile"
+        description="Manage your HEXA identity."
+      />
+
+      <div
+        style={{
+          maxWidth: 720,
+          background: "var(--panel)",
+          border: "1px solid var(--border)",
+          borderRadius: 22,
+          padding: 25,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 18,
+            marginBottom: 25,
+          }}
+        >
+          <Avatar user={profile} size={90} />
+
+          <div>
+            <h2 style={{ margin: 0 }}>
+              {profile.display_name}
+            </h2>
+
+            <div
+              style={{
+                color: "var(--muted)",
+                marginTop: 5,
+              }}
+            >
+              @{profile.username}
+            </div>
+          </div>
+        </div>
+
+        <input
+          ref={file}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={() => notify("Profile picture selected")}
+        />
+
+        <Button
+          onClick={() => file.current?.click()}
+          style={{ marginBottom: 20 }}
+        >
+          Change profile picture
+        </Button>
+
+        <Field
+          label="Display name"
+          value={profile.display_name}
+          onChange={() => {}}
+        />
+
+        <Field
+          label="Username"
+          value={`@${profile.username}`}
+          onChange={() => {}}
+        />
+
+        <Button
+          variant="primary"
+          onClick={() => notify("Profile saved")}
+        >
+          Save profile
+        </Button>
+      </div>
+    </div>
+  );
 }
 
-function ProfilePage({profile,session,setProfile,setError}){
-  const fileRef=useRef(null);const [name,setName]=useState(profile?.full_name||"");const [username,setUsername]=useState(profile?.username||"");const [saving,setSaving]=useState(false);
-  useEffect(()=>{setName(profile?.full_name||"");setUsername(profile?.username||"")},[profile]);
-  async function save(){const clean=username.trim().replace(/^@/,"").toLowerCase();setSaving(true);const {data,error}=await supabase.from("profiles").update({full_name:name.trim(),username:clean}).eq("id",session.user.id).select("id,username,full_name,avatar_url").single();setSaving(false);if(error)return setError(error.message);setProfile(data)}
-  async function upload(file){if(!file)return;if(!file.type.startsWith("image/"))return setError("Select an image file.");if(file.size>5*1024*1024)return setError("Image must be under 5MB.");try{const ext=file.name.split(".").pop()||"jpg";const path=`${session.user.id}/avatar-${Date.now()}.${ext}`;const {error:uploadError}=await supabase.storage.from("avatars").upload(path,file,{upsert:false,contentType:file.type});if(uploadError)throw uploadError;const {data:publicData}=supabase.storage.from("avatars").getPublicUrl(path);const avatar_url=`${publicData.publicUrl}?v=${Date.now()}`;const {data,error}=await supabase.from("profiles").update({avatar_url}).eq("id",session.user.id).select("id,username,full_name,avatar_url").single();if(error)throw error;setProfile(data)}catch(err){setError(err.message)}}
-  return <main className="hx-page"><PageHeading eyebrow="IDENTITY / PROFILE" title="Your identity" text="Manage your HEXA profile, presence and privacy."/><div className="hx-profile"><section className="hx-profile-card"><Avatar profile={profile} large/><h2>{name||"HEXA User"}</h2><p>@{username||"username"}</p><div style={{marginTop:18}} className="hx-offline"><span className="hx-pulse"/>Online presence enabled</div><button className="hx-btn" style={{marginTop:20}} onClick={()=>fileRef.current?.click()}>Change picture</button><input ref={fileRef} hidden type="file" accept="image/*" onChange={e=>{upload(e.target.files?.[0]);e.target.value=""}}/></section><section className="hx-form"><span className="hx-eyebrow">PERSONAL DATA</span><h2>Profile settings</h2><Field label="FULL NAME" value={name} setValue={setName} placeholder="Your name"/><Field label="USERNAME" value={username} setValue={setUsername} placeholder="username"/><div className="hx-field"><label>EMAIL</label><input className="hx-input" disabled value={session?.user?.email||""}/></div><div className="hx-section-title" style={{marginTop:25}}><span>PRIVACY</span></div><div className="hx-list"><div className="hx-list-row"><div><strong>Online status</strong><span>Show when you are active.</span></div><input type="checkbox" defaultChecked/></div><div className="hx-list-row"><div><strong>Read receipts</strong><span>Show message read state.</span></div><input type="checkbox" defaultChecked/></div><div className="hx-list-row"><div><strong>Two-step verification</strong><span>Protect your account.</span></div><button className="hx-btn">Configure</button></div></div><button className="hx-btn light" disabled={saving} style={{marginTop:18}} onClick={save}>{saving?"Saving...":"Save changes →"}</button></section></div></main>;
+/* =========================================================
+   SETTINGS
+   ========================================================= */
+
+function Settings({
+  theme,
+  setTheme,
+  accent,
+  setAccent,
+  logout,
+  notify,
+}) {
+  return (
+    <div>
+      <PageHeader
+        title="Settings"
+        description="Customize your HEXA workspace."
+      />
+
+      <div
+        style={{
+          display: "grid",
+          gap: 14,
+          maxWidth: 850,
+        }}
+      >
+        <SettingCard
+          title="Appearance"
+          description="Choose how HEXA looks."
+        >
+          <div style={{ display: "flex", gap: 8 }}>
+            {["dark", "white"].map((x) => (
+              <Button
+                key={x}
+                variant={theme === x ? "primary" : "secondary"}
+                onClick={() => setTheme(x)}
+              >
+                {x === "dark" ? "🌙 Dark" : "☀ White"}
+              </Button>
+            ))}
+          </div>
+        </SettingCard>
+
+        <SettingCard
+          title="Accent color"
+          description="Choose HEXA's highlight color."
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            {Object.keys(ACCENTS).map((x) => (
+              <button
+                key={x}
+                onClick={() => setAccent(x)}
+                style={{
+                  border:
+                    accent === x
+                      ? `2px solid ${ACCENTS[x]}`
+                      : "1px solid var(--border)",
+                  background: "var(--panel2)",
+                  color: "var(--text)",
+                  borderRadius: 12,
+                  padding: "9px 13px",
+                  cursor: "pointer",
+                }}
+              >
+                {x}
+              </button>
+            ))}
+          </div>
+        </SettingCard>
+
+        <SettingCard
+          title="Privacy"
+          description="Your conversations should use a real encryption implementation on the server/client layer."
+        >
+          <div
+            style={{
+              padding: 13,
+              borderRadius: 12,
+              background: "var(--panel2)",
+            }}
+          >
+            🔒 Encryption architecture
+          </div>
+        </SettingCard>
+
+        <SettingCard
+          title="Account"
+          description="Sign out of this HEXA session."
+        >
+          <Button
+            variant="danger"
+            onClick={() => {
+              logout();
+              notify("Signed out");
+            }}
+          >
+            Sign out
+          </Button>
+        </SettingCard>
+      </div>
+    </div>
+  );
 }
 
-function PageHeading({eyebrow,title,text}){return <div className="hx-heading"><div><span className="hx-eyebrow">{eyebrow}</span><h1>{title}</h1>{text&&<p>{text}</p>}</div></div>}
-function Avatar({profile,large=false,initials}){const letters=initials||profile?.full_name?.split(" ").filter(Boolean).slice(0,2).map(x=>x[0]).join("").toUpperCase()||"H";return <div className="hx-avatar" style={large?{width:90,height:90,borderRadius:24,fontSize:24}:undefined}>{profile?.avatar_url?<img src={profile.avatar_url} alt=""/>:letters}</div>}
-function Field({label,value,setValue,placeholder,textarea=false}){return <div className="hx-field"><label>{label}</label>{textarea?<textarea className="hx-input" style={{minHeight:90,resize:"vertical"}} value={value} onChange={e=>setValue(e.target.value)} placeholder={placeholder}/>:<input className="hx-input" value={value} onChange={e=>setValue(e.target.value)} placeholder={placeholder}/>}</div>}
-function Empty({icon,title,text,button,onClick}){return <div className="hx-empty"><div><div className="hx-empty-icon">{icon}</div><h3>{title}</h3><p>{text}</p><button className="hx-btn light" onClick={onClick}>{button} →</button></div></div>}
-function Modal({title,close,children}){return <div className="hx-modal-backdrop" onMouseDown={close}><div className="hx-modal" onMouseDown={e=>e.stopPropagation()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span className="hx-eyebrow">HEXA NEXUS</span><button className="hx-icon-btn" onClick={close}>×</button></div><h2>{title}</h2>{children}</div></div>}
-function ModalButtons({close,action,onAction}){return <div className="hx-modal-actions"><button className="hx-btn" onClick={close}>Cancel</button><button className="hx-btn light" onClick={onAction}>{action} →</button></div>}
-function OfflineBadge({online}){return <div className={`hx-offline ${online?"":"offline"}`}><span className="hx-pulse"/><strong>{online?"ONLINE":"OFFLINE"}</strong><span>{online?"HEXA CORE":"Offline mode"}</span></div>}
+/* =========================================================
+   COMMON UI
+   ========================================================= */
+
+function PageHeader({ title, description, button }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-end",
+        gap: 20,
+        flexWrap: "wrap",
+        marginBottom: 25,
+      }}
+    >
+      <div>
+        <h1
+          style={{
+            fontSize: 34,
+            letterSpacing: -1.5,
+            margin: 0,
+          }}
+        >
+          {title}
+        </h1>
+
+        <p
+          style={{
+            color: "var(--muted)",
+            margin: "7px 0 0",
+          }}
+        >
+          {description}
+        </p>
+      </div>
+
+      {button}
+    </div>
+  );
+}
+
+function SectionTitle({ title, action }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 13,
+      }}
+    >
+      <h2 style={{ margin: 0, fontSize: 18 }}>{title}</h2>
+      {action}
+    </div>
+  );
+}
+
+function LargeCard({
+  icon,
+  title,
+  description,
+  meta,
+  onClick,
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: "var(--panel)",
+        color: "var(--text)",
+        border: "1px solid var(--border)",
+        borderRadius: 20,
+        padding: 20,
+        textAlign: "left",
+        cursor: "pointer",
+      }}
+    >
+      <div
+        style={{
+          width: 50,
+          height: 50,
+          display: "grid",
+          placeItems: "center",
+          borderRadius: 15,
+          background: "var(--panel2)",
+          color: "var(--accent)",
+          fontWeight: 950,
+          fontSize: 19,
+          marginBottom: 16,
+        }}
+      >
+        {icon}
+      </div>
+
+      <div style={{ fontSize: 17, fontWeight: 900 }}>
+        {title}
+      </div>
+
+      <div
+        style={{
+          color: "var(--muted)",
+          margin: "7px 0 15px",
+          lineHeight: 1.5,
+          fontSize: 13,
+        }}
+      >
+        {description}
+      </div>
+
+      <div
+        style={{
+          fontSize: 11,
+          color: "var(--accent)",
+          fontWeight: 800,
+        }}
+      >
+        {meta}
+      </div>
+    </button>
+  );
+}
+
+function SettingCard({ title, description, children }) {
+  return (
+    <div
+      style={{
+        background: "var(--panel)",
+        border: "1px solid var(--border)",
+        borderRadius: 18,
+        padding: 20,
+      }}
+    >
+      <div style={{ fontWeight: 900 }}>{title}</div>
+
+      <div
+        style={{
+          color: "var(--muted)",
+          fontSize: 12,
+          margin: "5px 0 15px",
+          lineHeight: 1.5,
+        }}
+      >
+        {description}
+      </div>
+
+      {children}
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children }) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,.65)",
+        backdropFilter: "blur(10px)",
+        display: "grid",
+        placeItems: "center",
+        padding: 20,
+        zIndex: 100,
+      }}
+    >
+      <div
+        style={{
+          width: "min(480px,100%)",
+          background: "var(--panel)",
+          border: "1px solid var(--border)",
+          borderRadius: 22,
+          padding: 22,
+          boxShadow: "0 30px 100px rgba(0,0,0,.45)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 20,
+          }}
+        >
+          <h2 style={{ margin: 0 }}>{title}</h2>
+
+          <Button onClick={onClose}>×</Button>
+        </div>
+
+        {children}
+      </div>
+    </div>
+  );
+}
+
+
+/* =========================================================
+   HEXA BILLING
+   Free -> Plus -> Pro -> Ultra
+   KORA is included in every plan.
+   ========================================================= */
+
+const HEXA_PLANS = {
+  free: {
+    id: "free",
+    name: "Free",
+    price: 0,
+    description: "Everything you need to get started with HEXA.",
+    color: "default",
+
+    kora: {
+      credits: 500,
+      label: "500 KORA credits / month",
+    },
+
+    storage: "2 GB",
+    features: [
+      "HEXA messaging",
+      "Groups & communities",
+      "Status",
+      "Voice & video calls",
+      "KORA AI",
+      "2 GB cloud storage",
+    ],
+  },
+
+  plus: {
+    id: "plus",
+    name: "Plus",
+    price: 9.99,
+    description: "More power for everyday HEXA users.",
+    color: "purple",
+
+    kora: {
+      credits: 5000,
+      label: "5,000 KORA credits / month",
+    },
+
+    storage: "50 GB",
+    features: [
+      "Everything in Free",
+      "5,000 KORA credits",
+      "50 GB cloud storage",
+      "Higher file limits",
+      "Premium profile features",
+      "Priority KORA access",
+    ],
+  },
+
+  pro: {
+    id: "pro",
+    name: "Pro",
+    price: 24.99,
+    description: "Advanced HEXA for creators and professionals.",
+    color: "blue",
+
+    kora: {
+      credits: 20000,
+      label: "20,000 KORA credits / month",
+    },
+
+    storage: "250 GB",
+    features: [
+      "Everything in Plus",
+      "20,000 KORA credits",
+      "250 GB cloud storage",
+      "Advanced KORA capabilities",
+      "Developer tools",
+      "Priority processing",
+    ],
+  },
+
+  ultra: {
+    id: "ultra",
+    name: "Ultra",
+    price: 49.99,
+    description: "The ultimate HEXA experience.",
+    color: "gold",
+
+    kora: {
+      credits: 100000,
+      label: "100,000 KORA credits / month",
+    },
+
+    storage: "1 TB",
+    features: [
+      "Everything in Pro",
+      "100,000 KORA credits",
+      "1 TB cloud storage",
+      "Maximum KORA limits",
+      "Advanced AI capabilities",
+      "Highest priority processing",
+      "Early access to HEXA features",
+    ],
+  },
+};
+
+/* =========================================================
+   PLAN ORDER
+   ========================================================= */
+
+const PLAN_ORDER = ["free", "plus", "pro", "ultra"];
+
+function getPlanRank(plan) {
+  return PLAN_ORDER.indexOf(plan);
+}
+
+/* =========================================================
+   BILLING CENTER
+   ========================================================= */
+
+export function HexaBilling({
+  currentPlan = "free",
+  onUpgrade,
+  onDowngrade,
+}) {
+  const [billingCycle, setBillingCycle] = useState("monthly");
+  const [selectedPlan, setSelectedPlan] = useState(currentPlan);
+  const [showAllFeatures, setShowAllFeatures] = useState(false);
+
+  const current = HEXA_PLANS[currentPlan] || HEXA_PLANS.free;
+
+  const getPrice = (plan) => {
+    if (plan.price === 0) return 0;
+
+    if (billingCycle === "yearly") {
+      return Math.round(plan.price * 12 * 0.8 * 100) / 100;
+    }
+
+    return plan.price;
+  };
+
+  const getMonthlyEquivalent = (plan) => {
+    if (plan.price === 0) return 0;
+
+    return Math.round(plan.price * 0.8 * 100) / 100;
+  };
+
+  const handlePlanAction = (planId) => {
+    const selected = HEXA_PLANS[planId];
+
+    if (!selected) return;
+
+    if (planId === currentPlan) {
+      return;
+    }
+
+    if (getPlanRank(planId) > getPlanRank(currentPlan)) {
+      setSelectedPlan(planId);
+
+      if (onUpgrade) {
+        onUpgrade(selected);
+      }
+    } else {
+      if (onDowngrade) {
+        onDowngrade(selected);
+      }
+    }
+  };
+
+  return (
+    <div className="hexa-billing">
+      <div className="billing-header">
+        <div>
+          <div className="billing-eyebrow">
+            HEXA MEMBERSHIP
+          </div>
+
+          <h1>Choose your HEXA plan</h1>
+
+          <p>
+            Start free. Upgrade when you need more power.
+            KORA is included with every HEXA plan.
+          </p>
+        </div>
+
+        <div className="current-plan-pill">
+          <span className="status-dot" />
+          Current plan: <strong>{current.name}</strong>
+        </div>
+      </div>
+
+      <div className="billing-toggle">
+        <button
+          className={billingCycle === "monthly" ? "active" : ""}
+          onClick={() => setBillingCycle("monthly")}
+        >
+          Monthly
+        </button>
+
+        <button
+          className={billingCycle === "yearly" ? "active" : ""}
+          onClick={() => setBillingCycle("yearly")}
+        >
+          Yearly
+          <span className="save-badge">Save 20%</span>
+        </button>
+      </div>
+
+      <div className="plan-grid">
+        {PLAN_ORDER.map((planId) => {
+          const plan = HEXA_PLANS[planId];
+
+          const isCurrent = planId === currentPlan;
+
+          const isSelected = planId === selectedPlan;
+
+          const isPopular = planId === "pro";
+
+          const price =
+            billingCycle === "yearly"
+              ? getMonthlyEquivalent(plan)
+              : plan.price;
+
+          return (
+            <div
+              key={plan.id}
+              className={[
+                "hexa-plan-card",
+                plan.color,
+                isCurrent ? "current" : "",
+                isSelected ? "selected" : "",
+                isPopular ? "popular" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              {isPopular && (
+                <div className="popular-label">
+                  MOST POPULAR
+                </div>
+              )}
+
+              <div className="plan-top">
+                <div className="plan-icon">
+                  {plan.id === "free" && "○"}
+                  {plan.id === "plus" && "✦"}
+                  {plan.id === "pro" && "◆"}
+                  {plan.id === "ultra" && "♛"}
+                </div>
+
+                <h2>{plan.name}</h2>
+
+                <p>{plan.description}</p>
+              </div>
+
+              <div className="plan-price">
+                {price === 0 ? (
+                  <strong>Free</strong>
+                ) : (
+                  <>
+                    <span>$</span>
+                    <strong>{price.toFixed(2)}</strong>
+                    <small>/mo</small>
+                  </>
+                )}
+              </div>
+
+              {billingCycle === "yearly" && plan.price > 0 && (
+                <div className="yearly-note">
+                  Billed annually
+                </div>
+              )}
+
+              <div className="kora-box">
+                <div className="kora-orb">K</div>
+
+                <div>
+                  <strong>KORA included</strong>
+                  <span>{plan.kora.label}</span>
+                </div>
+              </div>
+
+              <div className="storage-row">
+                <span>☁ Storage</span>
+                <strong>{plan.storage}</strong>
+              </div>
+
+              <div className="plan-features">
+                {(showAllFeatures
+                  ? plan.features
+                  : plan.features.slice(0, 5)
+                ).map((feature) => (
+                  <div
+                    className="feature-row"
+                    key={feature}
+                  >
+                    <span className="feature-check">✓</span>
+                    <span>{feature}</span>
+                  </div>
+                ))}
+              </div>
+
+              {plan.features.length > 5 && (
+                <button
+                  className="feature-more"
+                  onClick={() =>
+                    setShowAllFeatures(!showAllFeatures)
+                  }
+                >
+                  {showAllFeatures
+                    ? "Show less"
+                    : "Show all features"}
+                </button>
+              )}
+
+              <button
+                className={[
+                  "plan-action",
+                  isCurrent ? "current-button" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                disabled={isCurrent}
+                onClick={() => handlePlanAction(plan.id)}
+              >
+                {isCurrent
+                  ? "Current plan"
+                  : getPlanRank(plan.id) >
+                    getPlanRank(currentPlan)
+                  ? `Upgrade to ${plan.name}`
+                  : `Switch to ${plan.name}`}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="billing-footer">
+        <div>
+          <strong>🤖 KORA is part of HEXA.</strong>
+          <span>
+            Your KORA allowance automatically increases
+            when you upgrade your HEXA plan.
+          </span>
+        </div>
+
+        <div className="billing-security">
+          🔒 Secure billing
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   KORA USAGE CARD
+   ========================================================= */
+
+export function KoraUsage({
+  plan = "free",
+  used = 120,
+}) {
+  const currentPlan = HEXA_PLANS[plan] || HEXA_PLANS.free;
+
+  const limit = currentPlan.kora.credits;
+
+  const percentage = Math.min(
+    100,
+    Math.round((used / limit) * 100)
+  );
+
+  const remaining = Math.max(0, limit - used);
+
+  return (
+    <div className="kora-usage-card">
+      <div className="kora-usage-header">
+        <div className="kora-brand">
+          <div className="kora-logo">K</div>
+
+          <div>
+            <strong>KORA</strong>
+            <span>AI usage</span>
+          </div>
+        </div>
+
+        <span className="kora-plan">
+          {currentPlan.name}
+        </span>
+      </div>
+
+      <div className="usage-number">
+        <strong>{used.toLocaleString()}</strong>
+        <span>
+          / {limit.toLocaleString()} credits
+        </span>
+      </div>
+
+      <div className="usage-bar">
+        <div
+          className="usage-progress"
+          style={{ width: `${percentage}%` }}
+        />
+      </div>
+
+      <div className="usage-bottom">
+        <span>{remaining.toLocaleString()} remaining</span>
+        <span>{percentage}% used</span>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   EXAMPLE BILLING PAGE
+   ========================================================= */
+
+export function SubscriptionPage() {
+  const [plan, setPlan] = useState("free");
+
+  const [notice, setNotice] = useState("");
+
+  const handleUpgrade = (newPlan) => {
+    setNotice(
+      `Upgrade selected: ${newPlan.name}. Payment checkout will open here.`
+    );
+
+    /*
+      IMPORTANT:
+
+      Do NOT simply change the user's plan here
+      in a production application.
+
+      Instead:
+
+      1. Create checkout session on your server.
+      2. Send user to payment provider.
+      3. Provider processes payment.
+      4. Webhook verifies payment.
+      5. Server updates Supabase subscription.
+      6. HEXA reads the verified entitlement.
+    */
+  };
+
+  const handleDowngrade = (newPlan) => {
+    setNotice(
+      `Your plan can be changed to ${newPlan.name} at the end of your current billing period.`
+    );
+  };
+
+  return (
+    <div className="subscription-page">
+      <HexaBilling
+        currentPlan={plan}
+        onUpgrade={handleUpgrade}
+        onDowngrade={handleDowngrade}
+      />
+
+      <div className="subscription-kora">
+        <div>
+          <div className="section-label">
+            YOUR KORA
+          </div>
+
+          <h2>KORA grows with your HEXA plan.</h2>
+
+          <p>
+            Every HEXA account receives KORA automatically.
+            Upgrade your HEXA plan to unlock higher KORA
+            limits.
+          </p>
+        </div>
+
+        <KoraUsage
+          plan={plan}
+          used={120}
+        />
+      </div>
+
+      {notice && (
+        <div className="billing-notice">
+          <span>✓</span>
+          {notice}
+          <button onClick={() => setNotice("")}>
+            ×
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

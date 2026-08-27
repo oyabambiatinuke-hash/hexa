@@ -1,4 +1,10 @@
 import { useState } from "react";
+import { createClient } from "@supabase/supabase-js";
+import Stripe from "stripe";
+
+const AI_SERVER =
+  import.meta.env.VITE_AI_SERVER_URL ||
+  "http://localhost:3001";
 
 function AI() {
   const [messages, setMessages] = useState([
@@ -11,7 +17,7 @@ function AI() {
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
 
-  const sendMessage = async () => {
+  async function sendMessage() {
     const question = input.trim();
 
     if (!question || thinking) return;
@@ -21,69 +27,117 @@ function AI() {
       text: question,
     };
 
-    setMessages((current) => [...current, userMessage]);
+    setMessages((current) => [
+      ...current,
+      userMessage,
+    ]);
+
     setInput("");
     setThinking(true);
 
     try {
-      const response = await fetch("http://localhost:3001/api/ai", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: question,
-        }),
-      });
+      const response = await fetch(
+        `${AI_SERVER}/api/ai`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: question,
+          }),
+        }
+      );
 
-      const data = await response.json();
+      let data;
+
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error(
+          `HEXA AI server returned invalid JSON (${response.status}).`
+        );
+      }
 
       if (!response.ok) {
-        throw new Error(data.error || "AI request failed");
+        throw new Error(
+          data?.error ||
+            `HEXA AI request failed (${response.status}).`
+        );
+      }
+
+      const reply =
+        data?.reply ||
+        data?.text ||
+        "HEXA AI returned an empty response.";
+
+      setMessages((current) => [
+        ...current,
+        {
+          role: "ai",
+          text: reply,
+        },
+      ]);
+    } catch (error) {
+      console.error("HEXA AI:", error);
+
+      let message =
+        "HEXA AI couldn't connect to the AI server.";
+
+      if (
+        error?.message?.includes("rate-limit")
+      ) {
+        message =
+          "OpenAI is temporarily busy. Please wait a moment and try again.";
+      } else if (
+        error?.message?.includes("401")
+      ) {
+        message =
+          "HEXA AI authentication failed. Check your OpenAI API key.";
+      } else if (
+        error?.message?.includes("Failed to fetch")
+      ) {
+        message =
+          "HEXA AI server is offline. Start the HEXA AI server on port 3001.";
+      } else if (error?.message) {
+        message = error.message;
       }
 
       setMessages((current) => [
         ...current,
         {
           role: "ai",
-          text: data.reply || "I couldn't generate a response.",
-        },
-      ]);
-    } catch (error) {
-      console.error(error);
-
-      setMessages((current) => [
-        ...current,
-        {
-          role: "ai",
-          text:
-            "Sorry, HEXA AI couldn't connect right now. Make sure your HEXA AI server is running.",
+          text: message,
         },
       ]);
     } finally {
       setThinking(false);
     }
-  };
+  }
 
-  const handleKeyDown = (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
+  function handleKeyDown(event) {
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey
+    ) {
       event.preventDefault();
       sendMessage();
     }
-  };
+  }
 
-  const clearChat = () => {
+  function clearChat() {
     setMessages([
       {
         role: "ai",
-        text: "Chat cleared. What would you like to work on?",
+        text:
+          "Chat cleared. What would you like to work on?",
       },
     ]);
-  };
+  }
 
-  const suggestion = (text) => {
+  function suggestion(text) {
     setInput(text);
-  };
+  }
 
   return (
     <div className="ai-page">
@@ -91,13 +145,17 @@ function AI() {
       <div className="ai-header">
 
         <div>
-          <p className="ai-label">HEXA AI</p>
+          <p className="ai-label">
+            HEXA AI
+          </p>
 
-          <h1>Your intelligent workspace.</h1>
+          <h1>
+            Your intelligent workspace.
+          </h1>
 
           <p className="ai-description">
-            Ask questions, write, learn, create and
-            explore with HEXA.
+            Ask questions, write, learn, create
+            and explore with HEXA AI.
           </p>
         </div>
 
@@ -161,7 +219,9 @@ function AI() {
 
         <button
           onClick={() =>
-            suggestion("Explain artificial intelligence simply")
+            suggestion(
+              "Explain artificial intelligence simply"
+            )
           }
         >
           🧠 Explain
@@ -169,7 +229,9 @@ function AI() {
 
         <button
           onClick={() =>
-            suggestion("Help me study this topic")
+            suggestion(
+              "Help me study this topic"
+            )
           }
         >
           📚 Study
@@ -177,7 +239,9 @@ function AI() {
 
         <button
           onClick={() =>
-            suggestion("Give me a creative idea")
+            suggestion(
+              "Give me a creative idea"
+            )
           }
         >
           💡 Ideas
@@ -185,7 +249,9 @@ function AI() {
 
         <button
           onClick={() =>
-            suggestion("Help me write a professional document")
+            suggestion(
+              "Help me write a professional document"
+            )
           }
         >
           ✍️ Write
@@ -202,14 +268,17 @@ function AI() {
           }
           onKeyDown={handleKeyDown}
           placeholder="Ask HEXA anything..."
-          rows="1"
+          rows={1}
           disabled={thinking}
         />
 
         <button
           className="ai-send"
           onClick={sendMessage}
-          disabled={thinking || !input.trim()}
+          disabled={
+            thinking ||
+            !input.trim()
+          }
         >
           {thinking ? "..." : "↑"}
         </button>
@@ -217,7 +286,7 @@ function AI() {
       </div>
 
       <p className="ai-disclaimer">
-        ✨ Powered by HEXA AI
+        ✨ Powered by OpenAI · HEXA AI
       </p>
 
     </div>
