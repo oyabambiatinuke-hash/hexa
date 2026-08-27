@@ -315,3 +315,8 @@ app.post(
       );
       return res.status(500).json({ error: "Internal Server Error" });
     }})
+    app.listen(PORT, "0.0.0.0", () => {
+  console.log(
+    `HEXA billing server running on port ${PORT}`
+  );
+});
