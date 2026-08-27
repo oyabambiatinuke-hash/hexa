@@ -3197,30 +3197,34 @@ function getPlanRank(plan) {
   return PLAN_ORDER.indexOf(plan);
 }
 
+
+/* =========================================================
+   BILLING API
+   ========================================================= */
+
+const HEXA_BILLING_API =
+  import.meta.env.VITE_BILLING_API_URL ||
+  "https://hexa-1-nu8m.onrender.com";
+
 /* =========================================================
    BILLING CENTER
    ========================================================= */
 
 export function HexaBilling({
   currentPlan = "free",
+  userId,
+  email,
   onUpgrade,
   onDowngrade,
 }) {
   const [billingCycle, setBillingCycle] = useState("monthly");
   const [selectedPlan, setSelectedPlan] = useState(currentPlan);
   const [showAllFeatures, setShowAllFeatures] = useState(false);
+  const [loadingPlan, setLoadingPlan] = useState(null);
+  const [error, setError] = useState("");
 
-  const current = HEXA_PLANS[currentPlan] || HEXA_PLANS.free;
-
-  const getPrice = (plan) => {
-    if (plan.price === 0) return 0;
-
-    if (billingCycle === "yearly") {
-      return Math.round(plan.price * 12 * 0.8 * 100) / 100;
-    }
-
-    return plan.price;
-  };
+  const current =
+    HEXA_PLANS[currentPlan] || HEXA_PLANS.free;
 
   const getMonthlyEquivalent = (plan) => {
     if (plan.price === 0) return 0;
@@ -3228,25 +3232,94 @@ export function HexaBilling({
     return Math.round(plan.price * 0.8 * 100) / 100;
   };
 
-  const handlePlanAction = (planId) => {
+  const handlePlanAction = async (planId) => {
     const selected = HEXA_PLANS[planId];
 
-    if (!selected) return;
-
-    if (planId === currentPlan) {
+    if (!selected || planId === currentPlan) {
       return;
     }
 
-    if (getPlanRank(planId) > getPlanRank(currentPlan)) {
-      setSelectedPlan(planId);
+    setError("");
+
+    if (
+      getPlanRank(planId) <
+      getPlanRank(currentPlan)
+    ) {
+      if (onDowngrade) {
+        onDowngrade(selected);
+      }
+
+      return;
+    }
+
+    if (!userId) {
+      setError(
+        "You must be signed in before upgrading HEXA."
+      );
+      return;
+    }
+
+    setSelectedPlan(planId);
+    setLoadingPlan(planId);
+
+    try {
+      const response = await fetch(
+        `${HEXA_BILLING_API}/api/stripe/create-checkout-session`,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type": "application/json",
+          },
+
+          body: JSON.stringify({
+            userId,
+            email,
+            plan: planId,
+            billingCycle,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            "Unable to create Stripe checkout session."
+        );
+      }
+
+      if (!data.url) {
+        throw new Error(
+          "Stripe checkout URL was not returned."
+        );
+      }
+
+      /*
+        Stripe Checkout is hosted by Stripe.
+
+        We redirect the customer there instead of
+        collecting card information inside HEXA.
+      */
+
+      window.location.href = data.url;
 
       if (onUpgrade) {
         onUpgrade(selected);
       }
-    } else {
-      if (onDowngrade) {
-        onDowngrade(selected);
-      }
+    } catch (err) {
+      console.error(
+        "HEXA checkout error:",
+        err
+      );
+
+      setError(
+        err?.message ||
+          "Unable to start checkout."
+      );
+
+      setLoadingPlan(null);
     }
   };
 
@@ -3261,48 +3334,86 @@ export function HexaBilling({
           <h1>Choose your HEXA plan</h1>
 
           <p>
-            Start free. Upgrade when you need more power.
-            KORA is included with every HEXA plan.
+            Start free. Upgrade when you need more
+            power. KORA is included with every HEXA plan.
           </p>
         </div>
 
         <div className="current-plan-pill">
           <span className="status-dot" />
-          Current plan: <strong>{current.name}</strong>
+
+          Current plan:
+          {" "}
+          <strong>{current.name}</strong>
         </div>
       </div>
 
       <div className="billing-toggle">
         <button
-          className={billingCycle === "monthly" ? "active" : ""}
-          onClick={() => setBillingCycle("monthly")}
+          className={
+            billingCycle === "monthly"
+              ? "active"
+              : ""
+          }
+          onClick={() =>
+            setBillingCycle("monthly")
+          }
         >
           Monthly
         </button>
 
         <button
-          className={billingCycle === "yearly" ? "active" : ""}
-          onClick={() => setBillingCycle("yearly")}
+          className={
+            billingCycle === "yearly"
+              ? "active"
+              : ""
+          }
+          onClick={() =>
+            setBillingCycle("yearly")
+          }
         >
           Yearly
-          <span className="save-badge">Save 20%</span>
+
+          <span className="save-badge">
+            Save 20%
+          </span>
         </button>
       </div>
+
+      {error && (
+        <div className="billing-error">
+          <span>⚠</span>
+
+          <span>{error}</span>
+
+          <button
+            onClick={() => setError("")}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       <div className="plan-grid">
         {PLAN_ORDER.map((planId) => {
           const plan = HEXA_PLANS[planId];
 
-          const isCurrent = planId === currentPlan;
+          const isCurrent =
+            planId === currentPlan;
 
-          const isSelected = planId === selectedPlan;
+          const isSelected =
+            planId === selectedPlan;
 
-          const isPopular = planId === "pro";
+          const isPopular =
+            planId === "pro";
 
           const price =
             billingCycle === "yearly"
               ? getMonthlyEquivalent(plan)
               : plan.price;
+
+          const isLoading =
+            loadingPlan === planId;
 
           return (
             <div
@@ -3342,30 +3453,47 @@ export function HexaBilling({
                 ) : (
                   <>
                     <span>$</span>
-                    <strong>{price.toFixed(2)}</strong>
+
+                    <strong>
+                      {price.toFixed(2)}
+                    </strong>
+
                     <small>/mo</small>
                   </>
                 )}
               </div>
 
-              {billingCycle === "yearly" && plan.price > 0 && (
-                <div className="yearly-note">
-                  Billed annually
-                </div>
-              )}
+              {billingCycle === "yearly" &&
+                plan.price > 0 && (
+                  <div className="yearly-note">
+                    Billed annually
+                  </div>
+                )}
 
               <div className="kora-box">
-                <div className="kora-orb">K</div>
+                <div className="kora-orb">
+                  K
+                </div>
 
                 <div>
-                  <strong>KORA included</strong>
-                  <span>{plan.kora.label}</span>
+                  <strong>
+                    KORA included
+                  </strong>
+
+                  <span>
+                    {plan.kora.label}
+                  </span>
                 </div>
               </div>
 
               <div className="storage-row">
-                <span>☁ Storage</span>
-                <strong>{plan.storage}</strong>
+                <span>
+                  ☁ Storage
+                </span>
+
+                <strong>
+                  {plan.storage}
+                </strong>
               </div>
 
               <div className="plan-features">
@@ -3377,7 +3505,10 @@ export function HexaBilling({
                     className="feature-row"
                     key={feature}
                   >
-                    <span className="feature-check">✓</span>
+                    <span className="feature-check">
+                      ✓
+                    </span>
+
                     <span>{feature}</span>
                   </div>
                 ))}
@@ -3387,7 +3518,9 @@ export function HexaBilling({
                 <button
                   className="feature-more"
                   onClick={() =>
-                    setShowAllFeatures(!showAllFeatures)
+                    setShowAllFeatures(
+                      !showAllFeatures
+                    )
                   }
                 >
                   {showAllFeatures
@@ -3399,16 +3532,25 @@ export function HexaBilling({
               <button
                 className={[
                   "plan-action",
-                  isCurrent ? "current-button" : "",
+                  isCurrent
+                    ? "current-button"
+                    : "",
                 ]
                   .filter(Boolean)
                   .join(" ")}
-                disabled={isCurrent}
-                onClick={() => handlePlanAction(plan.id)}
+                disabled={
+                  isCurrent ||
+                  Boolean(loadingPlan)
+                }
+                onClick={() =>
+                  handlePlanAction(plan.id)
+                }
               >
-                {isCurrent
+                {isLoading
+                  ? "Opening Stripe..."
+                  : isCurrent
                   ? "Current plan"
-                  : getPlanRank(plan.id) >
+                  : getPlanRank(planId) >
                     getPlanRank(currentPlan)
                   ? `Upgrade to ${plan.name}`
                   : `Switch to ${plan.name}`}
@@ -3420,20 +3562,112 @@ export function HexaBilling({
 
       <div className="billing-footer">
         <div>
-          <strong>🤖 KORA is part of HEXA.</strong>
+          <strong>
+            🤖 KORA is part of HEXA.
+          </strong>
+
           <span>
-            Your KORA allowance automatically increases
-            when you upgrade your HEXA plan.
+            Your KORA allowance automatically
+            increases when you upgrade.
           </span>
         </div>
 
         <div className="billing-security">
-          🔒 Secure billing
+          🔒 Secure Stripe billing
         </div>
       </div>
     </div>
   );
 }
+
+
+/* =========================================================
+   KORA USAGE CARD
+   ========================================================= */
+
+export function KoraUsage({
+  plan = "free",
+  used = 120,
+}) {
+  const currentPlan =
+    HEXA_PLANS[plan] ||
+    HEXA_PLANS.free;
+
+  const limit =
+    currentPlan.kora.credits;
+
+  const percentage =
+    Math.min(
+      100,
+      Math.round(
+        (used / limit) * 100
+      )
+    );
+
+  const remaining =
+    Math.max(
+      0,
+      limit - used
+    );
+
+  return (
+    <div className="kora-usage-card">
+      <div className="kora-usage-header">
+        <div className="kora-brand">
+          <div className="kora-logo">
+            K
+          </div>
+
+          <div>
+            <strong>KORA</strong>
+            <span>AI usage</span>
+          </div>
+        </div>
+
+        <span className="kora-plan">
+          {currentPlan.name}
+        </span>
+      </div>
+
+      <div className="usage-number">
+        <strong>
+          {used.toLocaleString()}
+        </strong>
+
+        <span>
+          {" "}
+          / {limit.toLocaleString()}
+          {" "}
+          credits
+        </span>
+      </div>
+
+      <div className="usage-bar">
+        <div
+          className="usage-progress"
+          style={{
+            width:
+              `${percentage}%`,
+          }}
+        />
+      </div>
+
+      <div className="usage-bottom">
+        <span>
+          {remaining.toLocaleString()}
+          {" "}
+          remaining
+        </span>
+
+        <span>
+          {percentage}% used
+        </span>
+      </div>
+    </div>
+  );
+}
+
+
 
 /* =========================================================
    KORA USAGE CARD
