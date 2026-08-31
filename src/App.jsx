@@ -347,18 +347,19 @@ function AuthScreen() {
     setGoogleLoading(true);
 
     try {
-      const redirectTo = window.location.origin;
 
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo,
-          queryParams: {
-            access_type: "offline",
-            prompt: "select_account",
-          },
-        },
-      });
+     const redirectTo = window.location.origin;
+
+await supabase.auth.signInWithOAuth({
+  provider: "google",
+  options: {
+    redirectTo,
+    queryParams: {
+      access_type: "offline",
+      prompt: "select_account",
+    },
+  },
+});
 
       if (error) throw error;
     } catch (err) {
