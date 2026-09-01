@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 /* =========================================================
@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
    ========================================================= */
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+
 const SUPABASE_KEY =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -17,6 +18,7 @@ export const supabase =
           persistSession: true,
           autoRefreshToken: true,
           detectSessionInUrl: true,
+          flowType: "pkce",
         },
       })
     : null;
@@ -31,7 +33,9 @@ const css = `
   box-sizing: border-box;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   margin: 0;
   min-height: 100%;
   width: 100%;
@@ -42,7 +46,9 @@ body {
     "Segoe UI", sans-serif;
 }
 
-button, input, textarea {
+button,
+input,
+textarea {
   font: inherit;
 }
 
@@ -85,6 +91,10 @@ function getAuthErrorMessage(error) {
     return "Too many attempts. Please wait a moment and try again.";
   }
 
+  if (message.includes("pkce")) {
+    return "The verification session could not be restored. Please open the verification link in the same browser and try again.";
+  }
+
   return error?.message || "Something went wrong. Please try again.";
 }
 
@@ -118,7 +128,8 @@ function makeUsername(name, email, id) {
     source
       .toLowerCase()
       .replace(/[^a-z0-9_]/g, "")
-      .slice(0, 18) || `hexa${id.slice(0, 8)}`;
+      .slice(0, 18) ||
+    `hexa${id?.slice(0, 8) || "user"}`;
 
   return base;
 }
@@ -145,7 +156,10 @@ async function ensureHexaProfile(user) {
     null;
 
   try {
-    const { data: existing, error } = await supabase
+    const {
+      data: existing,
+      error,
+    } = await supabase
       .from("profiles")
       .select("*")
       .eq("id", user.id)
@@ -174,12 +188,24 @@ async function ensureHexaProfile(user) {
       if (Object.keys(updates).length) {
         updates.updated_at = new Date().toISOString();
 
-        const { data } = await supabase
+        const {
+          data,
+          error: updateError,
+        } = await supabase
           .from("profiles")
           .update(updates)
           .eq("id", user.id)
           .select()
           .maybeSingle();
+
+        if (updateError) {
+          console.error(
+            "Profile update error:",
+            updateError
+          );
+
+          return existing;
+        }
 
         return data || existing;
       }
@@ -193,7 +219,10 @@ async function ensureHexaProfile(user) {
       user.id
     );
 
-    const { data, error: insertError } = await supabase
+    const {
+      data,
+      error: insertError,
+    } = await supabase
       .from("profiles")
       .insert({
         id: user.id,
@@ -205,45 +234,62 @@ async function ensureHexaProfile(user) {
       .select()
       .single();
 
-    if (insertError) {
-      /*
-       * Username may already exist.
-       * Try again with a unique suffix.
-       */
-      if (
-        String(insertError.message || "")
-          .toLowerCase()
-          .includes("username")
-      ) {
-        const fallbackUsername =
-          `${username}${Math.floor(Math.random() * 9999)}`;
-
-        const { data: retryData } = await supabase
-          .from("profiles")
-          .insert({
-            id: user.id,
-            email: user.email || null,
-            username: fallbackUsername,
-            full_name: fullName,
-            avatar_url: avatarUrl,
-          })
-          .select()
-          .single();
-
-        return retryData || null;
-      }
-
-      console.error(
-        "Profile creation error:",
-        insertError
-      );
-
-      return null;
+    if (!insertError) {
+      return data;
     }
 
-    return data;
+    /*
+     * Username collision fallback.
+     */
+    if (
+      String(insertError.message || "")
+        .toLowerCase()
+        .includes("username")
+    ) {
+      const fallbackUsername =
+        `${username}_${Math.floor(
+          Math.random() * 999999
+        )}`;
+
+      const {
+        data: retryData,
+        error: retryError,
+      } = await supabase
+        .from("profiles")
+        .insert({
+          id: user.id,
+          email: user.email || null,
+          username: fallbackUsername,
+          full_name: fullName,
+          avatar_url: avatarUrl,
+        })
+        .select()
+        .single();
+
+      if (retryError) {
+        console.error(
+          "Profile retry failed:",
+          retryError
+        );
+
+        return null;
+      }
+
+      return retryData;
+    }
+
+    console.error(
+      "Profile creation error:",
+      insertError
+    );
+
+    return null;
   } catch (error) {
-    console.error("Profile initialization failed:", error);
+    console.error(
+      "Profile initialization failed:",
+      error
+    );
+
     return null;
   }
 }
@@ -271,7 +317,8 @@ VITE_SUPABASE_PUBLISHABLE_KEY=your_publishable_key`}
         </pre>
 
         <p style={styles.smallMuted}>
-          Restart Vite after changing your environment variables.
+          Restart Vite after changing your environment
+          variables.
         </p>
       </div>
     </div>
@@ -334,6 +381,10 @@ function AuthScreen() {
   }
 
 
+  /* ---------------------------------------------------------
+     SIGN IN
+     --------------------------------------------------------- */
+
   async function handleSignIn(event) {
     event.preventDefault();
 
@@ -347,21 +398,23 @@ function AuthScreen() {
     setLoading(true);
 
     try {
-      const { data, error } =
-        await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
+      const {
+        data,
+        error,
+      } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
       if (error) throw error;
 
       /*
-       * App's auth listener receives the session.
-       * The user is then taken directly into HEXA.
+       * The global Supabase auth listener in App()
+       * receives this session and opens HEXA.
        */
 
-      if (data?.session?.user) {
-        await ensureHexaProfile(data.session.user);
+      if (data?.user) {
+        await ensureHexaProfile(data.user);
       }
     } catch (error) {
       setError(getAuthErrorMessage(error));
@@ -370,6 +423,10 @@ function AuthScreen() {
     }
   }
 
+
+  /* ---------------------------------------------------------
+     SIGN UP
+     --------------------------------------------------------- */
 
   async function handleSignUp(event) {
     event.preventDefault();
@@ -387,7 +444,10 @@ function AuthScreen() {
     }
 
     if (password.length < 8) {
-      setError("Your password must contain at least 8 characters.");
+      setError(
+        "Your password must contain at least 8 characters."
+      );
+
       return;
     }
 
@@ -399,34 +459,47 @@ function AuthScreen() {
     setLoading(true);
 
     try {
-      const { data, error } =
-        await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-          options: {
-            data: {
-              full_name: fullName.trim(),
-            },
+      /*
+       * IMPORTANT:
+       *
+       * The emailRedirectTo tells Supabase exactly where
+       * the verification link should return the user.
+       *
+       * After verification, Supabase restores the session
+       * and the App auth listener opens HEXA.
+       */
+
+      const {
+        data,
+        error,
+      } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: {
+          data: {
+            full_name: fullName.trim(),
           },
-        });
+
+          emailRedirectTo:
+            window.location.origin,
+        },
+      });
 
       if (error) throw error;
 
       /*
-       * IMPORTANT:
+       * If email confirmation is enabled:
        *
-       * When email confirmation is enabled,
-       * Supabase normally returns no active session.
+       * session === null
        *
-       * The user must verify their email first.
+       * The user must verify their email.
        */
 
       if (!data?.session) {
         setMessage(
-          "Account created successfully. Check your email and verify your HEXA account. After verification, return here and sign in."
+          "Account created successfully. Check your email and verify your HEXA account. After verification, HEXA will open automatically."
         );
 
-        setMode("signin");
         setPassword("");
         setConfirmPassword("");
 
@@ -435,10 +508,12 @@ function AuthScreen() {
 
       /*
        * If email confirmation is disabled,
-       * immediately create the profile and enter HEXA.
+       * Supabase gives us an active session immediately.
        */
 
-      await ensureHexaProfile(data.user);
+      if (data.user) {
+        await ensureHexaProfile(data.user);
+      }
     } catch (error) {
       setError(getAuthErrorMessage(error));
     } finally {
@@ -447,23 +522,30 @@ function AuthScreen() {
   }
 
 
+  /* ---------------------------------------------------------
+     GOOGLE
+     --------------------------------------------------------- */
+
   async function handleGoogle() {
     clearMessages();
 
     setGoogleLoading(true);
 
     try {
-      const { error } =
-        await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo: window.location.origin,
-            queryParams: {
-              access_type: "offline",
-              prompt: "select_account",
-            },
+      const {
+        error,
+      } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+
+        options: {
+          redirectTo: window.location.origin,
+
+          queryParams: {
+            access_type: "offline",
+            prompt: "select_account",
           },
-        });
+        },
+      });
 
       if (error) throw error;
     } catch (error) {
@@ -472,6 +554,10 @@ function AuthScreen() {
     }
   }
 
+
+  /* ---------------------------------------------------------
+     FORGOT PASSWORD
+     --------------------------------------------------------- */
 
   async function handleForgotPassword() {
     clearMessages();
@@ -484,13 +570,15 @@ function AuthScreen() {
     setLoading(true);
 
     try {
-      const { error } =
-        await supabase.auth.resetPasswordForEmail(
-          email.trim(),
-          {
-            redirectTo: `${window.location.origin}/reset-password`,
-          }
-        );
+      const {
+        error,
+      } = await supabase.auth.resetPasswordForEmail(
+        email.trim(),
+        {
+          redirectTo:
+            `${window.location.origin}/reset-password`,
+        }
+      );
 
       if (error) throw error;
 
@@ -510,7 +598,9 @@ function AuthScreen() {
       <div style={styles.authCard}>
 
         <div style={styles.authBrand}>
-          <div style={styles.logo}>HEXA</div>
+          <div style={styles.logo}>
+            HEXA
+          </div>
 
           <div style={styles.tagline}>
             Communication without limits.
@@ -553,10 +643,16 @@ function AuthScreen() {
 
         <button
           onClick={handleGoogle}
-          disabled={googleLoading || loading}
+          disabled={
+            googleLoading ||
+            loading
+          }
           style={styles.googleButton}
         >
-          <span style={{ fontWeight: 900 }}>G</span>
+          <span style={{ fontWeight: 900 }}>
+            G
+          </span>
+
           {googleLoading
             ? "Connecting..."
             : "Continue with Google"}
@@ -577,6 +673,7 @@ function AuthScreen() {
               : handleSignUp
           }
         >
+
           {mode === "signup" && (
             <AuthField
               label="Full name"
@@ -587,6 +684,7 @@ function AuthScreen() {
             />
           )}
 
+
           <AuthField
             label="Email"
             type="email"
@@ -595,6 +693,7 @@ function AuthScreen() {
             placeholder="you@example.com"
             autoComplete="email"
           />
+
 
           <AuthField
             label="Password"
@@ -609,23 +708,28 @@ function AuthScreen() {
             }
           />
 
-          {mode === "signup" && password && (
-            <div
-              style={{
-                fontSize: 12,
-                marginTop: -6,
-                marginBottom: 14,
-                color:
-                  strength.label === "Strong"
-                    ? "#67e8a5"
-                    : strength.label === "Good"
-                    ? "#facc15"
-                    : "#fb7185",
-              }}
-            >
-              Password strength: {strength.label}
-            </div>
-          )}
+
+          {mode === "signup" &&
+            password && (
+              <div
+                style={{
+                  fontSize: 12,
+                  marginTop: -6,
+                  marginBottom: 14,
+
+                  color:
+                    strength.label === "Strong"
+                      ? "#67e8a5"
+                      : strength.label === "Good"
+                      ? "#facc15"
+                      : "#fb7185",
+                }}
+              >
+                Password strength:{" "}
+                {strength.label}
+              </div>
+            )}
+
 
           {mode === "signup" && (
             <AuthField
@@ -637,6 +741,7 @@ function AuthScreen() {
               autoComplete="new-password"
             />
           )}
+
 
           {mode === "signin" && (
             <button
@@ -655,6 +760,7 @@ function AuthScreen() {
             </div>
           )}
 
+
           {message && (
             <div style={styles.successBox}>
               {message}
@@ -664,7 +770,10 @@ function AuthScreen() {
 
           <button
             type="submit"
-            disabled={loading || googleLoading}
+            disabled={
+              loading ||
+              googleLoading
+            }
             style={styles.primaryButton}
           >
             {loading
@@ -677,9 +786,10 @@ function AuthScreen() {
 
 
         <div style={styles.authFooter}>
-          Your account, profile and HEXA identity are securely
-          connected to your Supabase account.
+          Your account, profile and HEXA identity are
+          securely connected to your Supabase account.
         </div>
+
       </div>
     </div>
   );
@@ -696,7 +806,8 @@ function Avatar({
   size = 48,
 }) {
   const initial =
-    name?.trim()?.charAt(0)?.toUpperCase() || "U";
+    name?.trim()?.charAt(0)?.toUpperCase() ||
+    "U";
 
   if (src) {
     return (
@@ -727,7 +838,10 @@ function Avatar({
           "linear-gradient(135deg,#ffffff,#9298a5)",
         color: "#090a0e",
         fontWeight: 900,
-        fontSize: Math.max(13, size * 0.38),
+        fontSize: Math.max(
+          13,
+          size * 0.38
+        ),
       }}
     >
       {initial}
@@ -740,31 +854,54 @@ function Avatar({
    HEXA WORKSPACE
    ========================================================= */
 
-function AuthenticatedHEXA({ session }) {
+function AuthenticatedHEXA({
+  session,
+}) {
   const user = session.user;
 
-  const [profile, setProfile] = useState(null);
-  const [page, setPage] = useState("chat");
-  const [theme, setTheme] = useState(
-    localStorage.getItem("hexa-theme") || "dark"
-  );
-
-  const [mobileSidebar, setMobileSidebar] = useState(false);
-
-  const [conversations, setConversations] = useState([]);
-  const [activeConversation, setActiveConversation] =
+  const [profile, setProfile] =
     useState(null);
 
-  const [messages, setMessages] = useState([]);
-  const [messageText, setMessageText] = useState("");
+  const [page, setPage] =
+    useState("chat");
 
-  const [search, setSearch] = useState("");
-  const [people, setPeople] = useState([]);
+  const [theme, setTheme] =
+    useState(
+      localStorage.getItem(
+        "hexa-theme"
+      ) || "dark"
+    );
 
-  const [loadingWorkspace, setLoadingWorkspace] =
-    useState(true);
+  const [mobileSidebar, setMobileSidebar] =
+    useState(false);
 
-  const [sending, setSending] = useState(false);
+  const [conversations, setConversations] =
+    useState([]);
+
+  const [
+    activeConversation,
+    setActiveConversation,
+  ] = useState(null);
+
+  const [messages, setMessages] =
+    useState([]);
+
+  const [messageText, setMessageText] =
+    useState("");
+
+  const [search, setSearch] =
+    useState("");
+
+  const [people, setPeople] =
+    useState([]);
+
+  const [
+    loadingWorkspace,
+    setLoadingWorkspace,
+  ] = useState(true);
+
+  const [sending, setSending] =
+    useState(false);
 
 
   /* ---------------------------------------------------------
@@ -775,7 +912,8 @@ function AuthenticatedHEXA({ session }) {
     let alive = true;
 
     async function loadProfile() {
-      const p = await ensureHexaProfile(user);
+      const p =
+        await ensureHexaProfile(user);
 
       if (alive) {
         setProfile(p);
@@ -796,7 +934,10 @@ function AuthenticatedHEXA({ session }) {
      --------------------------------------------------------- */
 
   useEffect(() => {
-    localStorage.setItem("hexa-theme", theme);
+    localStorage.setItem(
+      "hexa-theme",
+      theme
+    );
   }, [theme]);
 
 
@@ -805,32 +946,42 @@ function AuthenticatedHEXA({ session }) {
      --------------------------------------------------------- */
 
   useEffect(() => {
-    if (!supabase || !user?.id) return;
+    if (
+      !supabase ||
+      !user?.id
+    ) {
+      return;
+    }
 
     let alive = true;
 
     async function loadConversations() {
-      const { data: memberships, error } =
-        await supabase
-          .from("conversation_members")
-          .select(`
-            conversation_id,
-            is_admin,
-            conversations (
-              id,
-              type,
-              name,
-              avatar_url,
-              theme,
-              owner_id,
-              created_by,
-              created_at,
-              updated_at,
-              user_a,
-              user_b
-            )
-          `)
-          .eq("user_id", user.id);
+      const {
+        data: memberships,
+        error,
+      } = await supabase
+        .from("conversation_members")
+        .select(`
+          conversation_id,
+          is_admin,
+          conversations (
+            id,
+            type,
+            name,
+            avatar_url,
+            theme,
+            owner_id,
+            created_by,
+            created_at,
+            updated_at,
+            user_a,
+            user_b
+          )
+        `)
+        .eq(
+          "user_id",
+          user.id
+        );
 
       if (error) {
         console.error(
@@ -838,34 +989,41 @@ function AuthenticatedHEXA({ session }) {
           error
         );
 
-        if (alive) setConversations([]);
+        if (alive) {
+          setConversations([]);
+        }
 
         return;
       }
 
       const rows =
         memberships
-          ?.map((item) => item.conversations)
+          ?.map(
+            (item) =>
+              item.conversations
+          )
           .filter(Boolean) || [];
 
       if (alive) {
         setConversations(rows);
 
-        /*
-         * THE HEXA GROUP is always the preferred first
-         * conversation when it exists.
-         */
-
-        const systemGroup = rows.find(
-          (conversation) =>
-            conversation.name === "THE HEXA GROUP" &&
-            conversation.type === "system_group"
-        );
+        const systemGroup =
+          rows.find(
+            (conversation) =>
+              conversation.name ===
+                "THE HEXA GROUP" &&
+              conversation.type ===
+                "system_group"
+          );
 
         if (systemGroup) {
-          setActiveConversation(systemGroup);
+          setActiveConversation(
+            systemGroup
+          );
         } else if (rows.length) {
-          setActiveConversation(rows[0]);
+          setActiveConversation(
+            rows[0]
+          );
         }
       }
     }
@@ -883,7 +1041,10 @@ function AuthenticatedHEXA({ session }) {
      --------------------------------------------------------- */
 
   useEffect(() => {
-    if (!supabase || !activeConversation?.id) {
+    if (
+      !supabase ||
+      !activeConversation?.id
+    ) {
       setMessages([]);
       return;
     }
@@ -891,17 +1052,26 @@ function AuthenticatedHEXA({ session }) {
     let alive = true;
 
     async function loadMessages() {
-      const { data, error } = await supabase
+      const {
+        data,
+        error,
+      } = await supabase
         .from("messages")
         .select("*")
         .eq(
           "conversation_id",
           activeConversation.id
         )
-        .is("deleted_at", null)
-        .order("created_at", {
-          ascending: true,
-        });
+        .is(
+          "deleted_at",
+          null
+        )
+        .order(
+          "created_at",
+          {
+            ascending: true,
+          }
+        );
 
       if (error) {
         console.error(
@@ -913,70 +1083,87 @@ function AuthenticatedHEXA({ session }) {
       }
 
       if (alive) {
-        setMessages(data || []);
+        setMessages(
+          data || []
+        );
       }
     }
 
     loadMessages();
 
+
     /*
-     * REALTIME MESSAGING
+     * REALTIME MESSAGES
      */
 
-    const channel = supabase
-      .channel(
-        `hexa-messages-${activeConversation.id}`
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter:
-            `conversation_id=eq.${activeConversation.id}`,
-        },
-        (payload) => {
-          setMessages((current) => {
-            if (
-              current.some(
-                (message) =>
-                  message.id === payload.new.id
-              )
-            ) {
-              return current;
-            }
+    const channel =
+      supabase
+        .channel(
+          `hexa-messages-${activeConversation.id}`
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "messages",
+            filter:
+              `conversation_id=eq.${activeConversation.id}`,
+          },
+          (payload) => {
+            setMessages(
+              (current) => {
+                if (
+                  current.some(
+                    (message) =>
+                      message.id ===
+                      payload.new.id
+                  )
+                ) {
+                  return current;
+                }
 
-            return [...current, payload.new];
-          });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "messages",
-          filter:
-            `conversation_id=eq.${activeConversation.id}`,
-        },
-        (payload) => {
-          setMessages((current) =>
-            current.map((message) =>
-              message.id === payload.new.id
-                ? payload.new
-                : message
-            )
-          );
-        }
-      )
-      .subscribe();
+                return [
+                  ...current,
+                  payload.new,
+                ];
+              }
+            );
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "messages",
+            filter:
+              `conversation_id=eq.${activeConversation.id}`,
+          },
+          (payload) => {
+            setMessages(
+              (current) =>
+                current.map(
+                  (message) =>
+                    message.id ===
+                    payload.new.id
+                      ? payload.new
+                      : message
+                )
+            );
+          }
+        )
+        .subscribe();
 
     return () => {
       alive = false;
-      supabase.removeChannel(channel);
+      supabase.removeChannel(
+        channel
+      );
     };
-  }, [activeConversation?.id]);
+  }, [
+    activeConversation?.id,
+  ]);
 
 
   /* ---------------------------------------------------------
@@ -984,32 +1171,52 @@ function AuthenticatedHEXA({ session }) {
      --------------------------------------------------------- */
 
   useEffect(() => {
-    if (!supabase || !search.trim()) {
+    if (
+      !supabase ||
+      !search.trim()
+    ) {
       setPeople([]);
       return;
     }
 
-    const timer = setTimeout(async () => {
-      const term = search.trim();
+    const timer =
+      setTimeout(
+        async () => {
+          const term =
+            search.trim();
 
-      const { data, error } = await supabase
-        .from("profiles")
-        .select(
-          "id,username,full_name,avatar_url,email"
-        )
-        .or(
-          `username.ilike.%${term}%,full_name.ilike.%${term}%`
-        )
-        .neq("id", user.id)
-        .limit(20);
+          const {
+            data,
+            error,
+          } = await supabase
+            .from("profiles")
+            .select(
+              "id,username,full_name,avatar_url,email"
+            )
+            .or(
+              `username.ilike.%${term}%,full_name.ilike.%${term}%`
+            )
+            .neq(
+              "id",
+              user.id
+            )
+            .limit(20);
 
-      if (!error) {
-        setPeople(data || []);
-      }
-    }, 300);
+          if (!error) {
+            setPeople(
+              data || []
+            );
+          }
+        },
+        300
+      );
 
-    return () => clearTimeout(timer);
-  }, [search, user.id]);
+    return () =>
+      clearTimeout(timer);
+  }, [
+    search,
+    user.id,
+  ]);
 
 
   /* ---------------------------------------------------------
@@ -1017,22 +1224,27 @@ function AuthenticatedHEXA({ session }) {
      --------------------------------------------------------- */
 
   async function sendMessage() {
-    const text = messageText.trim();
+    const text =
+      messageText.trim();
 
-    if (!text || !activeConversation || sending) {
+    if (
+      !text ||
+      !activeConversation ||
+      sending
+    ) {
       return;
     }
 
     /*
-     * THE HEXA GROUP:
-     *
-     * Only the account owner/admin configured as owner_id
-     * is allowed to publish.
+     * THE HEXA GROUP is read-only for
+     * ordinary members.
      */
 
     if (
-      activeConversation.type === "system_group" &&
-      activeConversation.owner_id !== user.id
+      activeConversation.type ===
+        "system_group" &&
+      activeConversation.owner_id !==
+        user.id
     ) {
       setMessageText("");
       return;
@@ -1041,13 +1253,16 @@ function AuthenticatedHEXA({ session }) {
     setSending(true);
 
     try {
-      let receiverId = user.id;
+      let receiverId =
+        user.id;
 
       if (
-        activeConversation.type === "direct"
+        activeConversation.type ===
+        "direct"
       ) {
         receiverId =
-          activeConversation.user_a === user.id
+          activeConversation.user_a ===
+          user.id
             ? activeConversation.user_b
             : activeConversation.user_a;
       }
@@ -1057,37 +1272,58 @@ function AuthenticatedHEXA({ session }) {
           .toString(36)
           .slice(2)}`;
 
-      const { data, error } =
-        await supabase
-          .from("messages")
-          .insert({
-            sender_id: user.id,
-            receiver_id: receiverId,
-            content: text,
-            conversation_id:
-              activeConversation.id,
-            client_message_id:
-              clientMessageId,
-            message_type: "text",
-            status: "sent",
-            metadata: {},
-          })
-          .select()
-          .single();
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("messages")
+        .insert({
+          sender_id:
+            user.id,
+
+          receiver_id:
+            receiverId,
+
+          content:
+            text,
+
+          conversation_id:
+            activeConversation.id,
+
+          client_message_id:
+            clientMessageId,
+
+          message_type:
+            "text",
+
+          status:
+            "sent",
+
+          metadata: {},
+        })
+        .select()
+        .single();
 
       if (error) throw error;
 
-      setMessages((current) => {
-        if (
-          current.some(
-            (message) => message.id === data.id
-          )
-        ) {
-          return current;
-        }
+      setMessages(
+        (current) => {
+          if (
+            current.some(
+              (message) =>
+                message.id ===
+                data.id
+            )
+          ) {
+            return current;
+          }
 
-        return [...current, data];
-      });
+          return [
+            ...current,
+            data,
+          ];
+        }
+      );
 
       setMessageText("");
     } catch (error) {
@@ -1108,75 +1344,122 @@ function AuthenticatedHEXA({ session }) {
   async function openPerson(person) {
     if (!person?.id) return;
 
-    /*
-     * Search only returns users who have a HEXA profile.
-     */
+    const existing =
+      conversations.find(
+        (conversation) =>
+          conversation.type ===
+            "direct" &&
 
-    const existing = conversations.find(
-      (conversation) =>
-        conversation.type === "direct" &&
-        (
-          conversation.user_a === person.id ||
-          conversation.user_b === person.id
-        ) &&
-        (
-          conversation.user_a === user.id ||
-          conversation.user_b === user.id
-        )
-    );
+          (
+            conversation.user_a ===
+              person.id ||
+            conversation.user_b ===
+              person.id
+          ) &&
+
+          (
+            conversation.user_a ===
+              user.id ||
+            conversation.user_b ===
+              user.id
+          )
+      );
 
     if (existing) {
-      setActiveConversation(existing);
+      setActiveConversation(
+        existing
+      );
+
       setPage("chat");
       setSearch("");
+
       return;
     }
 
-    const { data: conversation, error } =
-      await supabase
-        .from("conversations")
-        .insert({
-          type: "direct",
-          created_by: user.id,
-          owner_id: user.id,
-          user_a: user.id,
-          user_b: person.id,
-          name: person.full_name ||
-            person.username ||
-            "Chat",
-        })
-        .select()
-        .single();
+
+    const {
+      data: conversation,
+      error,
+    } = await supabase
+      .from("conversations")
+      .insert({
+        type: "direct",
+        created_by:
+          user.id,
+        owner_id:
+          user.id,
+        user_a:
+          user.id,
+        user_b:
+          person.id,
+        name:
+          person.full_name ||
+          person.username ||
+          "Chat",
+      })
+      .select()
+      .single();
 
     if (error) {
       console.error(
         "Unable to create chat:",
         error
       );
+
       return;
     }
 
-    await supabase
-      .from("conversation_members")
+
+    const {
+      error:
+        membersError,
+    } = await supabase
+      .from(
+        "conversation_members"
+      )
       .upsert([
         {
-          conversation_id: conversation.id,
-          user_id: user.id,
-          is_admin: true,
+          conversation_id:
+            conversation.id,
+
+          user_id:
+            user.id,
+
+          is_admin:
+            true,
         },
+
         {
-          conversation_id: conversation.id,
-          user_id: person.id,
-          is_admin: false,
+          conversation_id:
+            conversation.id,
+
+          user_id:
+            person.id,
+
+          is_admin:
+            false,
         },
       ]);
 
-    setConversations((current) => [
-      conversation,
-      ...current,
-    ]);
+    if (membersError) {
+      console.error(
+        "Unable to create chat members:",
+        membersError
+      );
+    }
 
-    setActiveConversation(conversation);
+
+    setConversations(
+      (current) => [
+        conversation,
+        ...current,
+      ]
+    );
+
+    setActiveConversation(
+      conversation
+    );
+
     setSearch("");
     setPage("chat");
   }
@@ -1192,12 +1475,16 @@ function AuthenticatedHEXA({ session }) {
 
 
   const isSystemGroup =
-    activeConversation?.type === "system_group" &&
-    activeConversation?.name === "THE HEXA GROUP";
+    activeConversation?.type ===
+      "system_group" &&
+    activeConversation?.name ===
+      "THE HEXA GROUP";
+
 
   const canSend =
     !isSystemGroup ||
-    activeConversation?.owner_id === user.id;
+    activeConversation?.owner_id ===
+      user.id;
 
 
   const displayName =
@@ -1210,7 +1497,10 @@ function AuthenticatedHEXA({ session }) {
   if (loadingWorkspace) {
     return (
       <div style={styles.loadingScreen}>
-        <div style={styles.logo}>HEXA</div>
+        <div style={styles.logo}>
+          HEXA
+        </div>
+
         <div style={styles.smallMuted}>
           Opening your workspace...
         </div>
@@ -1224,10 +1514,12 @@ function AuthenticatedHEXA({ session }) {
       className={`hexa-app theme-${theme}`}
       style={{
         ...styles.app,
+
         background:
           theme === "light"
             ? "#f4f5f7"
             : "#07080c",
+
         color:
           theme === "light"
             ? "#101114"
@@ -1235,7 +1527,9 @@ function AuthenticatedHEXA({ session }) {
       }}
     >
 
-      <style>{css}</style>
+      <style>
+        {css}
+      </style>
 
 
       {/* =====================================================
@@ -1245,14 +1539,17 @@ function AuthenticatedHEXA({ session }) {
       <aside
         style={{
           ...styles.sidebar,
+
           background:
             theme === "light"
               ? "#fff"
               : "#0d0f14",
+
           borderRight:
             theme === "light"
               ? "1px solid #e4e6eb"
               : "1px solid #20232c",
+
           transform:
             mobileSidebar
               ? "translateX(0)"
@@ -1290,7 +1587,11 @@ function AuthenticatedHEXA({ session }) {
             size={44}
           />
 
-          <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              minWidth: 0,
+            }}
+          >
             <div style={styles.profileName}>
               {displayName}
             </div>
@@ -1316,24 +1617,27 @@ function AuthenticatedHEXA({ session }) {
           ["channels", "📢", "Channels"],
           ["calls", "☎", "Calls"],
           ["kora", "✦", "Kora"],
-        ].map(([id, icon, label]) => (
-          <button
-            key={id}
-            onClick={() => {
-              setPage(id);
-              setMobileSidebar(false);
-            }}
-            style={{
-              ...styles.navButton,
-              ...(page === id
-                ? styles.navButtonActive
-                : {}),
-            }}
-          >
-            <span>{icon}</span>
-            <span>{label}</span>
-          </button>
-        ))}
+        ].map(
+          ([id, icon, label]) => (
+            <button
+              key={id}
+              onClick={() => {
+                setPage(id);
+                setMobileSidebar(false);
+              }}
+              style={{
+                ...styles.navButton,
+
+                ...(page === id
+                  ? styles.navButtonActive
+                  : {}),
+              }}
+            >
+              <span>{icon}</span>
+              <span>{label}</span>
+            </button>
+          )
+        )}
 
 
         <div style={{ flex: 1 }} />
@@ -1356,7 +1660,9 @@ function AuthenticatedHEXA({ session }) {
           style={styles.navButton}
         >
           <span>
-            {theme === "dark" ? "☀️" : "🌙"}
+            {theme === "dark"
+              ? "☀️"
+              : "🌙"}
           </span>
 
           <span>
@@ -1391,10 +1697,12 @@ function AuthenticatedHEXA({ session }) {
         <header
           style={{
             ...styles.header,
+
             background:
               theme === "light"
                 ? "rgba(255,255,255,.9)"
                 : "rgba(7,8,12,.9)",
+
             borderBottom:
               theme === "light"
                 ? "1px solid #e4e6eb"
@@ -1414,7 +1722,11 @@ function AuthenticatedHEXA({ session }) {
           </button>
 
 
-          <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              minWidth: 0,
+            }}
+          >
             <div style={styles.headerTitle}>
               {page === "chat"
                 ? "Chat"
@@ -1443,7 +1755,9 @@ function AuthenticatedHEXA({ session }) {
             <input
               value={search}
               onChange={(e) =>
-                setSearch(e.target.value)
+                setSearch(
+                  e.target.value
+                )
               }
               placeholder="Search people on HEXA"
               style={styles.searchInput}
@@ -1465,42 +1779,61 @@ function AuthenticatedHEXA({ session }) {
                 No HEXA users found.
               </div>
             ) : (
-              people.map((person) => (
-                <button
-                  key={person.id}
-                  onClick={() =>
-                    openPerson(person)
-                  }
-                  style={styles.personResult}
-                >
-                  <Avatar
-                    src={person.avatar_url}
-                    name={
-                      person.full_name ||
-                      person.username
+              people.map(
+                (person) => (
+                  <button
+                    key={person.id}
+                    onClick={() =>
+                      openPerson(
+                        person
+                      )
                     }
-                    size={42}
-                  />
+                    style={styles.personResult}
+                  >
+                    <Avatar
+                      src={
+                        person.avatar_url
+                      }
+                      name={
+                        person.full_name ||
+                        person.username
+                      }
+                      size={42}
+                    />
 
-                  <div style={{ textAlign: "left" }}>
-                    <div style={styles.personName}>
-                      {person.full_name ||
-                        person.username}
-                    </div>
+                    <div
+                      style={{
+                        textAlign:
+                          "left",
+                      }}
+                    >
+                      <div
+                        style={
+                          styles.personName
+                        }
+                      >
+                        {person.full_name ||
+                          person.username}
+                      </div>
 
-                    <div style={styles.personUsername}>
-                      @{person.username}
+                      <div
+                        style={
+                          styles.personUsername
+                        }
+                      >
+                        @{person.username}
+                      </div>
                     </div>
-                  </div>
-                </button>
-              ))
+                  </button>
+                )
+              )
             )}
           </div>
         )}
 
 
         {/* ===================================================
-            CONTENT
+            CHAT
             =================================================== */}
 
         {page === "chat" && (
@@ -1511,16 +1844,19 @@ function AuthenticatedHEXA({ session }) {
             <section
               style={{
                 ...styles.chatList,
+
                 background:
                   theme === "light"
                     ? "#fff"
                     : "#0b0d12",
+
                 borderRight:
                   theme === "light"
                     ? "1px solid #e4e6eb"
                     : "1px solid #20232c",
               }}
             >
+
               <div style={styles.sectionHeader}>
                 <div>
                   <div style={styles.sectionTitle}>
@@ -1543,17 +1879,25 @@ function AuthenticatedHEXA({ session }) {
 
               {conversations.length === 0 ? (
                 <div style={styles.empty}>
-                  <div style={{ fontSize: 34 }}>
+                  <div
+                    style={{
+                      fontSize: 34,
+                    }}
+                  >
                     💬
                   </div>
 
-                  <div style={{ marginTop: 10 }}>
+                  <div
+                    style={{
+                      marginTop: 10,
+                    }}
+                  >
                     No chats yet
                   </div>
 
                   <div style={styles.smallMuted}>
-                    Search for a HEXA user to start
-                    messaging.
+                    Search for a HEXA user
+                    to start messaging.
                   </div>
                 </div>
               ) : (
@@ -1573,6 +1917,7 @@ function AuthenticatedHEXA({ session }) {
                         }
                         style={{
                           ...styles.chatRow,
+
                           ...(selected
                             ? styles.chatRowActive
                             : {}),
@@ -1593,7 +1938,8 @@ function AuthenticatedHEXA({ session }) {
                           style={{
                             minWidth: 0,
                             flex: 1,
-                            textAlign: "left",
+                            textAlign:
+                              "left",
                           }}
                         >
                           <div
@@ -1630,7 +1976,11 @@ function AuthenticatedHEXA({ session }) {
 
               {!activeConversation ? (
                 <div style={styles.emptyPanel}>
-                  <div style={{ fontSize: 60 }}>
+                  <div
+                    style={{
+                      fontSize: 60,
+                    }}
+                  >
                     💬
                   </div>
 
@@ -1639,12 +1989,14 @@ function AuthenticatedHEXA({ session }) {
                   </h2>
 
                   <p style={styles.muted}>
-                    Select a conversation or search
-                    for someone on HEXA.
+                    Select a conversation
+                    or search for
+                    someone on HEXA.
                   </p>
                 </div>
               ) : (
                 <>
+
                   {/* MESSAGE HEADER */}
 
                   <div style={styles.messageHeader}>
@@ -1658,13 +2010,19 @@ function AuthenticatedHEXA({ session }) {
                       size={44}
                     />
 
-                    <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        minWidth: 0,
+                      }}
+                    >
                       <div
                         style={
                           styles.messageHeaderTitle
                         }
                       >
-                        {activeConversation.name}
+                        {
+                          activeConversation.name
+                        }
                       </div>
 
                       <div style={styles.smallMuted}>
@@ -1682,14 +2040,18 @@ function AuthenticatedHEXA({ session }) {
                       }}
                     >
                       <button
-                        style={styles.callButton}
+                        style={
+                          styles.callButton
+                        }
                         title="Voice call"
                       >
                         ☎
                       </button>
 
                       <button
-                        style={styles.callButton}
+                        style={
+                          styles.callButton
+                        }
                         title="Video call"
                       >
                         ◉
@@ -1701,6 +2063,7 @@ function AuthenticatedHEXA({ session }) {
                   {/* MESSAGES */}
 
                   <div style={styles.messagesArea}>
+
                     {messages.length === 0 ? (
                       <div
                         style={
@@ -1747,19 +2110,25 @@ function AuthenticatedHEXA({ session }) {
 
                           return (
                             <div
-                              key={message.id}
+                              key={
+                                message.id
+                              }
                               style={{
-                                display: "flex",
+                                display:
+                                  "flex",
+
                                 justifyContent:
                                   mine
                                     ? "flex-end"
                                     : "flex-start",
+
                                 marginBottom: 8,
                               }}
                             >
                               <div
                                 style={{
                                   ...styles.messageBubble,
+
                                   ...(mine
                                     ? styles.messageMine
                                     : styles.messageOther),
@@ -1770,7 +2139,8 @@ function AuthenticatedHEXA({ session }) {
                                 <div
                                   style={{
                                     fontSize: 9,
-                                    opacity: .55,
+                                    opacity:
+                                      0.55,
                                     marginTop: 5,
                                     textAlign:
                                       "right",
@@ -1781,7 +2151,8 @@ function AuthenticatedHEXA({ session }) {
                                   ).toLocaleTimeString(
                                     [],
                                     {
-                                      hour: "2-digit",
+                                      hour:
+                                        "2-digit",
                                       minute:
                                         "2-digit",
                                     }
@@ -1793,6 +2164,7 @@ function AuthenticatedHEXA({ session }) {
                         }
                       )
                     )}
+
                   </div>
 
 
@@ -1801,29 +2173,39 @@ function AuthenticatedHEXA({ session }) {
                   <div style={styles.composer}>
 
                     <button
-                      style={styles.composerButton}
+                      style={
+                        styles.composerButton
+                      }
                       title="Emoji"
                     >
                       😊
                     </button>
 
                     <button
-                      style={styles.composerButton}
+                      style={
+                        styles.composerButton
+                      }
                       title="GIF"
                     >
                       GIF
                     </button>
 
                     <button
-                      style={styles.composerButton}
+                      style={
+                        styles.composerButton
+                      }
                       title="Attach"
                     >
                       ＋
                     </button>
 
                     <input
-                      value={messageText}
-                      disabled={!canSend}
+                      value={
+                        messageText
+                      }
+                      disabled={
+                        !canSend
+                      }
                       onChange={(e) =>
                         setMessageText(
                           e.target.value
@@ -1831,7 +2213,8 @@ function AuthenticatedHEXA({ session }) {
                       }
                       onKeyDown={(e) => {
                         if (
-                          e.key === "Enter" &&
+                          e.key ===
+                            "Enter" &&
                           !e.shiftKey
                         ) {
                           e.preventDefault();
@@ -1845,13 +2228,18 @@ function AuthenticatedHEXA({ session }) {
                       }
                       style={{
                         ...styles.messageInput,
+
                         opacity:
-                          canSend ? 1 : .55,
+                          canSend
+                            ? 1
+                            : 0.55,
                       }}
                     />
 
                     <button
-                      onClick={sendMessage}
+                      onClick={
+                        sendMessage
+                      }
                       disabled={
                         !canSend ||
                         !messageText.trim() ||
@@ -1859,18 +2247,21 @@ function AuthenticatedHEXA({ session }) {
                       }
                       style={{
                         ...styles.sendButton,
+
                         opacity:
                           canSend &&
                           messageText.trim()
                             ? 1
-                            : .45,
+                            : 0.45,
                       }}
                     >
                       ➤
                     </button>
                   </div>
+
                 </>
               )}
+
             </section>
           </div>
         )}
@@ -1882,7 +2273,9 @@ function AuthenticatedHEXA({ session }) {
 
         {page !== "chat" && (
           <div style={styles.pageContainer}>
+
             <div style={styles.pageHero}>
+
               <div style={styles.pageIcon}>
                 {page === "groups"
                   ? "👥"
@@ -1912,153 +2305,209 @@ function AuthenticatedHEXA({ session }) {
               </h1>
 
               <p style={styles.muted}>
-                This HEXA workspace is connected to
-                your authenticated account.
+                This HEXA workspace is
+                connected to your
+                authenticated account.
               </p>
             </div>
 
+
             {page === "status" && (
               <div style={styles.featureGrid}>
+
                 <div style={styles.featureCard}>
                   <div style={styles.featureIcon}>
                     ＋
                   </div>
 
-                  <h3>Create Status</h3>
+                  <h3>
+                    Create Status
+                  </h3>
 
                   <p style={styles.muted}>
-                    Share text, photos and videos.
+                    Share text, photos
+                    and videos.
                   </p>
                 </div>
+
 
                 <div style={styles.featureCard}>
                   <div style={styles.featureIcon}>
                     ◉
                   </div>
 
-                  <h3>24-hour Status</h3>
+                  <h3>
+                    24-hour Status
+                  </h3>
 
                   <p style={styles.muted}>
-                    Status updates disappear after
+                    Status updates
+                    disappear after
                     24 hours.
                   </p>
                 </div>
+
 
                 <div style={styles.featureCard}>
                   <div style={styles.featureIcon}>
                     ❤️
                   </div>
 
-                  <h3>Reactions</h3>
+                  <h3>
+                    Reactions
+                  </h3>
 
                   <p style={styles.muted}>
-                    People can react and comment.
+                    People can react
+                    and comment.
                   </p>
                 </div>
+
               </div>
             )}
 
+
             {page === "groups" && (
               <div style={styles.featureGrid}>
+
                 <div style={styles.featureCard}>
                   <div style={styles.featureIcon}>
                     ＋
                   </div>
 
-                  <h3>Create Group</h3>
+                  <h3>
+                    Create Group
+                  </h3>
 
                   <p style={styles.muted}>
-                    Create a chat with multiple HEXA
-                    users.
+                    Create a chat with
+                    multiple HEXA users.
                   </p>
                 </div>
+
 
                 <div style={styles.featureCard}>
                   <div style={styles.featureIcon}>
                     👥
                   </div>
 
-                  <h3>Group Calling</h3>
+                  <h3>
+                    Group Calling
+                  </h3>
 
                   <p style={styles.muted}>
-                    A group call can reach all members
+                    A group call can
+                    reach all members
                     of the group.
                   </p>
                 </div>
+
               </div>
             )}
 
+
             {page === "communities" && (
               <div style={styles.featureGrid}>
+
                 <div style={styles.featureCard}>
                   <div style={styles.featureIcon}>
                     🌐
                   </div>
 
-                  <h3>Create Community</h3>
+                  <h3>
+                    Create Community
+                  </h3>
 
                   <p style={styles.muted}>
-                    Connect multiple HEXA groups under
+                    Connect multiple
+                    HEXA groups under
                     one community owner.
                   </p>
                 </div>
+
               </div>
             )}
 
+
             {page === "calls" && (
               <div style={styles.featureCard}>
+
                 <div style={styles.featureIcon}>
                   ☎
                 </div>
 
-                <h3>HEXA Calls</h3>
+                <h3>
+                  HEXA Calls
+                </h3>
 
                 <p style={styles.muted}>
-                  Voice and video calling will use the
-                  calls and call_signals tables in your
-                  Supabase schema.
+                  Voice and video
+                  calling will use
+                  the calls and
+                  call_signals tables
+                  in your Supabase
+                  schema.
                 </p>
 
                 <div style={styles.priceBox}>
-                  <strong>15 kobo / second</strong>
+                  <strong>
+                    15 kobo / second
+                  </strong>
+
                   <span>
-                    Call billing is calculated from
+                    Call billing is
+                    calculated from
                     call duration.
                   </span>
                 </div>
+
               </div>
             )}
 
+
             {page === "kora" && (
               <div style={styles.featureCard}>
+
                 <div style={styles.featureIcon}>
                   ✦
                 </div>
 
-                <h3>Kora</h3>
+                <h3>
+                  Kora
+                </h3>
 
                 <p style={styles.muted}>
-                  Your HEXA AI assistant.
+                  Your HEXA AI
+                  assistant.
                 </p>
+
               </div>
             )}
 
+
             {page === "channels" && (
               <div style={styles.featureCard}>
+
                 <div style={styles.featureIcon}>
                   📢
                 </div>
 
-                <h3>Channels</h3>
+                <h3>
+                  Channels
+                </h3>
 
                 <p style={styles.muted}>
-                  Broadcast communication for HEXA
-                  communities.
+                  Broadcast
+                  communication for
+                  HEXA communities.
                 </p>
+
               </div>
             )}
+
           </div>
         )}
+
       </main>
     </div>
   );
@@ -2095,6 +2544,7 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     padding: 20,
+
     background:
       "radial-gradient(circle at top,#18202f 0%,#090b10 45%,#050609 100%)",
   },
@@ -2107,7 +2557,8 @@ const styles = {
     borderRadius: 26,
     padding: 28,
     color: "#fff",
-    boxShadow: "0 30px 100px rgba(0,0,0,.45)",
+    boxShadow:
+      "0 30px 100px rgba(0,0,0,.45)",
   },
 
   authBrand: {
@@ -2129,7 +2580,8 @@ const styles = {
 
   authTabs: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
+    gridTemplateColumns:
+      "1fr 1fr",
     background: "#0a0c11",
     padding: 4,
     borderRadius: 13,
@@ -2207,8 +2659,10 @@ const styles = {
   },
 
   errorBox: {
-    background: "rgba(239,68,68,.1)",
-    border: "1px solid rgba(239,68,68,.3)",
+    background:
+      "rgba(239,68,68,.1)",
+    border:
+      "1px solid rgba(239,68,68,.3)",
     color: "#fca5a5",
     padding: 12,
     borderRadius: 12,
@@ -2218,8 +2672,10 @@ const styles = {
   },
 
   successBox: {
-    background: "rgba(34,197,94,.1)",
-    border: "1px solid rgba(34,197,94,.25)",
+    background:
+      "rgba(34,197,94,.1)",
+    border:
+      "1px solid rgba(34,197,94,.25)",
     color: "#86efac",
     padding: 12,
     borderRadius: 12,
@@ -2323,7 +2779,8 @@ const styles = {
     gap: 11,
     padding: 11,
     borderRadius: 15,
-    background: "rgba(255,255,255,.045)",
+    background:
+      "rgba(255,255,255,.045)",
     marginBottom: 22,
   },
 
@@ -2370,7 +2827,8 @@ const styles = {
   },
 
   navButtonActive: {
-    background: "rgba(255,255,255,.09)",
+    background:
+      "rgba(255,255,255,.09)",
     color: "#fff",
   },
 
@@ -2421,7 +2879,8 @@ const styles = {
     height: 40,
     borderRadius: 12,
     border: "1px solid #292d36",
-    background: "rgba(255,255,255,.045)",
+    background:
+      "rgba(255,255,255,.045)",
     display: "flex",
     alignItems: "center",
     gap: 8,
@@ -2442,7 +2901,8 @@ const styles = {
     position: "absolute",
     top: 62,
     right: 20,
-    width: "min(390px, calc(100vw - 30px))",
+    width:
+      "min(390px, calc(100vw - 30px))",
     maxHeight: 420,
     overflowY: "auto",
     padding: 10,
@@ -2450,7 +2910,8 @@ const styles = {
     border: "1px solid #292e38",
     borderRadius: 16,
     zIndex: 30,
-    boxShadow: "0 20px 70px rgba(0,0,0,.4)",
+    boxShadow:
+      "0 20px 70px rgba(0,0,0,.4)",
   },
 
   searchHeading: {
@@ -2489,7 +2950,8 @@ const styles = {
     flex: 1,
     minHeight: 0,
     display: "grid",
-    gridTemplateColumns: "320px minmax(0,1fr)",
+    gridTemplateColumns:
+      "320px minmax(0,1fr)",
   },
 
   chatList: {
@@ -2535,7 +2997,8 @@ const styles = {
   },
 
   chatRowActive: {
-    background: "rgba(255,255,255,.075)",
+    background:
+      "rgba(255,255,255,.075)",
   },
 
   chatName: {
@@ -2565,7 +3028,8 @@ const styles = {
     display: "flex",
     alignItems: "center",
     gap: 11,
-    borderBottom: "1px solid #20232c",
+    borderBottom:
+      "1px solid #20232c",
   },
 
   messageHeaderTitle: {
@@ -2577,8 +3041,10 @@ const styles = {
     width: 37,
     height: 37,
     borderRadius: 10,
-    border: "1px solid #2b2f39",
-    background: "rgba(255,255,255,.04)",
+    border:
+      "1px solid #2b2f39",
+    background:
+      "rgba(255,255,255,.04)",
     color: "#fff",
     cursor: "pointer",
   },
@@ -2600,7 +3066,8 @@ const styles = {
   },
 
   messageBubble: {
-    maxWidth: "min(70%, 600px)",
+    maxWidth:
+      "min(70%, 600px)",
     padding: "10px 13px",
     borderRadius: 16,
     fontSize: 14,
@@ -2625,7 +3092,8 @@ const styles = {
     display: "flex",
     alignItems: "center",
     gap: 7,
-    borderTop: "1px solid #20232c",
+    borderTop:
+      "1px solid #20232c",
   },
 
   composerButton: {
@@ -2633,8 +3101,10 @@ const styles = {
     minWidth: 38,
     padding: "0 9px",
     borderRadius: 10,
-    border: "1px solid #292d36",
-    background: "rgba(255,255,255,.04)",
+    border:
+      "1px solid #292d36",
+    background:
+      "rgba(255,255,255,.04)",
     color: "#fff",
     cursor: "pointer",
     fontWeight: 800,
@@ -2646,7 +3116,8 @@ const styles = {
     minWidth: 0,
     height: 42,
     borderRadius: 12,
-    border: "1px solid #292d36",
+    border:
+      "1px solid #292d36",
     outline: 0,
     padding: "0 13px",
     background: "#101219",
@@ -2700,7 +3171,8 @@ const styles = {
     display: "grid",
     placeItems: "center",
     fontSize: 30,
-    background: "rgba(255,255,255,.07)",
+    background:
+      "rgba(255,255,255,.07)",
   },
 
   featureGrid: {
@@ -2715,8 +3187,10 @@ const styles = {
   featureCard: {
     padding: 22,
     borderRadius: 20,
-    border: "1px solid #292d36",
-    background: "rgba(255,255,255,.035)",
+    border:
+      "1px solid #292d36",
+    background:
+      "rgba(255,255,255,.035)",
   },
 
   featureIcon: {
@@ -2728,7 +3202,8 @@ const styles = {
     marginTop: 20,
     padding: 15,
     borderRadius: 13,
-    background: "rgba(255,255,255,.05)",
+    background:
+      "rgba(255,255,255,.05)",
     display: "flex",
     flexDirection: "column",
     gap: 5,
@@ -2740,7 +3215,10 @@ const styles = {
    RESPONSIVE
    ========================================================= */
 
-if (typeof document !== "undefined") {
+if (
+  typeof document !==
+  "undefined"
+) {
   const responsiveStyle =
     document.getElementById(
       "hexa-responsive-style"
@@ -2748,9 +3226,12 @@ if (typeof document !== "undefined") {
 
   if (!responsiveStyle) {
     const style =
-      document.createElement("style");
+      document.createElement(
+        "style"
+      );
 
-    style.id = "hexa-responsive-style";
+    style.id =
+      "hexa-responsive-style";
 
     style.textContent = `
       @media (max-width: 850px) {
@@ -2784,9 +3265,7 @@ if (typeof document !== "undefined") {
         }
 
         .hexa-app .chatList {
-          display: ${
-            "none"
-          };
+          display: none;
         }
 
         .hexa-app .messageBubble {
@@ -2803,7 +3282,9 @@ if (typeof document !== "undefined") {
       }
     `;
 
-    document.head.appendChild(style);
+    document.head.appendChild(
+      style
+    );
   }
 }
 
@@ -2813,8 +3294,12 @@ if (typeof document !== "undefined") {
    ========================================================= */
 
 export default function App() {
-  const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [session, setSession] =
+    useState(null);
+
+  const [loading, setLoading] =
+    useState(true);
+
 
   useEffect(() => {
     if (!supabase) {
@@ -2826,41 +3311,67 @@ export default function App() {
 
 
     /*
-     * FIRST:
-     * Restore an existing Supabase session.
+     * =====================================================
+     * INITIAL AUTH RESTORE
+     * =====================================================
+     *
+     * This runs when HEXA first loads.
+     *
+     * It is especially important after the user clicks
+     * the email verification link.
      */
 
-    async function restoreSession() {
+    async function initializeAuth() {
       try {
+        /*
+         * First allow Supabase to process the
+         * verification URL / PKCE callback.
+         */
+
         const {
           data,
           error,
-        } = await supabase.auth.getSession();
+        } =
+          await supabase.auth.getSession();
 
-        if (error) throw error;
+        if (error) {
+          throw error;
+        }
 
         const currentSession =
           data?.session || null;
 
-        if (!mounted) return;
+        if (!mounted) {
+          return;
+        }
 
-        setSession(currentSession);
+        if (
+          currentSession?.user
+        ) {
+          /*
+           * VERIFIED USER:
+           *
+           * Ensure their HEXA profile exists.
+           */
 
-        /*
-         * IMPORTANT:
-         *
-         * When a verified user returns to the app,
-         * this is where their HEXA profile is ensured.
-         */
-
-        if (currentSession?.user) {
           await ensureHexaProfile(
             currentSession.user
           );
+
+          /*
+           * This is what causes React to leave
+           * AuthScreen and open AuthenticatedHEXA.
+           */
+
+          setSession(
+            currentSession
+          );
+        } else {
+          setSession(null);
         }
       } catch (error) {
         console.error(
-          "Session restore failed:",
+          "Auth initialization failed:",
           error
         );
 
@@ -2874,54 +3385,84 @@ export default function App() {
       }
     }
 
-    restoreSession();
+
+    initializeAuth();
 
 
     /*
-     * SECOND:
-     * Listen to Supabase authentication changes.
+     * =====================================================
+     * SUPABASE AUTH STATE LISTENER
+     * =====================================================
+     *
+     * This catches:
+     *
+     * SIGNED_IN
+     * USER_UPDATED
+     * TOKEN_REFRESHED
+     *
+     * including the authentication state restored after
+     * email verification.
      */
 
     const {
       data: authListener,
     } =
       supabase.auth.onAuthStateChange(
-        async (
+        (
           event,
           nextSession
         ) => {
-          if (!mounted) return;
-
-          /*
-           * SIGNED_IN
-           * USER_UPDATED
-           * TOKEN_REFRESHED
-           */
+          if (!mounted) {
+            return;
+          }
 
           if (
             nextSession?.user
           ) {
-            setSession(nextSession);
-
             /*
-             * Profile creation/update is performed
-             * after authentication has succeeded.
+             * IMPORTANT:
+             *
+             * Set the session immediately.
+             *
+             * This causes the app to render HEXA.
+             *
+             * Profile creation happens asynchronously
+             * afterward so authentication is not blocked
+             * by the profile operation.
              */
 
-            setTimeout(() => {
-              ensureHexaProfile(
-                nextSession.user
-              );
-            }, 0);
+            setSession(
+              nextSession
+            );
+
+            setTimeout(
+              async () => {
+                try {
+                  await ensureHexaProfile(
+                    nextSession.user
+                  );
+                } catch (error) {
+                  console.error(
+                    "Post-auth profile initialization failed:",
+                    error
+                  );
+                }
+              },
+              0
+            );
 
             return;
           }
 
+
           /*
-           * SIGNED_OUT
+           * No authenticated user.
            */
 
-          if (event === "SIGNED_OUT") {
+          if (
+            event ===
+            "SIGNED_OUT"
+          ) {
             setSession(null);
           }
         }
@@ -2930,15 +3471,26 @@ export default function App() {
 
     return () => {
       mounted = false;
+
       authListener.subscription.unsubscribe();
     };
   }, []);
 
 
+  /* =======================================================
+     SUPABASE CONFIGURATION
+     ======================================================= */
+
   if (!supabase) {
-    return <SupabaseConfigError />;
+    return (
+      <SupabaseConfigError />
+    );
   }
 
+
+  /* =======================================================
+     AUTH INITIALIZATION
+     ======================================================= */
 
   if (loading) {
     return (
@@ -2955,20 +3507,20 @@ export default function App() {
   }
 
 
-  /*
-   * NO SESSION:
-   * Show authentication.
-   */
+  /* =======================================================
+     NO SESSION
+     ======================================================= */
 
   if (!session) {
-    return <AuthScreen />;
+    return (
+      <AuthScreen />
+    );
   }
 
 
-  /*
-   * SESSION EXISTS:
-   * Go directly into HEXA.
-   */
+  /* =======================================================
+     AUTHENTICATED HEXA
+     ======================================================= */
 
   return (
     <AuthenticatedHEXA
