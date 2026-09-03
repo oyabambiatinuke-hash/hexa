@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import "./App.css";
-import { Analytics } from "@vercel/analytics/next"
 
 /*
   ============================================================
