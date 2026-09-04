@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import "./App.css";
 
+/* HEXA SOURCE FIX: UniversalSearch is defined at top level before AuthenticatedHEXA. */
+
 /*
   ============================================================
   HEXA
@@ -1331,7 +1333,7 @@ function StatusPage({ profile }) {
 function CallsPage({ profile }) {
   const[history,setHistory]=useState([]);const[active,setActive]=useState(null);const[peer,setPeer]=useState(null);const[status,setStatus]=useState("");
   useEffect(()=>{supabase.from("calls").select("*").or(`caller_id.eq.${profile.id},callee_id.eq.${profile.id}`).order("created_at",{ascending:false}).limit(30).then(({data})=>setHistory(data||[]))},[profile.id]);
-  async function createCall(type){if(!peer?.id)return;const {data,error}=await supabase.from("calls").insert({caller_id:profile.id,callee_id:peer.id,type,status:"ringing",rate_kobo_per_second:0.15}).select("*").single();if(error){setStatus(error.message);return}setActive({call:data,type,peer});setStatus("Calling…")}
+  async function createCall(type){if(!peer?.id)return;const {data,error}=await supabase.from("calls").insert({caller_id:profile.id,callee_id:peer.id,type,status:"ringing",rate_kobo_per_second:15}).select("*").single();if(error){setStatus(error.message);return}setActive({call:data,type,peer});setStatus("Calling…")}
   return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">☎</div><div><h1>Calls</h1><p>Voice and video calls using WebRTC signaling through Supabase.</p></div></div><div className="settings-card"><div><strong>Start a call</strong><p>Open a chat and use the phone/video buttons to select a person.</p></div><input className="modal-input" style={{maxWidth:280}} placeholder="Paste user UUID" value={peer?.id||""} onChange={e=>setPeer({id:e.target.value})}/><button onClick={()=>createCall("voice")}>Voice</button><button onClick={()=>createCall("video")}>Video</button></div>{active&&<WebRTCCall profile={profile} call={active.call} type={active.type} peer={active.peer} onEnd={()=>{setActive(null);setStatus("Call ended")}}/>}<div className="entity-grid">{history.map(c=><div className="entity-card" key={c.id}><strong>{c.type} · {c.status}</strong><span>{new Date(c.created_at).toLocaleString()}</span><small>{c.billed_seconds||0}s · ₦{Number(c.amount_kobo||0)/100}</small></div>)}</div>{status&&<p className="muted">{status}</p>}</section>;
 }
 
@@ -1458,7 +1460,7 @@ function WebRTCCall({ profile, call, type, peer, onEnd }) {
   </div>;
 }
 function WebRTCCallLauncher({profile,target,onClose}){
-  const[call,setCall]=useState(null);const[error,setError]=useState("");useEffect(()=>{let mounted=true;(async()=>{const user=target.conversation?.user_a===profile.id?target.conversation?.user_b:target.conversation?.user_a;if(!user){setError("This conversation does not have a direct call target.");return}const {data,error}=await supabase.from("calls").insert({conversation_id:target.conversation.id,caller_id:profile.id,callee_id:user,type:target.type,status:"ringing",rate_kobo_per_second:0.15}).select("*").single();if(!mounted)return;if(error)setError(error.message);else setCall({...data,callee_id:user})})();return()=>{mounted=false}},[]);if(error)return <div className="story-viewer"><div className="coming-card"><h2>Call unavailable</h2><p>{error}</p><button onClick={onClose}>Close</button></div></div>;return call?<WebRTCCall profile={profile} call={call} type={target.type} peer={{id:call.callee_id}} onEnd={onClose}/>:<div className="story-viewer"><div className="coming-card"><h2>Starting call…</h2></div></div>;
+  const[call,setCall]=useState(null);const[error,setError]=useState("");useEffect(()=>{let mounted=true;(async()=>{const user=target.conversation?.user_a===profile.id?target.conversation?.user_b:target.conversation?.user_a;if(!user){setError("This conversation does not have a direct call target.");return}const {data,error}=await supabase.from("calls").insert({conversation_id:target.conversation.id,caller_id:profile.id,callee_id:user,type:target.type,status:"ringing",rate_kobo_per_second:15}).select("*").single();if(!mounted)return;if(error)setError(error.message);else setCall({...data,callee_id:user})})();return()=>{mounted=false}},[]);if(error)return <div className="story-viewer"><div className="coming-card"><h2>Call unavailable</h2><p>{error}</p><button onClick={onClose}>Close</button></div></div>;return call?<WebRTCCall profile={profile} call={call} type={target.type} peer={{id:call.callee_id}} onEnd={onClose}/>:<div className="story-viewer"><div className="coming-card"><h2>Starting call…</h2></div></div>;
 }
 
 function IncomingCallWatcher({ profile }) {
@@ -1494,6 +1496,133 @@ function IncomingCallWatcher({ profile }) {
       </div>
     </div>
   </div>;
+}
+function UniversalSearch({ search, profile, onMessage }) {
+  const [results, setResults] = React.useState([]);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState("");
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const runSearch = async () => {
+      const term = String(search || "").trim();
+
+      if (!term) {
+        setResults([]);
+        setError("");
+        setLoading(false);
+        return;
+      }
+
+      if (term.length < 2) {
+        setResults([]);
+        setError("");
+        return;
+      }
+
+      setLoading(true);
+      setError("");
+
+      try {
+        const pattern = `%${term}%`;
+
+        const { data, error: searchError } = await supabase
+          .from("profiles")
+          .select("id, username, full_name, email, avatar_url")
+          .neq("id", profile?.id)
+          .or(
+            `username.ilike.${pattern},full_name.ilike.${pattern},email.ilike.${pattern}`
+          )
+          .limit(20);
+
+        if (cancelled) return;
+
+        if (searchError) {
+          setError(searchError.message);
+          setResults([]);
+        } else {
+          setResults(data || []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err?.message || "Search failed");
+          setResults([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    const timer = setTimeout(runSearch, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [search, profile?.id]);
+
+  if (!search?.trim()) return null;
+
+  return (
+    <div className="universal-search-panel">
+      {loading && (
+        <div className="universal-search-state">
+          Searching HEXA...
+        </div>
+      )}
+
+      {!loading && error && (
+        <div className="universal-search-state">
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && results.length === 0 && search.trim().length >= 2 && (
+        <div className="universal-search-state">
+          No HEXA users found.
+        </div>
+      )}
+
+      {!loading &&
+        !error &&
+        results.map((person) => (
+          <button
+            key={person.id}
+            type="button"
+            className="universal-search-result"
+            onClick={() => onMessage(person)}
+          >
+            <div className="universal-search-avatar">
+              {person.avatar_url ? (
+                <img
+                  src={person.avatar_url}
+                  alt=""
+                />
+              ) : (
+                (person.full_name || person.username || "H")
+                  .charAt(0)
+                  .toUpperCase()
+              )}
+            </div>
+
+            <div className="universal-search-result-copy">
+              <strong>
+                {person.full_name || person.username || "HEXA User"}
+              </strong>
+
+              {person.username && (
+                <span>@{person.username}</span>
+              )}
+
+              {person.email && (
+                <small>{person.email}</small>
+              )}
+            </div>
+          </button>
+        ))}
+    </div>
+  );
 }
 
 function AuthenticatedHEXA({ session, onSignOut }) {
