@@ -1233,3 +1233,75 @@ textarea::placeholder {
     width: 100%;
   }
 }
+.universal-search-panel {
+  position: absolute;
+  top: 64px;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  max-width: 620px;
+  margin: 0 auto;
+  background: var(--hexa-panel, #111);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0,0,0,.35);
+}
+
+.universal-search-state {
+  padding: 18px;
+  text-align: center;
+  color: rgba(255,255,255,.65);
+}
+
+.universal-search-result {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.universal-search-result:hover {
+  background: rgba(255,255,255,.06);
+}
+
+.universal-search-avatar {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: rgba(255,255,255,.1);
+  font-weight: 700;
+}
+
+.universal-search-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.universal-search-result-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.universal-search-result-copy strong {
+  font-size: 14px;
+}
+
+.universal-search-result-copy span,
+.universal-search-result-copy small {
+  color: rgba(255,255,255,.55);
+  font-size: 12px;
+}

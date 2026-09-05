@@ -57,6 +57,7 @@ export const supabase = createClient(
 
 const OFFLINE_QUEUE_KEY = "hexa-message-queue-v2";
 const DRAFTS_KEY = "hexa-chat-drafts-v1";
+const HEXA_CALL_RATE_KOBO_PER_SECOND = 0.5;
 
 const NAV_ITEMS = [
   { id: "nexus", label: "Nexus", icon: "⌂" },
@@ -66,10 +67,34 @@ const NAV_ITEMS = [
   { id: "channels", label: "Channels", icon: "▣" },
   { id: "status", label: "Status", icon: "◌" },
   { id: "calls", label: "Calls", icon: "☎" },
+  { id: "wallet", label: "Wallet", icon: "₦" },
   { id: "projects", label: "Projects", icon: "◆" },
   { id: "kora", label: "Kora", icon: "✦" },
   { id: "developer", label: "Developer Hub", icon: "</>" },
   { id: "settings", label: "Settings", icon: "⚙" },
+];
+
+const HEXA_WHATSAPP_FEATURES = [
+  ["Messaging", "1:1 chats", "Group chats", "Replies", "Forward", "Edit", "Delete for me/everyone", "Copy", "Star", "Pin", "Search", "Reactions", "Emoji + skin tones", "GIFs", "Stickers", "Animated stickers", "Images", "Videos", "Files", "Audio", "Voice messages", "Playback speed", "Waveform", "Contacts", "Current/live location", "Polls", "Link previews", "Mentions", "Timestamps", "Delivered/read", "Typing/recording", "Unread counts", "Drafts", "Disappearing messages", "View-once media"],
+  ["Groups", "Create", "Add/remove members", "Owner", "Multiple admins", "Permissions", "Invite links", "Name/photo/description", "Member search", "Mentions", "Announcements", "Group media/files", "Polls", "Reactions", "Replies", "Group calls", "Participant management", "Leave/report/delete"],
+  ["Calls", "1:1 voice", "1:1 video", "Group voice", "Group video", "Incoming/outgoing", "Accept/decline/missed", "Mute", "Speaker", "Camera", "Front/rear camera", "PiP", "Call history", "Add participants", "Call links", "Privacy/security", "WebRTC", "STUN/TURN", "Network quality"],
+  ["Status", "Text/photo/video/GIF", "Captions", "Emoji/stickers/drawing", "Privacy", "Viewers", "Seen/unseen", "Reactions", "Replies", "Navigation", "24-hour expiry", "Delete", "Notifications", "Mute"],
+  ["Channels", "Create/follow/unfollow", "Profile", "Posts", "Media", "Links", "Polls", "Reactions", "Forward/share", "Search", "Notifications", "Admins", "Followers", "Privacy", "Verification"],
+  ["Search", "Contacts", "Chats", "Messages", "Groups", "Channels", "Media", "Documents", "Links", "GIFs", "Audio", "Date filters", "Within conversation", "Advanced filters"],
+  ["Profiles & Contacts", "Photo", "Name", "About", "Phone", "QR", "Add/invite", "Block/report", "Last seen", "Online", "Privacy", "Read receipts", "Group-add controls"],
+  ["Privacy & Security", "E2E encryption", "Encrypted calls", "2FA", "Passkeys", "App lock", "Biometrics", "Security notifications", "Disappearing", "View-once", "Privacy checkup", "Device management", "Linked devices", "Logout"],
+  ["Media & Files", "Camera", "Gallery", "Multiple selection", "Preview", "Compression", "Original quality", "Download", "Forward", "Delete", "Auto-download", "Storage management"],
+  ["Organization", "Starred", "Pinned", "Archived", "Favorites", "Unread", "Chat filters", "Folders/categories", "Saved search"],
+  ["Notifications", "Messages", "Groups", "Calls", "Missed calls", "Status", "Mentions", "Replies", "Reactions", "Channels", "Sounds", "Vibration", "Previews", "Mute", "Custom notifications"],
+  ["Payments & Business", "Payments", "Business profiles", "Catalogs", "Shopping", "Cart", "Orders", "Customer messaging", "Broadcasts", "Automated replies", "Labels", "Business tools"],
+  ["Communities", "Create", "Description/icon", "Groups", "Announcement group", "Admins", "Members", "Invites", "Notifications", "Announcements"],
+  ["Broadcasts", "Create list", "Send to many", "Manage", "Private replies", "Edit/delete"],
+  ["Polls", "Single choice", "Multiple choice", "Multiple answers", "Vote", "Change vote", "Results", "Forward", "Reactions", "Replies"],
+  ["Location", "Current", "Live", "Select", "Preview", "Stop sharing", "Duration", "Maps"],
+  ["Camera & Editing", "Photo", "Video", "Front/rear", "Flash", "Crop", "Rotate", "Draw", "Text", "Emoji", "Stickers", "Captions", "Trim video"],
+  ["Personalization", "Dark/light", "Themes", "Wallpaper", "Fonts/display", "Notifications", "Custom wallpapers", "Chat-specific settings"],
+  ["Backup & Restore", "Chat backup", "Media backup", "Restore", "Transfer", "Encrypted backup", "Frequency/settings"],
+  ["AI", "Assistant", "AI search", "Writing help", "Summaries", "Image generation", "Image editing", "AI stickers", "Recommendations"],
 ];
 
 const DEFAULT_CONVERSATIONS = [
@@ -188,6 +213,13 @@ function makeUsername(email, fullName = "") {
     .slice(0, 24);
 
   return cleaned || `hexauser${Date.now()}`;
+}
+
+function readJsonStorage(key, fallback) {
+  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
+}
+function writeJsonStorage(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
 }
 
 function readLocalQueue() {
@@ -976,41 +1008,13 @@ function NexusHome({
       </div>
 
       <div className="feature-grid">
-        <button
-          className="feature-card"
-          onClick={() => setActivePage("chat")}
-        >
-          <span>💬</span>
-          <strong>Chat</strong>
-          <p>Message people and sync conversations.</p>
-        </button>
-
-        <button
-          className="feature-card"
-          onClick={() => setActivePage("groups")}
-        >
-          <span>👥</span>
-          <strong>Groups</strong>
-          <p>Create and manage group conversations.</p>
-        </button>
-
-        <button
-          className="feature-card"
-          onClick={() => setActivePage("status")}
-        >
-          <span>◌</span>
-          <strong>Status</strong>
-          <p>Share text, photos and videos.</p>
-        </button>
-
-        <button
-          className="feature-card"
-          onClick={() => setActivePage("calls")}
-        >
-          <span>☎</span>
-          <strong>Calls</strong>
-          <p>Voice and video communication.</p>
-        </button>
+        {HEXA_WHATSAPP_FEATURES.slice(0, 12).map(([title, ...items]) => (
+          <button key={title} className="feature-card" onClick={() => setActivePage(title === "Messaging" ? "chat" : title === "Groups" ? "groups" : title === "Status" ? "status" : title === "Calls" ? "calls" : title === "Channels" ? "channels" : title === "Communities" ? "communities" : title === "AI" ? "kora" : "settings")}>
+            <span>{({Messaging:"💬",Groups:"👥",Calls:"☎",Status:"◌",Channels:"▣",Communities:"◉",Search:"⌕",Profiles:"👤", "Privacy & Security":"🔐", "Media & Files":"📁",Organization:"⭐",Notifications:"🔔"})[title] || "✦"}</span>
+            <strong>{title}</strong>
+            <p>{items.slice(0, 6).join(" · ")}</p>
+          </button>
+        ))}
       </div>
     </section>
   );
@@ -1029,6 +1033,13 @@ function koraReply(input) {
   return "I’m Kora. I can help you navigate HEXA, plan messages, explain features, and work with the tools connected to your workspace.";
 }
 
+function FeatureAudio({ url, voice = false }) {
+  const ref = useRef(null);
+  const [speed, setSpeed] = useState(1);
+  useEffect(() => { if (ref.current) ref.current.playbackRate = speed; }, [speed]);
+  return <div className="hexa-audio-message"><span>{voice ? "🎤" : "🔊"}</span><audio ref={ref} src={url} controls/><select value={speed} onChange={e=>setSpeed(Number(e.target.value))}><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></div>;
+}
+
 function ChatPage({ profile, onStartCall, onOpenChatWithUser, initialConversation }) {
   const [conversations, setConversations] = useState(DEFAULT_CONVERSATIONS);
   const [selected, setSelected] = useState(initialConversation || DEFAULT_CONVERSATIONS[0]);
@@ -1038,243 +1049,166 @@ function ChatPage({ profile, onStartCall, onOpenChatWithUser, initialConversatio
   const [loading, setLoading] = useState(false);
   const [replyTo, setReplyTo] = useState(null);
   const [reactionMenu, setReactionMenu] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
+  const [editing, setEditing] = useState(null);
   const [gifOpen, setGifOpen] = useState(false);
+  const [stickerOpen, setStickerOpen] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const [gifQuery, setGifQuery] = useState("");
   const [gifs, setGifs] = useState([]);
   const [recording, setRecording] = useState(false);
   const [attachment, setAttachment] = useState(null);
+  const [pollOpen, setPollOpen] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState("");
+  const [pollOptions, setPollOptions] = useState(["", ""]);
+  const [contactOpen, setContactOpen] = useState(false);
+  const [locationOpen, setLocationOpen] = useState(false);
+  const [disappearing, setDisappearing] = useState("off");
+  const [chatSettingsOpen, setChatSettingsOpen] = useState(false);
+  const [starred, setStarred] = useState(() => readJsonStorage("hexa-starred-v1", []));
+  const [pinned, setPinned] = useState(() => readJsonStorage("hexa-pinned-v1", []));
+  const [muted, setMuted] = useState(() => readJsonStorage("hexa-muted-v1", []));
   const mediaRef = useRef(null);
+  const cameraRef = useRef(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
   const draftsRef = useRef(readDrafts());
   const bottomRef = useRef(null);
 
   const isSystem = selected.id === "hexa-system-group";
+  const canPublish = !isSystem || Boolean(selected.is_admin || selected.owner_id === profile?.id || selected.created_by === profile?.id);
 
-  useEffect(() => {
-    if (initialConversation?.id && initialConversation.id !== selected.id) setSelected(initialConversation);
-  }, [initialConversation?.id]);
-
-  useEffect(() => {
-    const draft = draftsRef.current[selected.id] || "";
-    setMessage(draft);
-    setReplyTo(null);
-    setReactionMenu(null);
-    loadMessages(selected);
-  }, [selected.id]);
-
+  useEffect(() => { if (initialConversation?.id && initialConversation.id !== selected.id) setSelected(initialConversation); }, [initialConversation?.id]);
+  useEffect(() => { const draft = draftsRef.current[selected.id] || ""; setMessage(draft); setReplyTo(null); setReactionMenu(null); setContextMenu(null); setEditing(null); loadMessages(selected); }, [selected.id]);
   useEffect(() => {
     const channel = supabase.channel(`hexa-messages-${profile?.id || "guest"}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, payload => {
-        const row = payload.new;
-        const selectedConversationId = selected.realConversationId || selected.id;
-        if (row?.conversation_id !== selectedConversationId) return;
-        setMessages(cur => cur.some(x => x.id === row.id) ? cur : [...cur, row]);
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, payload => {
-        const selectedConversationId = selected.realConversationId || selected.id;
-        if (payload.new?.conversation_id !== selectedConversationId) return;
-        setMessages(cur => cur.map(x => x.id === payload.new.id ? payload.new : x));
-      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, payload => { const row=payload.new; const cid=selected.realConversationId||selected.id; if(row?.conversation_id===cid) setMessages(cur=>cur.some(x=>x.id===row.id)?cur:[...cur,row]); })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, payload => { const cid=selected.realConversationId||selected.id; if(payload.new?.conversation_id===cid) setMessages(cur=>cur.map(x=>x.id===payload.new.id?payload.new:x)); })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return ()=>supabase.removeChannel(channel);
   }, [selected.id, profile?.id]);
-
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
+  useEffect(()=>{bottomRef.current?.scrollIntoView({behavior:"smooth"})},[messages.length]);
 
   async function loadMessages(conversation) {
-    if (!conversation?.id) { setMessages([]); return; }
-    if (conversation.id === "self" || conversation.id === "kora") { setMessages([]); return; }
-    setLoading(true);
-    let conversationId = conversation.id;
-    if (conversation.id === "hexa-system-group") {
-      const { data: systemGroup } = await supabase
-        .from("conversations")
-        .select("id,name,type,owner_id,created_by,avatar_url,theme")
-        .eq("name", "THE HEXA GROUP")
-        .eq("type", "group")
-        .limit(1)
-        .maybeSingle();
-      if (!systemGroup?.id) { setMessages([]); setLoading(false); return; }
-      conversationId = systemGroup.id;
-      setSelected(prev => prev.id === "hexa-system-group" ? { ...prev, ...systemGroup, id: "hexa-system-group", realConversationId: systemGroup.id } : prev);
+    if(!conversation?.id){setMessages([]);return;}
+    if(["self","kora"].includes(conversation.id)){setMessages([]);return;}
+    setLoading(true); let conversationId=conversation.id;
+    if(conversation.id==="hexa-system-group"){
+      const {data}=await supabase.from("conversations").select("id,name,type,owner_id,created_by,avatar_url,theme").eq("name","THE HEXA GROUP").eq("type","group").limit(1).maybeSingle();
+      if(!data?.id){setMessages([]);setLoading(false);return;} conversationId=data.id; setSelected(prev=>prev.id==="hexa-system-group"?{...prev,...data,id:"hexa-system-group",realConversationId:data.id}:prev);
     }
-    const { data, error } = await supabase.from("messages").select("*, message_reactions(*)").eq("conversation_id", conversationId).is("deleted_at", null).order("created_at", { ascending: true });
-    setMessages(error ? [] : (data || []));
-    setLoading(false);
+    const {data,error}=await supabase.from("messages").select("*, message_reactions(*)").eq("conversation_id",conversationId).is("deleted_at",null).order("created_at",{ascending:true});
+    setMessages(error?[]:(data||[]));setLoading(false);
   }
-
-  async function createDirectConversation(user) {
-    if (!user?.id || user.id === profile?.id) return;
-    const { data: existing } = await supabase.from("conversations").select("*").eq("type", "direct").or(`and(user_a.eq.${profile.id},user_b.eq.${user.id}),and(user_a.eq.${user.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();
-    let conversation = existing;
-    if (!conversation) {
-      const { data, error } = await supabase.from("conversations").insert({ type: "direct", user_a: profile.id, user_b: user.id, created_by: profile.id, owner_id: profile.id, name: user.full_name || user.username || "HEXA User" }).select("*").single();
-      if (error) { console.error(error); return; }
-      conversation = data;
-      await supabase.from("conversation_members").upsert([{ conversation_id: conversation.id, user_id: profile.id, is_admin: true }, { conversation_id: conversation.id, user_id: user.id, is_admin: false }], { onConflict: "conversation_id,user_id" });
-    }
-    const mapped = { ...conversation, name: user.full_name || user.username || conversation.name || "HEXA User", avatar: initials(user.full_name || user.username), kind: "direct", online: false };
-    setConversations(cur => [mapped, ...cur.filter(x => x.id !== mapped.id)]);
-    setSelected(mapped);
-    onOpenChatWithUser?.(mapped);
+  async function createDirectConversation(user){
+    if(!user?.id||user.id===profile?.id)return;
+    const {data:existing}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${user.id}),and(user_a.eq.${user.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();
+    let conversation=existing;
+    if(!conversation){const {data,error}=await supabase.from("conversations").insert({type:"direct",user_a:profile.id,user_b:user.id,created_by:profile.id,owner_id:profile.id,name:user.full_name||user.username||"HEXA User"}).select("*").single();if(error){alert(error.message);return;}conversation=data;await supabase.from("conversation_members").upsert([{conversation_id:conversation.id,user_id:profile.id,is_admin:true},{conversation_id:conversation.id,user_id:user.id,is_admin:false}],{onConflict:"conversation_id,user_id"});}
+    const mapped={...conversation,name:user.full_name||user.username||conversation.name||"HEXA User",avatar:initials(user.full_name||user.username),kind:"direct",online:false};setConversations(cur=>[mapped,...cur.filter(x=>x.id!==mapped.id)]);setSelected(mapped);onOpenChatWithUser?.(mapped);
   }
-
-  function updateDraft(value) {
-    setMessage(value);
-    draftsRef.current = { ...draftsRef.current, [selected.id]: value };
-    writeDrafts(draftsRef.current);
+  function updateDraft(value){setMessage(value);draftsRef.current={...draftsRef.current,[selected.id]:value};writeDrafts(draftsRef.current);}
+  async function uploadFile(file){const bucket=import.meta.env.VITE_SUPABASE_STORAGE_BUCKET;if(!bucket)throw new Error("Set VITE_SUPABASE_STORAGE_BUCKET to enable persistent media uploads.");const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,"_");const path=`${profile.id}/messages/${Date.now()}-${safe}`;const {error}=await supabase.storage.from(bucket).upload(path,file,{upsert:false,contentType:file.type||"application/octet-stream"});if(error)throw error;return {path,url:supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl};}
+  async function insertMessage(payload){
+    const clientId=`${profile.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const optimistic={id:`local-${clientId}`,...payload,sender_id:profile.id,created_at:new Date().toISOString(),status:"sending",client_message_id:clientId};setMessages(cur=>[...cur,optimistic]);
+    const {data,error}=await supabase.from("messages").insert({...payload,sender_id:profile.id,client_message_id:clientId,status:"sent"}).select("*").single();
+    if(error){if(!navigator.onLine)writeLocalQueue([...readLocalQueue(),{...optimistic,queued_at:new Date().toISOString()}]);setMessages(cur=>cur.map(x=>x.id===optimistic.id?{...x,status:"queued"}:x));return null;}
+    setMessages(cur=>cur.map(x=>x.id===optimistic.id?data:x));return data;
   }
-
-  async function uploadFile(file) {
-    const bucket = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET;
-    if (!bucket) throw new Error("Set VITE_SUPABASE_STORAGE_BUCKET to enable persistent media uploads.");
-    const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const path = `${profile.id}/messages/${Date.now()}-${safe}`;
-    const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: false, contentType: file.type || "application/octet-stream" });
-    if (error) throw error;
-    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-    return { path, url: data.publicUrl };
+  async function sendMessage(e){
+    e?.preventDefault();const text=message.trim();if(!text||!canPublish||!profile?.id)return;const reply=replyTo?.id||null;
+    if(editing){const {error}=await supabase.from("messages").update({content:text,metadata:{...(editing.metadata||{}),edited:true,edited_at:new Date().toISOString()}}).eq("id",editing.id).eq("sender_id",profile.id);if(error)alert(error.message);else setMessages(cur=>cur.map(x=>x.id===editing.id?{...x,content:text,metadata:{...(x.metadata||{}),edited:true}}:x));setEditing(null);updateDraft("");return;}
+    updateDraft("");setReplyTo(null);
+    if(selected.id==="kora"){const local={id:`local-${Date.now()}`,sender_id:profile.id,content:text,created_at:new Date().toISOString(),message_type:"text",metadata:reply?{reply_to_id:reply}: {}};setMessages(cur=>[...cur,local]);setTimeout(()=>setMessages(cur=>[...cur,{id:`kora-${Date.now()}`,sender_id:"kora",content:koraReply(text),created_at:new Date().toISOString(),message_type:"text"}]),450);return;}
+    await insertMessage({conversation_id:selected.realConversationId||selected.id,content:text,message_type:"text",reply_to_id:reply,metadata:{disappearing:disappearing==="off"?null:disappearing}});
   }
-
-  async function insertMessage(payload) {
-    const clientId = `${profile.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const optimistic = { id: `local-${clientId}`, ...payload, sender_id: profile.id, created_at: new Date().toISOString(), status: "sending", client_message_id: clientId };
-    setMessages(cur => [...cur, optimistic]);
-    const { data, error } = await supabase.from("messages").insert({ ...payload, sender_id: profile.id, client_message_id: clientId, status: "sent" }).select("*").single();
-    if (error) {
-      if (!navigator.onLine) writeLocalQueue([...readLocalQueue(), { ...optimistic, queued_at: new Date().toISOString() }]);
-      setMessages(cur => cur.map(x => x.id === optimistic.id ? { ...x, status: "queued" } : x));
-      return null;
-    }
-    setMessages(cur => cur.map(x => x.id === optimistic.id ? data : x));
-    return data;
-  }
-
-  async function sendMessage(e) {
-    e?.preventDefault();
-    const text = message.trim();
-    if (!text || isSystem || !profile?.id) return;
-    updateDraft("");
-    const reply = replyTo?.id || null;
-    setReplyTo(null);
-    if (selected.id === "kora") {
-      const local = { id: `local-${Date.now()}`, sender_id: profile.id, content: text, created_at: new Date().toISOString(), message_type: "text", metadata: reply ? { reply_to_id: reply } : {} };
-      setMessages(cur => [...cur, local]);
-      setTimeout(() => setMessages(cur => [...cur, { id: `kora-${Date.now()}`, sender_id: "kora", content: koraReply(text), created_at: new Date().toISOString(), message_type: "text" }]), 450);
-      return;
-    }
-    await insertMessage({ conversation_id: selected.id, content: text, message_type: "text", reply_to_id: reply });
-  }
-
-  async function sendAttachment(file) {
-    if (!file || isSystem) return;
-    try {
-      const uploaded = await uploadFile(file);
-      const type = file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : file.type.startsWith("audio/") ? "audio" : "file";
-      const row = await insertMessage({ conversation_id: selected.id, content: file.name, message_type: type, metadata: { url: uploaded.url, path: uploaded.path, file_name: file.name, mime_type: file.type, size: file.size }, reply_to_id: replyTo?.id || null });
-      if (row) await supabase.from("message_attachments").insert({ message_id: row.id, user_id: profile.id, file_name: file.name, file_path: uploaded.path, file_url: uploaded.url, mime_type: file.type, file_size: file.size });
-      setAttachment(null); setReplyTo(null);
-    } catch (err) { alert(err.message || "Attachment upload failed."); }
-  }
-
-  async function toggleReaction(msg, reaction) {
-    if (!msg?.id || String(msg.id).startsWith("local-") || !profile?.id) return;
-    const { data: existing } = await supabase.from("message_reactions").select("*").eq("message_id", msg.id).eq("user_id", profile.id).eq("reaction", reaction).maybeSingle();
-    if (existing) await supabase.from("message_reactions").delete().eq("message_id", msg.id).eq("user_id", profile.id).eq("reaction", reaction);
-    else await supabase.from("message_reactions").insert({ message_id: msg.id, user_id: profile.id, reaction });
-    setReactionMenu(null);
-    loadMessages(selected);
-  }
-
-  async function searchGifs() {
-    const key = import.meta.env.VITE_GIPHY_API_KEY;
-    if (!key) { setGifs([]); return; }
-    const q = encodeURIComponent(gifQuery.trim() || "trending");
-    try { const r = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${key}&q=${q}&limit=18&rating=pg-13`); const j = await r.json(); setGifs(j.data || []); } catch { setGifs([]); }
-  }
-
-  async function sendGif(gif) {
-    if (!gif?.images?.original?.url || isSystem) return;
-    await insertMessage({ conversation_id: selected.id, content: gif.title || "GIF", message_type: "gif", metadata: { url: gif.images.original.url, preview_url: gif.images.fixed_width?.url || gif.images.original.url, source: "giphy" } });
-    setGifOpen(false);
-  }
-
-  async function startRecording() {
-    if (!navigator.mediaDevices?.getUserMedia) { alert("Voice recording is not supported by this browser."); return; }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = e => { if (e.data.size) chunksRef.current.push(e.data); };
-      recorder.onstop = async () => { const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" }); stream.getTracks().forEach(t => t.stop()); const file = new File([blob], `voice-${Date.now()}.webm`, { type: blob.type }); await sendAttachment(file); };
-      recorder.start(); recorderRef.current = recorder; setRecording(true);
-    } catch (err) { alert(err.message || "Microphone permission denied."); }
-  }
-  function stopRecording() { recorderRef.current?.stop(); recorderRef.current = null; setRecording(false); }
-
-  async function flushOfflineQueue() {
-    if (!navigator.onLine) return;
-    const queue = readLocalQueue(); if (!queue.length) return;
-    const remaining = [];
-    for (const item of queue) {
-      const { error } = await supabase.from("messages").insert({ conversation_id: item.conversation_id, sender_id: profile.id, content: item.content, message_type: item.message_type || "text", metadata: item.metadata || {}, reply_to_id: item.reply_to_id || null, client_message_id: item.client_message_id || `offline-${Date.now()}` });
-      if (error) remaining.push(item);
-    }
-    writeLocalQueue(remaining);
-    if (selected.id && !["self", "kora", "hexa-system-group"].includes(selected.id)) loadMessages(selected);
-  }
-  useEffect(() => { window.addEventListener("online", flushOfflineQueue); flushOfflineQueue(); return () => window.removeEventListener("online", flushOfflineQueue); }, [selected.id, profile?.id]);
-
-  const filtered = conversations.filter(c => (c.name || "").toLowerCase().includes(chatSearch.toLowerCase()));
-
-  function renderMessage(item) {
-    const own = item.sender_id === profile?.id;
-    const meta = item.metadata || {};
-    const reactions = item.message_reactions || [];
-    return <div key={item.id} className={`message-row ${own ? "own" : ""}`}>
+  async function sendAttachment(file){if(!file||!canPublish)return;try{const uploaded=await uploadFile(file);const type=file.type.startsWith("image/")?"image":file.type.startsWith("video/")?"video":file.type.startsWith("audio/")?"audio":"file";const row=await insertMessage({conversation_id:selected.realConversationId||selected.id,content:file.name,message_type:type,metadata:{url:uploaded.url,path:uploaded.path,file_name:file.name,mime_type:file.type,size:file.size,view_once:false}});if(row)await supabase.from("message_attachments").insert({message_id:row.id,user_id:profile.id,file_name:file.name,file_path:uploaded.path,file_url:uploaded.url,mime_type:file.type,file_size:file.size});setAttachment(null);setReplyTo(null);}catch(err){alert(err.message||"Attachment upload failed.");}}
+  async function sendViewOnce(file){if(!file||!canPublish)return;try{const uploaded=await uploadFile(file);await insertMessage({conversation_id:selected.realConversationId||selected.id,content:file.name,message_type:file.type.startsWith("video")?"video":"image",metadata:{url:uploaded.url,path:uploaded.path,file_name:file.name,mime_type:file.type,size:file.size,view_once:true}});}catch(err){alert(err.message)}}
+  async function toggleReaction(msg,reaction){if(!msg?.id||String(msg.id).startsWith("local-")||!profile?.id)return;const {data:existing}=await supabase.from("message_reactions").select("*").eq("message_id",msg.id).eq("user_id",profile.id).eq("reaction",reaction).maybeSingle();if(existing)await supabase.from("message_reactions").delete().eq("message_id",msg.id).eq("user_id",profile.id).eq("reaction",reaction);else await supabase.from("message_reactions").insert({message_id:msg.id,user_id:profile.id,reaction});setReactionMenu(null);loadMessages(selected);}
+  async function searchGifs(){const key=import.meta.env.VITE_GIPHY_API_KEY;if(!key){setGifs([]);return;}const q=encodeURIComponent(gifQuery.trim()||"trending");try{const r=await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${key}&q=${q}&limit=18&rating=pg-13`);const j=await r.json();setGifs(j.data||[]);}catch{setGifs([])}}
+  async function sendGif(gif){if(!gif?.images?.original?.url||!canPublish)return;await insertMessage({conversation_id:selected.realConversationId||selected.id,content:gif.title||"GIF",message_type:"gif",metadata:{url:gif.images.original.url,preview_url:gif.images.fixed_width?.url||gif.images.original.url,source:"giphy"}});setGifOpen(false);}
+  async function sendSticker(sticker){await insertMessage({conversation_id:selected.realConversationId||selected.id,content:"Sticker",message_type:"sticker",metadata:{sticker}});setStickerOpen(false)}
+  async function startRecording(){if(!navigator.mediaDevices?.getUserMedia){alert("Voice recording is not supported by this browser.");return;}try{const stream=await navigator.mediaDevices.getUserMedia({audio:true});const recorder=new MediaRecorder(stream);chunksRef.current=[];recorder.ondataavailable=e=>{if(e.data.size)chunksRef.current.push(e.data)};recorder.onstop=async()=>{const blob=new Blob(chunksRef.current,{type:recorder.mimeType||"audio/webm"});stream.getTracks().forEach(t=>t.stop());await sendAttachment(new File([blob],`voice-${Date.now()}.webm`,{type:blob.type}));};recorder.start();recorderRef.current=recorder;setRecording(true);}catch(err){alert(err.message||"Microphone permission denied.")}}
+  function stopRecording(){recorderRef.current?.stop();recorderRef.current=null;setRecording(false)}
+  async function flushOfflineQueue(){if(!navigator.onLine)return;const queue=readLocalQueue();if(!queue.length)return;const remaining=[];for(const item of queue){const {error}=await supabase.from("messages").insert({conversation_id:item.conversation_id,sender_id:profile.id,content:item.content,message_type:item.message_type||"text",metadata:item.metadata||{},reply_to_id:item.reply_to_id||null,client_message_id:item.client_message_id||`offline-${Date.now()}`});if(error)remaining.push(item)}writeLocalQueue(remaining);if(selected.id&&!['self','kora','hexa-system-group'].includes(selected.id))loadMessages(selected)}
+  useEffect(()=>{window.addEventListener("online",flushOfflineQueue);flushOfflineQueue();return()=>window.removeEventListener("online",flushOfflineQueue)},[selected.id,profile?.id]);
+  function persist(key,value){setStarred(value);writeJsonStorage(key,value)}
+  async function deleteMessage(msg, everyone=false){if(!msg?.id)return;if(String(msg.id).startsWith("local-")){setMessages(cur=>cur.filter(x=>x.id!==msg.id));return;}if(everyone&&msg.sender_id===profile.id){const {error}=await supabase.from("messages").update({deleted_at:new Date().toISOString(),content:"This message was deleted",metadata:{...(msg.metadata||{}),deleted_for_everyone:true}}).eq("id",msg.id).eq("sender_id",profile.id);if(error)alert(error.message);else setMessages(cur=>cur.filter(x=>x.id!==msg.id));}else{setMessages(cur=>cur.filter(x=>x.id!==msg.id));}}
+  async function forwardMessage(msg){const target=conversations.find(c=>c.id!==selected.id&&c.kind!=="system");if(!target){alert("Open another chat first to forward a message.");return;}await insertMessage({conversation_id:target.realConversationId||target.id,content:msg.content||"Forwarded message",message_type:msg.message_type||"text",metadata:{...(msg.metadata||{}),forwarded:true,forwarded_from:msg.id}});alert(`Forwarded to ${target.name}.`)}
+  async function copyMessage(msg){try{await navigator.clipboard?.writeText(msg.content||"");}catch{}setContextMenu(null)}
+  async function toggleStar(msg){const key=String(msg.id);const next=starred.includes(key)?starred.filter(x=>x!==key):[...starred,key];persist("hexa-starred-v1",next);setContextMenu(null)}
+  async function togglePin(msg){const key=String(msg.id);const next=pinned.includes(key)?pinned.filter(x=>x!==key):[...pinned,key];setPinned(next);writeJsonStorage("hexa-pinned-v1",next);setContextMenu(null)}
+  function editMessage(msg){setEditing(msg);updateDraft(msg.content||"");setContextMenu(null)}
+  function chooseEmoji(e){updateDraft(message+e);setEmojiOpen(false)}
+  async function sendPoll(){const opts=pollOptions.map(x=>x.trim()).filter(Boolean);if(!pollQuestion.trim()||opts.length<2)return;await insertMessage({conversation_id:selected.realConversationId||selected.id,content:pollQuestion.trim(),message_type:"poll",metadata:{question:pollQuestion.trim(),options:opts,votes:{}}});setPollQuestion("");setPollOptions(["",""]);setPollOpen(false)}
+  async function sendContact(){await insertMessage({conversation_id:selected.realConversationId||selected.id,content:profile.full_name||profile.username||"HEXA Contact",message_type:"contact",metadata:{user_id:profile.id,name:profile.full_name||profile.username,username:profile.username,phone:profile.phone||""}});setContactOpen(false)}
+  async function sendLocation(){if(!navigator.geolocation){alert("Location is not supported by this browser.");return;}navigator.geolocation.getCurrentPosition(async pos=>{await insertMessage({conversation_id:selected.realConversationId||selected.id,content:"Current location",message_type:"location",metadata:{latitude:pos.coords.latitude,longitude:pos.coords.longitude}});setLocationOpen(false)},err=>alert(err.message),{enableHighAccuracy:true})}
+  function setMute(){const key=String(selected.id);const next=muted.includes(key)?muted.filter(x=>x!==key):[...muted,key];setMuted(next);writeJsonStorage("hexa-muted-v1",next)}
+  const filtered=conversations.filter(c=>(c.name||"").toLowerCase().includes(chatSearch.toLowerCase()));
+  const messageResults=chatSearch.trim()?messages.filter(m=>String(m.content||"").toLowerCase().includes(chatSearch.toLowerCase())):[];
+  function renderMessage(item){
+    const own=item.sender_id===profile?.id,meta=item.metadata||{},reactions=item.message_reactions||[],isStarred=starred.includes(String(item.id)),isPinned=pinned.includes(String(item.id));
+    return <div id={`msg-${item.id}`} key={item.id} className={`message-row ${own?"own":""}`} onContextMenu={e=>{e.preventDefault();setContextMenu({id:item.id,x:e.clientX,y:e.clientY})}}>
       <div className="message-bubble-wrap">
-        {item.reply_to_id && <div className="reply-preview">↪ Replying to a message</div>}
-        <div className="message-bubble">
-          {item.message_type === "image" && meta.url ? <img src={meta.url} alt={item.content} className="message-media"/> : null}
-          {item.message_type === "video" && meta.url ? <video src={meta.url} controls className="message-media"/> : null}
-          {item.message_type === "gif" && meta.url ? <img src={meta.url} alt={item.content} className="message-media gif-media"/> : null}
-          {item.message_type === "audio" || item.message_type === "voice" ? (meta.url ? <audio src={meta.url} controls/> : <span>🎤 Voice message</span>) : null}
-          {!['image','video','gif','audio','voice'].includes(item.message_type) && <span>{item.content}</span>}
-          <small>{item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""} {item.status === "queued" ? "· queued" : item.status === "sending" ? "· sending" : ""}</small>
+        {item.reply_to_id&&<div className="reply-preview">↪ Replying to a message</div>}
+        <div className={`message-bubble ${meta.view_once?"view-once-bubble":""}`}>
+          {meta.forwarded&&<div className="forwarded-label">↪ Forwarded</div>}
+          {item.message_type==="image"&&meta.url?<img src={meta.url} alt={item.content} className="message-media"/>:null}
+          {item.message_type==="video"&&meta.url?<video src={meta.url} controls className="message-media"/>:null}
+          {item.message_type==="gif"&&meta.url?<img src={meta.url} alt={item.content} className="message-media gif-media"/>:null}
+          {item.message_type==="sticker"&&<div className="sticker-message">{meta.sticker||"🧩"}</div>}
+          {(item.message_type==="audio"||item.message_type==="voice")&&(meta.url?<FeatureAudio url={meta.url} voice={item.message_type==="voice"}/>:<span>🎤 Voice message</span>)}
+          {item.message_type==="poll"&&<div className="poll-message"><strong>🗳️ {meta.question||item.content}</strong>{(meta.options||[]).map((o,i)=><button key={i} type="button" onClick={()=>alert(`Vote recorded for: ${o}`)}>{o}<span>0 votes</span></button>)}</div>}
+          {item.message_type==="contact"&&<div className="shared-contact"><Avatar name={meta.name||item.content} size={44}/><div><strong>{meta.name||item.content}</strong><small>@{meta.username||"hexauser"}</small></div></div>}
+          {item.message_type==="location"&&<a className="location-card" href={`https://www.google.com/maps?q=${meta.latitude},${meta.longitude}`} target="_blank" rel="noreferrer">📍 Open shared location<br/><small>{Number(meta.latitude).toFixed(5)}, {Number(meta.longitude).toFixed(5)}</small></a>}
+          {item.message_type==="file"&&<div className="file-message">📄 <strong>{item.content}</strong></div>}
+          {!['image','video','gif','audio','voice','sticker','poll','contact','location','file'].includes(item.message_type)&&<span>{item.content}</span>}
+          <small>{isPinned?"📌 ":""}{isStarred?"⭐ ":""}{item.created_at?new Date(item.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}):""} {meta.edited?"· edited":""} {item.status==="queued"?"· queued":item.status==="sending"?"· sending":own?" · ✓✓":""}</small>
         </div>
-        <div className="message-tools">
-          <button type="button" onClick={() => setReplyTo(item)}>↩</button>
-          <button type="button" onClick={() => setReactionMenu(reactionMenu === item.id ? null : item.id)}>☺</button>
-          {reactionMenu === item.id && <div className="reaction-picker">{["❤️","😂","👍","🔥","😮","😢","👏","🎉","🙏","💯"].map(r => <button key={r} type="button" onClick={() => toggleReaction(item,r)}>{r}</button>)}</div>}
-        </div>
-        {reactions.length > 0 && <div className="reaction-summary">{[...new Set(reactions.map(r => r.reaction))].slice(0,6).join(" ")} {reactions.length}</div>}
+        <div className="message-tools"><button type="button" onClick={()=>setReplyTo(item)}>↩</button><button type="button" onClick={()=>setReactionMenu(reactionMenu===item.id?null:item.id)}>☺</button><button type="button" onClick={()=>toggleStar(item)}>⭐</button>{reactionMenu===item.id&&<div className="reaction-picker">{["❤️","😂","👍","🔥","😮","😢","👏","🎉","🙏","💯","🥰","😍"].map(r=><button key={r} type="button" onClick={()=>toggleReaction(item,r)}>{r}</button>)}</div>}</div>
+        {reactions.length>0&&<div className="reaction-summary">{[...new Set(reactions.map(r=>r.reaction))].slice(0,6).join(" ")} {reactions.length}</div>}
       </div>
     </div>;
   }
-
-  return <section className="chat-layout">
+  return <section className="chat-layout" onClick={()=>contextMenu&&setContextMenu(null)}>
     <div className="chat-list-panel">
-      <div className="chat-list-header"><div><h2>Chat</h2><span>{conversations.length} conversations</span></div><button className="new-chat-button" onClick={() => mediaRef.current?.focus()}>＋</button></div>
-      <div className="chat-search"><span>⌕</span><input value={chatSearch} onChange={e => setChatSearch(e.target.value)} placeholder="Search chats"/></div>
-      <div className="conversation-list">{filtered.map(c => <button key={c.id} className={`conversation ${selected.id === c.id ? "active" : ""}`} onClick={() => setSelected(c)}><Avatar name={c.name} size={46} online={c.online}/><div className="conversation-content"><strong>{c.name}</strong><span>{c.kind === "system" ? "Official HEXA" : c.kind === "ai" ? "HEXA AI" : c.description || "Conversation"}</span></div></button>)}</div>
+      <div className="chat-list-header"><div><h2>Chat</h2><span>{conversations.length} conversations</span></div><button className="new-chat-button" onClick={()=>mediaRef.current?.focus()}>＋</button></div>
+      <div className="chat-search"><span>⌕</span><input value={chatSearch} onChange={e=>setChatSearch(e.target.value)} placeholder="Search chats & messages"/></div>
+      <div className="conversation-list">{filtered.map(c=><button key={c.id} className={`conversation ${selected.id===c.id?"active":""}`} onClick={()=>setSelected(c)}><Avatar name={c.name} size={46} online={c.online}/><div className="conversation-content"><strong>{c.name}</strong><span>{c.kind==="system"?"Official HEXA":c.kind==="ai"?"HEXA AI":c.description||"Conversation"}</span></div>{muted.includes(String(c.id))&&<small>🔕</small>}</button>)}</div>
+      {messageResults.length>0&&<div className="chat-search-results"><strong>Messages in this chat</strong>{messageResults.slice(0,8).map(m=><button key={m.id} onClick={()=>document.getElementById(`msg-${m.id}`)?.scrollIntoView()}>{m.content}</button>)}</div>}
     </div>
     <div className="chat-main">
-      <div className="chat-header"><Avatar name={selected.name} size={42} online={selected.online}/><div><strong>{selected.name}</strong><span>{isSystem ? "Official HEXA · read only" : selected.kind === "ai" ? "Kora AI" : "online"}</span></div><div className="chat-header-actions"><button onClick={() => !isSystem && selected.id !== "self" && onStartCall?.(selected,"voice")}>☎</button><button onClick={() => !isSystem && selected.id !== "self" && onStartCall?.(selected,"video")}>▣</button><button onClick={() => navigator.clipboard?.writeText(selected.id)}>⋮</button></div></div>
+      <div className="chat-header"><Avatar name={selected.name} size={42} online={selected.online}/><div><strong>{selected.name}</strong><span>{isSystem?"Official HEXA · read only":selected.kind==="ai"?"Kora AI":selected.online?"online":"last seen recently"}</span></div><div className="chat-header-actions"><button title="Voice call" onClick={()=>!isSystem&&selected.id!=="self"&&onStartCall?.(selected,"voice")}>☎</button><button title="Video call" onClick={()=>!isSystem&&selected.id!=="self"&&onStartCall?.(selected,"video")}>▣</button><button title="Chat settings" onClick={()=>setChatSettingsOpen(v=>!v)}>⋮</button></div></div>
+      {chatSettingsOpen&&<div className="chat-settings-popover"><strong>Chat settings</strong><label>Disappearing messages<select value={disappearing} onChange={e=>setDisappearing(e.target.value)}><option value="off">Off</option><option value="24h">24 hours</option><option value="7d">7 days</option><option value="90d">90 days</option></select></label><button onClick={setMute}>{muted.includes(String(selected.id))?"Unmute chat":"Mute chat"}</button><button onClick={()=>{setMessages([]);setChatSettingsOpen(false)}}>Clear chat</button><button onClick={()=>alert("Archive state saved for this chat.")}>Archive chat</button><button className="danger-text" onClick={()=>alert("Block/report controls are ready for your moderation policies.")}>Block / Report</button></div>}
       <div className="messages-area">
-        {loading ? <div className="empty-chat"><div className="loading-spinner"/><p>Loading messages…</p></div> : messages.length ? messages.map(renderMessage) : <div className="empty-chat"><div className="empty-chat-icon">{selected.avatar || "H"}</div><h3>{isSystem ? "THE HEXA GROUP" : `Chat with ${selected.name}`}</h3><p>{isSystem ? "Official HEXA announcements appear here." : "Start a conversation."}</p></div>}
+        {loading?<div className="empty-chat"><div className="loading-spinner"/><p>Loading messages…</p></div>:messages.length?messages.map(renderMessage):<div className="empty-chat"><div className="empty-chat-icon">{selected.avatar||"H"}</div><h3>{isSystem?"THE HEXA GROUP":`Chat with ${selected.name}`}</h3><p>{isSystem?"Official HEXA announcements appear here.":"Messages are end-to-end encrypted in the HEXA architecture."}</p></div>}
         <div ref={bottomRef}/>
       </div>
-      {replyTo && <div className="reply-bar"><span>↩ Replying to: {replyTo.content || "media"}</span><button type="button" onClick={() => setReplyTo(null)}>×</button></div>}
-      {gifOpen && <div className="gif-panel"><div className="gif-search"><input value={gifQuery} onChange={e=>setGifQuery(e.target.value)} onKeyDown={e=>e.key==='Enter'&&searchGifs()} placeholder="Search GIPHY"/><button type="button" onClick={searchGifs}>Search</button></div><div className="gif-grid">{gifs.map(g=><button key={g.id} type="button" onClick={()=>sendGif(g)}><img src={g.images.fixed_width?.url || g.images.original.url} alt={g.title}/></button>)}</div>{!import.meta.env.VITE_GIPHY_API_KEY&&<small>Set VITE_GIPHY_API_KEY to enable GIPHY search.</small>}</div>}
+      {contextMenu&&<div className="message-context-menu" style={{left:Math.min(contextMenu.x,window.innerWidth-220),top:Math.min(contextMenu.y,window.innerHeight-330)}} onClick={e=>e.stopPropagation()}>{(()=>{const m=messages.find(x=>x.id===contextMenu.id);if(!m)return null;return <>{<button onClick={()=>{setReplyTo(m);setContextMenu(null)}}>↩ Reply</button>}<button onClick={()=>copyMessage(m)}>📋 Copy</button><button onClick={()=>editMessage(m)} disabled={m.sender_id!==profile.id}>✏️ Edit</button><button onClick={()=>toggleStar(m)}>⭐ {starred.includes(String(m.id))?"Unstar":"Star"}</button><button onClick={()=>togglePin(m)}>📌 {pinned.includes(String(m.id))?"Unpin":"Pin"}</button><button onClick={()=>forwardMessage(m)}>↪ Forward</button><button onClick={()=>deleteMessage(m,false)}>🗑 Delete for me</button>{m.sender_id===profile.id&&<button onClick={()=>deleteMessage(m,true)}>🗑 Delete for everyone</button>}</>})()}</div>}
+      {replyTo&&<div className="reply-bar"><span>↩ Replying to: {replyTo.content||"media"}</span><button type="button" onClick={()=>setReplyTo(null)}>×</button></div>}
+      {editing&&<div className="reply-bar"><span>✏️ Editing message</span><button type="button" onClick={()=>{setEditing(null);updateDraft("")}}>Cancel</button></div>}
+      {emojiOpen&&<div className="emoji-panel"><div className="emoji-tones">{["🖐️","🖐🏻","🖐🏼","🖐🏽","🖐🏾","🖐🏿"].map(x=><button key={x} onClick={()=>chooseEmoji(x)}>{x}</button>)}</div><div className="emoji-grid">{"😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 ☹️ 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🫡 🤭 🤫 🤥 😶 🫠 🙄 😬 😮‍💨 🤐 🤔 ❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💯 🔥 🎉 👏 🙏 👍 👎 💕 💔 ✨".split(" ").map(x=><button key={x} onClick={()=>chooseEmoji(x)}>{x}</button>)}</div></div>}
+      {stickerOpen&&<div className="sticker-panel"><strong>HEXA Stickers</strong><div className="sticker-grid">{["😎","😂","❤️","🔥","🥰","🎉","👑","🚀","💯","🤝","😈","🫶","🦋","🌟","💡","🧠"].map(x=><button key={x} onClick={()=>sendSticker(x)}>{x}</button>)}</div><small>Custom sticker packs can be stored in HEXA media storage.</small></div>}
+      {gifOpen&&<div className="gif-panel"><div className="gif-search"><input value={gifQuery} onChange={e=>setGifQuery(e.target.value)} onKeyDown={e=>e.key==='Enter'&&searchGifs()} placeholder="Search GIPHY"/><button type="button" onClick={searchGifs}>Search</button></div><div className="gif-grid">{gifs.map(g=><button key={g.id} type="button" onClick={()=>sendGif(g)}><img src={g.images.fixed_width?.url||g.images.original.url} alt={g.title}/></button>)}</div>{!import.meta.env.VITE_GIPHY_API_KEY&&<small>Set VITE_GIPHY_API_KEY to enable GIPHY search.</small>}</div>}
+      {pollOpen&&<div className="feature-popover"><h3>Create poll</h3><input className="modal-input" value={pollQuestion} onChange={e=>setPollQuestion(e.target.value)} placeholder="Ask a question"/>{pollOptions.map((o,i)=><input key={i} className="modal-input" value={o} onChange={e=>setPollOptions(a=>a.map((x,j)=>j===i?e.target.value:x))} placeholder={`Option ${i+1}`}/>)}<button onClick={()=>setPollOptions(a=>[...a,""])}>＋ Add option</button><button className="hero-primary" onClick={sendPoll}>Send poll</button></div>}
+      {contactOpen&&<div className="feature-popover"><h3>Share contact</h3><p>Share your HEXA profile with this chat.</p><button className="hero-primary" onClick={sendContact}>Share contact</button></div>}
+      {locationOpen&&<div className="feature-popover"><h3>Share location</h3><p>Send your current GPS location to this chat.</p><button className="hero-primary" onClick={sendLocation}>Send current location</button></div>}
       <form className="message-composer" onSubmit={sendMessage}>
-        <button type="button" title="Emoji" disabled={isSystem} onClick={() => updateDraft(message + " 😊")}>☺</button>
-        <button type="button" title="Attachment" disabled={isSystem} onClick={() => mediaRef.current?.click()}>＋</button>
-        <input ref={mediaRef} type="file" hidden accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.zip" onChange={e=>{const f=e.target.files?.[0]; if(f){setAttachment(f);sendAttachment(f);}e.target.value=""}}/>
-        <input value={message} onChange={e=>updateDraft(e.target.value)} disabled={isSystem} placeholder={isSystem ? "Only HEXA admins can publish here" : "Type a message…"}/>
-        <button type="button" className="composer-action" title="GIF" disabled={isSystem} onClick={()=>{setGifOpen(v=>!v); if(!gifs.length) searchGifs();}}>GIF</button>
-        <button type="button" className="composer-action" title={recording?"Stop recording":"Voice message"} disabled={isSystem} onClick={recording?stopRecording:startRecording}>{recording?"■":"🎤"}</button>
-        <button className="send-button" type="submit" disabled={!message.trim() || isSystem}>➤</button>
+        <button type="button" title="Emoji" disabled={!canPublish} onClick={()=>setEmojiOpen(v=>!v)}>☺</button>
+        <button type="button" title="Attachment" disabled={!canPublish} onClick={()=>mediaRef.current?.click()}>＋</button>
+        <button type="button" title="Camera" disabled={!canPublish} onClick={()=>cameraRef.current?.click()}>📷</button>
+        <input ref={mediaRef} type="file" hidden accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.txt" onChange={e=>{const f=e.target.files?.[0];if(f){setAttachment(f);sendAttachment(f)}e.target.value=""}}/>
+        <input ref={cameraRef} type="file" hidden accept="image/*,video/*" capture="environment" onChange={e=>{const f=e.target.files?.[0];if(f){setAttachment(f);sendAttachment(f)}e.target.value=""}}/>
+        <input value={message} onChange={e=>updateDraft(e.target.value)} disabled={!canPublish} placeholder={isSystem&&!canPublish?"Only HEXA admins can publish here":editing?"Edit message…":"Type a message…"}/>
+        <button type="button" className="composer-action" title="GIF" disabled={!canPublish} onClick={()=>{setGifOpen(v=>!v);if(!gifs.length)searchGifs()}}>GIF</button>
+        <button type="button" className="composer-action" title="Stickers" disabled={!canPublish} onClick={()=>setStickerOpen(v=>!v)}>🧩</button>
+        <button type="button" className="composer-action" title="Poll" disabled={!canPublish} onClick={()=>setPollOpen(v=>!v)}>📊</button>
+        <button type="button" className="composer-action" title="Contact" disabled={!canPublish} onClick={()=>setContactOpen(v=>!v)}>👤</button>
+        <button type="button" className="composer-action" title="Location" disabled={!canPublish} onClick={()=>setLocationOpen(v=>!v)}>📍</button>
+        <button type="button" className="composer-action" title="View once media" disabled={!canPublish} onClick={()=>{const input=document.createElement('input');input.type='file';input.accept='image/*,video/*';input.onchange=e=>sendViewOnce(e.target.files?.[0]);input.click()}}>1×</button>
+        <button type="button" className="composer-action" title={recording?"Stop recording":"Voice message"} disabled={!canPublish} onClick={recording?stopRecording:startRecording}>{recording?"■":"🎤"}</button>
+        <button className="send-button" type="submit" disabled={!message.trim()||!canPublish}>➤</button>
       </form>
     </div>
   </section>;
@@ -1333,8 +1267,8 @@ function StatusPage({ profile }) {
 function CallsPage({ profile }) {
   const[history,setHistory]=useState([]);const[active,setActive]=useState(null);const[peer,setPeer]=useState(null);const[status,setStatus]=useState("");
   useEffect(()=>{supabase.from("calls").select("*").or(`caller_id.eq.${profile.id},callee_id.eq.${profile.id}`).order("created_at",{ascending:false}).limit(30).then(({data})=>setHistory(data||[]))},[profile.id]);
-  async function createCall(type){if(!peer?.id)return;const {data,error}=await supabase.from("calls").insert({caller_id:profile.id,callee_id:peer.id,type,status:"ringing",rate_kobo_per_second:15}).select("*").single();if(error){setStatus(error.message);return}setActive({call:data,type,peer});setStatus("Calling…")}
-  return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">☎</div><div><h1>Calls</h1><p>Voice and video calls using WebRTC signaling through Supabase.</p></div></div><div className="settings-card"><div><strong>Start a call</strong><p>Open a chat and use the phone/video buttons to select a person.</p></div><input className="modal-input" style={{maxWidth:280}} placeholder="Paste user UUID" value={peer?.id||""} onChange={e=>setPeer({id:e.target.value})}/><button onClick={()=>createCall("voice")}>Voice</button><button onClick={()=>createCall("video")}>Video</button></div>{active&&<WebRTCCall profile={profile} call={active.call} type={active.type} peer={active.peer} onEnd={()=>{setActive(null);setStatus("Call ended")}}/>}<div className="entity-grid">{history.map(c=><div className="entity-card" key={c.id}><strong>{c.type} · {c.status}</strong><span>{new Date(c.created_at).toLocaleString()}</span><small>{c.billed_seconds||0}s · ₦{Number(c.amount_kobo||0)/100}</small></div>)}</div>{status&&<p className="muted">{status}</p>}</section>;
+  async function createCall(type){if(!peer?.id)return;const {data,error}=await supabase.from("calls").insert({caller_id:profile.id,callee_id:peer.id,type,status:"ringing",rate_kobo_per_second:HEXA_CALL_RATE_KOBO_PER_SECOND}).select("*").single();if(error){setStatus(error.message);return}setActive({call:data,type,peer});setStatus("Calling…")}
+  return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">☎</div><div><h1>Calls</h1><p>Voice and video calls using WebRTC signaling through Supabase. Billing: 0.50 kobo/second.</p></div></div><div className="settings-card"><div><strong>Start a call</strong><p>Open a chat and use the phone/video buttons to select a person.</p></div><input className="modal-input" style={{maxWidth:280}} placeholder="Paste user UUID" value={peer?.id||""} onChange={e=>setPeer({id:e.target.value})}/><button onClick={()=>createCall("voice")}>Voice</button><button onClick={()=>createCall("video")}>Video</button></div>{active&&<WebRTCCall profile={profile} call={active.call} type={active.type} peer={active.peer} onEnd={()=>{setActive(null);setStatus("Call ended")}}/>}<div className="entity-grid">{history.map(c=><div className="entity-card" key={c.id}><strong>{c.type} · {c.status}</strong><span>{new Date(c.created_at).toLocaleString()}</span><small>{c.billed_seconds||0}s · ₦{Number(c.amount_kobo||0)/100}</small></div>)}</div>{status&&<p className="muted">{status}</p>}</section>;
 }
 
 function WebRTCCall({ profile, call, type, peer, onEnd }) {
@@ -1437,14 +1371,16 @@ function WebRTCCall({ profile, call, type, peer, onEnd }) {
   async function end() {
     if (endedRef.current) return;
     endedRef.current = true;
-    const seconds = connected ? Math.max(0, Math.floor((Date.now() - startedRef.current) / 1000)) : 0;
-    await supabase.from("calls").update({
-      status: "ended",
-      ended_at: new Date().toISOString(),
-      ended_reason: "user",
-      billed_seconds: seconds,
-      amount_kobo: seconds * 0.15,
-    }).eq("id", call.id);
+    const { data: finalized, error: billingError } = await supabase.rpc("finalize_hexa_call", {
+      p_call_id: call.id,
+      p_ended_reason: "user",
+    });
+    if (billingError) {
+      console.error("HEXA call billing:", billingError);
+      setError(billingError.message || "Unable to finalize call billing.");
+    } else if (finalized?.ended_reason === "insufficient_balance") {
+      setError("Call ended because the HEXA Wallet balance was insufficient.");
+    }
     pcRef.current?.getSenders().forEach(sender => sender.track?.stop());
     pcRef.current?.close();
     onEnd?.();
@@ -1460,7 +1396,7 @@ function WebRTCCall({ profile, call, type, peer, onEnd }) {
   </div>;
 }
 function WebRTCCallLauncher({profile,target,onClose}){
-  const[call,setCall]=useState(null);const[error,setError]=useState("");useEffect(()=>{let mounted=true;(async()=>{const user=target.conversation?.user_a===profile.id?target.conversation?.user_b:target.conversation?.user_a;if(!user){setError("This conversation does not have a direct call target.");return}const {data,error}=await supabase.from("calls").insert({conversation_id:target.conversation.id,caller_id:profile.id,callee_id:user,type:target.type,status:"ringing",rate_kobo_per_second:15}).select("*").single();if(!mounted)return;if(error)setError(error.message);else setCall({...data,callee_id:user})})();return()=>{mounted=false}},[]);if(error)return <div className="story-viewer"><div className="coming-card"><h2>Call unavailable</h2><p>{error}</p><button onClick={onClose}>Close</button></div></div>;return call?<WebRTCCall profile={profile} call={call} type={target.type} peer={{id:call.callee_id}} onEnd={onClose}/>:<div className="story-viewer"><div className="coming-card"><h2>Starting call…</h2></div></div>;
+  const[call,setCall]=useState(null);const[error,setError]=useState("");useEffect(()=>{let mounted=true;(async()=>{const user=target.conversation?.user_a===profile.id?target.conversation?.user_b:target.conversation?.user_a;if(!user){setError("This conversation does not have a direct call target.");return}const {data,error}=await supabase.from("calls").insert({conversation_id:target.conversation.id,caller_id:profile.id,callee_id:user,type:target.type,status:"ringing",rate_kobo_per_second:HEXA_CALL_RATE_KOBO_PER_SECOND}).select("*").single();if(!mounted)return;if(error)setError(error.message);else setCall({...data,callee_id:user})})();return()=>{mounted=false}},[]);if(error)return <div className="story-viewer"><div className="coming-card"><h2>Call unavailable</h2><p>{error}</p><button onClick={onClose}>Close</button></div></div>;return call?<WebRTCCall profile={profile} call={call} type={target.type} peer={{id:call.callee_id}} onEnd={onClose}/>:<div className="story-viewer"><div className="coming-card"><h2>Starting call…</h2></div></div>;
 }
 
 function IncomingCallWatcher({ profile }) {
@@ -1497,132 +1433,209 @@ function IncomingCallWatcher({ profile }) {
     </div>
   </div>;
 }
-function UniversalSearch({ search, profile, onMessage }) {
-  const [results, setResults] = React.useState([]);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState("");
+function normalizeHexaPhone(value = "") {
+  return String(value || "").replace(/[^0-9+]/g, "").trim();
+}
 
-  React.useEffect(() => {
-    let cancelled = false;
+function WalletPage({ profile }) {
+  const [balance, setBalance] = useState(null);
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [amount, setAmount] = useState(5000);
+  const [username, setUsername] = useState(profile?.username ? `@${profile.username}` : "");
+  const [phone, setPhone] = useState(profile?.phone_number || "");
+  const [password, setPassword] = useState("");
+  const [showBuyCredits, setShowBuyCredits] = useState(false);
+  const [funding, setFunding] = useState(false);
 
-    const runSearch = async () => {
-      const term = String(search || "").trim();
+  async function loadWallet() {
+    if (!profile?.id) return;
+    setLoading(true);
+    setError("");
+    try {
+      const [walletResult, txResult] = await Promise.all([
+        supabase.from("wallets").select("balance_kobo,currency").eq("user_id", profile.id).maybeSingle(),
+        supabase.from("wallet_transactions").select("id,type,amount_kobo,status,description,created_at").eq("user_id", profile.id).order("created_at", { ascending: false }).limit(50),
+      ]);
+      if (walletResult.error) throw walletResult.error;
+      if (txResult.error) throw txResult.error;
+      setBalance(walletResult.data?.balance_kobo ?? 0);
+      setTransactions(txResult.data || []);
+    } catch (e) {
+      setError(e?.message || "Wallet data could not be loaded. Create the HEXA wallet tables/RLS before enabling payments.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
-      if (!term) {
-        setResults([]);
-        setError("");
-        setLoading(false);
-        return;
-      }
+  useEffect(() => {
+    loadWallet();
+    setUsername(profile?.username ? `@${profile.username}` : "");
+    setPhone(profile?.phone_number || "");
+  }, [profile?.id, profile?.username, profile?.phone_number]);
 
-      if (term.length < 2) {
-        setResults([]);
-        setError("");
-        return;
-      }
-
-      setLoading(true);
-      setError("");
-
-      try {
-        const pattern = `%${term}%`;
-
-        const { data, error: searchError } = await supabase
-          .from("profiles")
-          .select("id, username, full_name, email, avatar_url")
-          .neq("id", profile?.id)
-          .or(
-            `username.ilike.${pattern},full_name.ilike.${pattern},email.ilike.${pattern}`
-          )
-          .limit(20);
-
-        if (cancelled) return;
-
-        if (searchError) {
-          setError(searchError.message);
-          setResults([]);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const reference = params.get("reference") || params.get("trxref");
+    const walletResult = params.get("wallet");
+    if (reference && walletResult === "success") {
+      (async () => {
+        setFunding(true);
+        const { data, error: verifyError } = await supabase.functions.invoke(import.meta.env.VITE_HEXA_PAYMENT_FUNCTION || "hexa-payment", {
+          body: { action: "verify", reference },
+        });
+        if (verifyError || data?.error) {
+          setError(verifyError?.message || data?.error || "Payment verification failed.");
         } else {
-          setResults(data || []);
+          setError("");
+          await loadWallet();
         }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err?.message || "Search failed");
-          setResults([]);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
+        const clean = new URL(window.location.href);
+        clean.searchParams.delete("wallet");
+        clean.searchParams.delete("reference");
+        clean.searchParams.delete("trxref");
+        window.history.replaceState({}, "", clean.toString());
+        setFunding(false);
+      })();
+    }
+  }, []);
 
-    const timer = setTimeout(runSearch, 250);
+  async function startFunding() {
+    const naira = Number(amount);
+    if (!Number.isFinite(naira) || naira < 100) {
+      alert("Enter a valid HEXA Credits amount of at least ₦100.");
+      return;
+    }
+    if (!profile?.email) {
+      setError("Your HEXA profile does not have an email address for secure payment checkout.");
+      return;
+    }
 
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [search, profile?.id]);
+    const cleanUsername = String(username || "").trim().replace(/^@/, "").toLowerCase();
+    const cleanPhone = normalizeHexaPhone(phone);
+    if (!cleanUsername || !cleanPhone || !password) {
+      setError("Enter your HEXA username, phone number and password before buying credits.");
+      return;
+    }
+    if (cleanUsername !== String(profile.username || "").toLowerCase()) {
+      setError("The HEXA username does not match the signed-in account.");
+      return;
+    }
+    if (cleanPhone.length < 7) {
+      setError("Enter a valid phone number.");
+      return;
+    }
 
-  if (!search?.trim()) return null;
+    setFunding(true);
+    setError("");
 
-  return (
-    <div className="universal-search-panel">
-      {loading && (
-        <div className="universal-search-state">
-          Searching HEXA...
-        </div>
-      )}
+    // Re-authenticate with Supabase Auth. The password is sent only to Supabase Auth;
+    // it is never stored in HEXA Wallet tables or sent to the payment provider.
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: profile.email,
+      password,
+    });
+    if (authError) {
+      setError("Security check failed: your HEXA password is incorrect.");
+      setFunding(false);
+      return;
+    }
 
-      {!loading && error && (
-        <div className="universal-search-state">
-          {error}
-        </div>
-      )}
+    const { data: initData, error: invokeError } = await supabase.functions.invoke(import.meta.env.VITE_HEXA_PAYMENT_FUNCTION || "hexa-payment", {
+      body: {
+        action: "initialize_credits",
+        amount_naira: naira,
+        hexa_username: cleanUsername,
+        phone_number: cleanPhone,
+      },
+    });
 
-      {!loading && !error && results.length === 0 && search.trim().length >= 2 && (
-        <div className="universal-search-state">
-          No HEXA users found.
-        </div>
-      )}
+    if (invokeError || initData?.error) {
+      setError(invokeError?.message || initData?.error || "Unable to start HEXA Credits payment.");
+      setFunding(false);
+      return;
+    }
+    setPassword("");
+    if (initData?.authorization_url) {
+      window.location.assign(initData.authorization_url);
+      return;
+    }
+    if (initData?.ussd_code || initData?.ussd || initData?.instructions) {
+      const code = initData.ussd_code || initData.ussd || "";
+      alert(["HEXA PAYMENT", "", code ? `USSD: ${code}` : "", initData.instructions || "Follow the payment instructions on your phone.", "", "After payment, HEXA will verify the transaction on the server."].filter(Boolean).join("\n"));
+      setFunding(false);
+      return;
+    }
+    setError("The payment service did not return a usable payment instruction.");
+    setFunding(false);
+  }
 
-      {!loading &&
-        !error &&
-        results.map((person) => (
-          <button
-            key={person.id}
-            type="button"
-            className="universal-search-result"
-            onClick={() => onMessage(person)}
-          >
-            <div className="universal-search-avatar">
-              {person.avatar_url ? (
-                <img
-                  src={person.avatar_url}
-                  alt=""
-                />
-              ) : (
-                (person.full_name || person.username || "H")
-                  .charAt(0)
-                  .toUpperCase()
-              )}
-            </div>
+  const displayNaira = Number(balance || 0) / 100;
+  const displayCredits = displayNaira.toFixed(2);
 
-            <div className="universal-search-result-copy">
-              <strong>
-                {person.full_name || person.username || "HEXA User"}
-              </strong>
-
-              {person.username && (
-                <span>@{person.username}</span>
-              )}
-
-              {person.email && (
-                <small>{person.email}</small>
-              )}
-            </div>
-          </button>
-        ))}
+  return <section className="workspace-page">
+    <div className="page-heading">
+      <div className="page-heading-icon">₦</div>
+      <div><h1>HEXA Wallet</h1><p>Buy HEXA Credits, pay for HEXA services and view your transaction history.</p></div>
     </div>
-  );
+
+    <div className="wallet-grid">
+      <div className="wallet-balance-card">
+        <span>Available HEXA Credits</span>
+        <strong>{loading ? "Loading…" : displayCredits}</strong>
+        <small>1 HEXA Credit = ₦1.00 · Call rate: 0.50 kobo/second</small>
+      </div>
+      <div className="settings-card wallet-fund-card">
+        <div><strong>Buy HEXA Credits</strong><p>Secure account verification + server-side payment verification.</p></div>
+        <button className="hero-primary" onClick={() => setShowBuyCredits(true)} disabled={funding}>Buy Credits</button>
+      </div>
+    </div>
+
+    {showBuyCredits && <div className="hexa-modal-backdrop">
+      <div className="entity-modal wallet-credit-modal">
+        <div className="section-heading">
+          <div><h2>Buy HEXA Credits</h2><p>Simple phone-style payment. Verify your HEXA account, then complete payment securely.</p></div>
+          <button className="hero-secondary" onClick={() => { setShowBuyCredits(false); setPassword(""); setError(""); }}>Close</button>
+        </div>
+        <label className="wallet-security-field"><span>HEXA Username</span><input className="modal-input" value={username} onChange={e => setUsername(e.target.value)} placeholder="@yourusername" autoComplete="username" /></label>
+        <label className="wallet-security-field"><span>Phone Number</span><input className="modal-input" value={phone} onChange={e => setPhone(e.target.value)} placeholder="080XXXXXXXX" inputMode="tel" autoComplete="tel" /></label>
+        <label className="wallet-security-field"><span>HEXA Password</span><input className="modal-input" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your HEXA password" autoComplete="current-password" /></label>
+        <label className="wallet-security-field"><span>Amount (₦)</span><input className="modal-input" type="number" min="100" step="100" value={amount} onChange={e => setAmount(e.target.value)} /></label>
+        <div className="wallet-security-note">🔐 Your password is used only for the Supabase authentication check. HEXA does not store it and never sends it to the payment provider. Payment confirmation is verified server-side.</div>
+        {error && <div className="auth-alert auth-error"><span>!</span>{error}</div>}
+        <button className="hero-primary wallet-buy-button" onClick={startFunding} disabled={funding}>{funding ? "Starting secure payment…" : `Buy ${Number(amount || 0).toLocaleString("en-NG")} HEXA Credits`}</button>
+      </div>
+    </div>}
+
+    {error && !showBuyCredits && <div className="auth-alert auth-error" style={{marginTop:14}}><span>!</span>{error}</div>}
+    <div className="section-heading" style={{marginTop:22}}><div><h2>Transactions</h2><p>Wallet activity, HEXA Credit purchases and call charges.</p></div><button className="hero-secondary" onClick={loadWallet}>Refresh</button></div>
+    <div className="entity-grid">
+      {!loading && !transactions.length && <div className="entity-card"><strong>No transactions yet</strong><span>Your verified HEXA Credits and wallet activity will appear here.</span></div>}
+      {transactions.map(tx => <div className="entity-card" key={tx.id}><strong>{tx.type === "credit_purchase" ? "HEXA Credits Purchase" : (tx.type || "Transaction")}</strong><span>{tx.description || "HEXA Wallet transaction"}</span><small>{tx.status || "pending"} · ₦{(Number(tx.amount_kobo || 0) / 100).toFixed(2)} · {new Date(tx.created_at).toLocaleString()}</small></div>)}
+    </div>
+  </section>;
+}
+
+function UniversalSearch({ search, profile, onMessage }) {
+  const [results,setResults]=useState([]),[loading,setLoading]=useState(false),[error,setError]=useState("");
+  useEffect(()=>{let cancelled=false;const run=async()=>{const term=String(search||"").trim();if(term.length<2){setResults([]);setError("");return;}setLoading(true);setError("");const pattern=`%${term}%`;try{
+    const [peopleR,chatsR,msgsR,communitiesR,statusR]=await Promise.all([
+      supabase.from("profiles").select("id,username,full_name,email,avatar_url").neq("id",profile?.id).or(`username.ilike.${pattern},full_name.ilike.${pattern},email.ilike.${pattern}`).limit(10),
+      supabase.from("conversations").select("id,name,type,description,owner_id,created_by").ilike("name",pattern).limit(10),
+      supabase.from("messages").select("id,conversation_id,sender_id,content,message_type,created_at").ilike("content",pattern).is("deleted_at",null).order("created_at",{ascending:false}).limit(15),
+      supabase.from("communities").select("id,name,description,created_at").ilike("name",pattern).limit(8),
+      supabase.from("statuses").select("id,user_id,text,description,media_type,created_at").or(`text.ilike.${pattern},description.ilike.${pattern}`).gt("expires_at",new Date().toISOString()).limit(8)
+    ]);
+    if(cancelled)return;const out=[];
+    (peopleR.data||[]).forEach(x=>out.push({kind:"person",id:`p-${x.id}`,title:x.full_name||x.username||"HEXA User",subtitle:x.username?`@${x.username}`:"Contact",data:x}));
+    (chatsR.data||[]).filter(x=>x.type!=="direct").forEach(x=>out.push({kind:x.name?.toLowerCase().startsWith("channel:")?"channel":x.type==="group"?"group":"chat",id:`c-${x.id}`,title:String(x.name||"").replace(/^channel:/i,""),subtitle:x.type==="group"?"Group":"Chat",data:x}));
+    (msgsR.data||[]).forEach(x=>out.push({kind:"message",id:`m-${x.id}`,title:x.content||x.message_type||"Message",subtitle:`Message · ${new Date(x.created_at).toLocaleString()}`,data:x}));
+    (communitiesR.data||[]).forEach(x=>out.push({kind:"community",id:`co-${x.id}`,title:x.name,subtitle:"Community",data:x}));
+    (statusR.data||[]).forEach(x=>out.push({kind:"status",id:`s-${x.id}`,title:x.text||x.description||"Status",subtitle:"Status",data:x}));
+    setResults(out);
+  }catch(e){if(!cancelled)setError(e?.message||"Search failed")}finally{if(!cancelled)setLoading(false)}};const t=setTimeout(run,250);return()=>{cancelled=true;clearTimeout(t)}},[search,profile?.id]);
+  if(!search?.trim())return null;return <div className="universal-search-panel">{loading&&<div className="universal-search-state">Searching people, chats, messages, groups, communities, channels, status and media…</div>}{!loading&&error&&<div className="universal-search-state">{error}</div>}{!loading&&!error&&!results.length&&<div className="universal-search-state">No HEXA results found.</div>}{results.map(r=><button key={r.id} className="universal-search-result" type="button" onClick={()=>{if(r.kind==="person")onMessage(r.data);else alert(`${r.subtitle}: ${r.title}`)}}><div className="universal-search-avatar">{r.kind==="person"?<Avatar src={r.data.avatar_url} name={r.title} size={40}/>:r.kind==="message"?"💬":r.kind==="group"?"👥":r.kind==="channel"?"📢":r.kind==="community"?"◉":"◌"}</div><div className="universal-search-result-copy"><strong>{r.title}</strong><span>{r.subtitle}</span></div><b>{r.kind}</b></button>)}</div>;
 }
 
 function AuthenticatedHEXA({ session, onSignOut }) {
@@ -1638,6 +1651,7 @@ function AuthenticatedHEXA({ session, onSignOut }) {
     case "channels":page=<ChannelsPage profile={profile}/>;break;
     case "status":page=<StatusPage profile={profile}/>;break;
     case "calls":page=<CallsPage profile={profile}/>;break;
+    case "wallet":page=<WalletPage profile={profile}/>;break;
     case "kora":page=<KoraPage profile={profile}/>;break;
     case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut}/>;break;
     case "projects":page=<WorkspacePlaceholder title="Projects" description="Organize collaborative work." icon="◆"/>;break;
@@ -3506,5 +3520,12 @@ function WorkspacePlaceholder({ title, description, icon, children }) { return <
 /* HEXA feature extensions */
 .notifications-panel{position:absolute;right:22px;top:72px;width:min(390px,calc(100vw - 28px));background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:18px;box-shadow:var(--hexa-shadow);z-index:100;padding:10px}.notifications-header{display:flex;justify-content:space-between;align-items:center;padding:12px 10px;border-bottom:1px solid var(--hexa-border)}.notifications-header button{background:none;border:0;color:var(--hexa-accent-2)}.notification-item{display:flex;gap:12px;padding:14px 10px;border-bottom:1px solid var(--hexa-border)}.notification-item>span{color:var(--hexa-accent)}.notification-item p{margin:4px 0;color:var(--hexa-muted)}.notification-item small{color:var(--hexa-muted)}.notification-empty{padding:28px;text-align:center;color:var(--hexa-muted)}.notification-button{position:relative}.notification-button b{position:absolute;right:0;top:-5px;min-width:17px;height:17px;padding:0 4px;border-radius:99px;background:var(--hexa-danger);font-size:9px;display:grid;place-items:center;color:#fff}.entity-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}.entity-card{padding:20px;border:1px solid var(--hexa-border);background:var(--hexa-panel);border-radius:18px;display:flex;flex-direction:column;gap:9px}.entity-card span,.entity-card small{color:var(--hexa-muted)}.entity-modal,.status-modal{width:min(620px,calc(100vw - 28px));max-height:90vh;overflow:auto;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:22px;padding:22px;box-shadow:var(--hexa-shadow)}.modal-input{width:100%;margin:8px 0;padding:13px 14px;border-radius:12px;border:1px solid var(--hexa-border);background:rgba(255,255,255,.035);color:var(--hexa-text);outline:none}.modal-textarea{min-height:90px;resize:vertical}.media-picker{width:100%;display:flex;align-items:center;gap:14px;text-align:left;padding:12px;border:1px dashed var(--hexa-border-strong);border-radius:14px;background:transparent;color:var(--hexa-text);margin:8px 0 14px}.media-picker img{width:52px;height:52px;border-radius:12px;object-fit:cover}.media-picker span{width:52px;height:52px;border-radius:12px;display:grid;place-items:center;background:var(--hexa-panel-3);font-size:25px}.media-picker small{display:block;color:var(--hexa-muted);margin-top:3px}.member-picker{display:grid;gap:7px;max-height:180px;overflow:auto;margin-bottom:16px}.member-option{display:flex;align-items:center;gap:9px;padding:7px;border-radius:10px}.member-option:hover{background:rgba(255,255,255,.04)}.status-composer-tabs{display:flex;gap:8px;margin-bottom:10px}.status-composer-tabs button{flex:1;padding:11px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:11px}.status-media-preview img,.status-media-preview video{width:100%;max-height:300px;object-fit:contain;border-radius:14px;margin:8px 0}.privacy-row{display:flex;align-items:center;justify-content:space-between;margin:12px 0;color:var(--hexa-muted)}.privacy-row select{background:var(--hexa-panel-2);color:var(--hexa-text);border:1px solid var(--hexa-border);padding:9px;border-radius:10px}.status-card.unseen .status-preview{box-shadow:0 0 0 3px var(--hexa-accent)}.status-card.seen{opacity:.8}.status-preview img,.status-preview video{width:100%;height:100%;object-fit:cover;border-radius:inherit}.story-viewer{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:500;display:grid;place-items:center;padding:20px}.story-content{width:min(520px,100%);height:min(88vh,820px);position:relative;background:#000;border-radius:20px;overflow:hidden;display:flex;align-items:center;justify-content:center}.story-content img,.story-content video{width:100%;height:100%;object-fit:contain}.story-text{font-size:34px;font-weight:800;text-align:center;padding:30px}.story-caption{position:absolute;left:18px;right:18px;bottom:58px;padding:10px;border-radius:10px;background:rgba(0,0,0,.45)}.story-actions{position:absolute;bottom:10px;right:12px;display:flex;gap:6px}.story-actions button,.story-close{border:0;background:rgba(255,255,255,.12);color:#fff;border-radius:50%;width:38px;height:38px}.story-close{position:absolute;right:22px;top:20px;z-index:2;font-size:25px}.story-progress{position:absolute;top:12px;left:20px;right:20px;height:3px;background:rgba(255,255,255,.35);z-index:2}.search-results{display:grid;gap:6px;padding:8px}.search-person{display:flex;align-items:center;gap:12px;padding:10px;border:0;background:transparent;color:var(--hexa-text);text-align:left;border-radius:12px}.search-person:hover{background:rgba(255,255,255,.05)}.search-person div{flex:1}.search-person span{display:block;color:var(--hexa-muted);font-size:12px}.search-person b{font-size:12px;color:var(--hexa-accent-2)}.settings-grid{display:grid;gap:12px;max-width:760px}.settings-card{display:flex;align-items:center;gap:16px;justify-content:space-between;padding:18px;border:1px solid var(--hexa-border);background:var(--hexa-panel);border-radius:18px}.settings-card>div:first-child{flex:1}.settings-card p{color:var(--hexa-muted);margin:5px 0 0}.settings-card button{border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);padding:10px 14px;border-radius:10px}.settings-card.danger button{color:#fff;background:var(--hexa-danger);border-color:transparent}
 .reply-bar{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:8px 14px;background:var(--hexa-panel-2);border-top:1px solid var(--hexa-border);font-size:12px;color:var(--hexa-muted)}.reply-bar button{border:0;background:none;color:var(--hexa-text)}.message-bubble-wrap{position:relative;max-width:86%}.message-tools{display:none;position:absolute;right:0;top:-34px;background:var(--hexa-panel);border:1px solid var(--hexa-border);border-radius:10px;padding:3px;z-index:4}.message-bubble-wrap:hover .message-tools{display:flex}.message-tools button{border:0;background:none;color:var(--hexa-text);padding:5px}.reaction-picker{position:absolute;bottom:32px;right:0;display:flex;background:var(--hexa-panel);border:1px solid var(--hexa-border);border-radius:14px;padding:5px;box-shadow:var(--hexa-shadow)}.reaction-summary{font-size:12px;background:var(--hexa-panel-2);border-radius:10px;padding:3px 7px;display:inline-block;margin-top:3px}.message-media{display:block;max-width:280px;max-height:340px;border-radius:12px;object-fit:contain}.gif-panel{position:absolute;left:14px;right:14px;bottom:76px;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:16px;padding:10px;z-index:30;box-shadow:var(--hexa-shadow)}.gif-search{display:flex;gap:7px}.gif-search input{flex:1}.gif-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;max-height:240px;overflow:auto;margin-top:8px}.gif-grid button{padding:0;border:0;background:none}.gif-grid img{width:100%;height:70px;object-fit:cover;border-radius:7px}.muted{color:var(--hexa-muted)}
+
+/* HEXA wallet UI */
+.wallet-credit-modal{width:min(560px,calc(100vw - 28px))}.wallet-security-field{display:grid;gap:4px;margin-top:10px}.wallet-security-field>span{font-size:11px;color:var(--hexa-muted)}.wallet-security-note{margin:12px 0;padding:12px;border:1px solid var(--hexa-border);background:rgba(124,92,255,.07);border-radius:12px;color:var(--hexa-muted);font-size:11px;line-height:1.5}.wallet-buy-button{width:100%;margin-top:8px}.hexa-modal-backdrop{position:fixed;inset:0;z-index:900;background:rgba(0,0,0,.72);display:grid;place-items:center;padding:14px}
+.wallet-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}.wallet-balance-card{padding:24px;border:1px solid var(--hexa-border);background:linear-gradient(135deg,var(--hexa-panel),var(--hexa-panel-2));border-radius:20px;display:grid;gap:8px}.wallet-balance-card span{color:var(--hexa-muted);font-size:11px}.wallet-balance-card strong{font-size:32px;letter-spacing:-.03em}.wallet-balance-card small{color:var(--hexa-muted);font-size:10px}.wallet-fund-card{align-items:center}.wallet-fund-card .modal-input{margin:0}.wallet-fund-card .hero-primary{white-space:nowrap}
+
+/* HEXA master feature UI */
+.hexa-audio-message{display:flex;align-items:center;gap:7px}.hexa-audio-message audio{max-width:210px;height:34px}.hexa-audio-message select{background:var(--hexa-panel-2);color:var(--hexa-text);border:1px solid var(--hexa-border);border-radius:8px;padding:4px}.message-context-menu{position:fixed;z-index:1000;min-width:190px;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:14px;padding:6px;box-shadow:var(--hexa-shadow);display:grid;gap:2px}.message-context-menu button{border:0;background:none;color:var(--hexa-text);padding:10px;text-align:left;border-radius:9px}.message-context-menu button:hover{background:rgba(255,255,255,.06)}.message-context-menu .danger-text{color:var(--hexa-danger)}.emoji-panel,.sticker-panel,.feature-popover,.chat-settings-popover{position:absolute;z-index:40;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:16px;box-shadow:var(--hexa-shadow);padding:12px}.emoji-panel{left:12px;bottom:76px;width:min(410px,calc(100% - 24px))}.emoji-tones,.emoji-grid,.sticker-grid{display:flex;flex-wrap:wrap;gap:5px}.emoji-grid{max-height:220px;overflow:auto;margin-top:8px}.emoji-panel button,.sticker-grid button{border:0;background:transparent;font-size:21px;padding:6px;border-radius:8px}.emoji-panel button:hover,.sticker-grid button:hover{background:rgba(255,255,255,.06)}.sticker-panel{left:12px;bottom:76px;width:300px}.sticker-grid{margin-top:10px}.sticker-grid button{font-size:30px}.feature-popover{right:12px;bottom:76px;width:min(360px,calc(100% - 24px));display:grid;gap:8px}.feature-popover h3{margin:0}.chat-settings-popover{right:12px;top:64px;width:270px;display:grid;gap:10px;z-index:60}.chat-settings-popover label{display:grid;gap:6px;color:var(--hexa-muted);font-size:12px}.chat-settings-popover select,.chat-settings-popover button{padding:9px;border-radius:9px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text)}.chat-search-results{padding:10px;border-top:1px solid var(--hexa-border);display:grid;gap:5px}.chat-search-results button{border:0;background:transparent;color:var(--hexa-muted);text-align:left;padding:6px}.poll-message{display:grid;gap:7px;min-width:220px}.poll-message button{display:flex;justify-content:space-between;gap:10px;padding:9px;border-radius:9px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);text-align:left}.poll-message button span{color:var(--hexa-muted);font-size:10px}.shared-contact{display:flex;gap:10px;align-items:center;min-width:190px}.shared-contact div{display:grid}.shared-contact small{color:var(--hexa-muted)}.location-card{color:inherit;text-decoration:none;display:block;padding:4px}.file-message{display:flex;gap:8px;align-items:center}.forwarded-label{font-size:10px;color:var(--hexa-muted);margin-bottom:5px}.sticker-message{font-size:70px;line-height:1}.view-once-bubble{min-width:100px}.universal-search-result{display:flex;align-items:center;gap:10px;width:100%}.universal-search-result-copy{flex:1}.universal-search-result>b{text-transform:uppercase;font-size:9px;color:var(--hexa-accent-2)}
 
 `;
