@@ -57,7 +57,238 @@ export const supabase = createClient(
 
 const OFFLINE_QUEUE_KEY = "hexa-message-queue-v2";
 const DRAFTS_KEY = "hexa-chat-drafts-v1";
-const HEXA_CALL_RATE_KOBO_PER_SECOND = 0.5;
+const HEXA_CALL_RATE_KOBO_PER_SECOND = 30;
+/* ============================================================
+   HEXA THEME SYSTEM
+   ============================================================ */
+
+const HEXA_THEME_KEY = "hexa-theme-v5";
+
+const HEXA_THEMES = {
+  midnight: {
+    id: "midnight",
+    name: "Midnight",
+    icon: "🌌",
+    description: "The original deep HEXA experience.",
+    vars: {
+      "--hexa-bg": "#07090d",
+      "--hexa-panel": "#0d1118",
+      "--hexa-panel-2": "#111722",
+      "--hexa-panel-3": "#171e2b",
+      "--hexa-border": "rgba(255,255,255,.08)",
+      "--hexa-border-strong": "rgba(255,255,255,.14)",
+      "--hexa-text": "#f4f7fb",
+      "--hexa-muted": "#8e99aa",
+      "--hexa-accent": "#7c5cff",
+      "--hexa-accent-2": "#a78bfa",
+      "--hexa-success": "#30d158",
+      "--hexa-danger": "#ff4d67",
+      "--hexa-shadow": "0 24px 70px rgba(0,0,0,.35)",
+      "--hexa-chat-bg": "#090d14",
+      "--hexa-message-in": "#171e2b",
+      "--hexa-message-out": "#4b3ca7",
+      "--hexa-sidebar": "#090c12"
+    }
+  },
+
+  aurora: {
+    id: "aurora",
+    name: "Aurora",
+    icon: "🌈",
+    description: "Purple, blue and cyan HEXA.",
+    vars: {
+      "--hexa-bg": "#071017",
+      "--hexa-panel": "#0b1720",
+      "--hexa-panel-2": "#10212c",
+      "--hexa-panel-3": "#16303b",
+      "--hexa-border": "rgba(115,230,255,.10)",
+      "--hexa-border-strong": "rgba(115,230,255,.20)",
+      "--hexa-text": "#effcff",
+      "--hexa-muted": "#8faab5",
+      "--hexa-accent": "#00d9ff",
+      "--hexa-accent-2": "#8b7cff",
+      "--hexa-success": "#37e58c",
+      "--hexa-danger": "#ff5d79",
+      "--hexa-shadow": "0 24px 70px rgba(0,0,0,.45)",
+      "--hexa-chat-bg": "#08141b",
+      "--hexa-message-in": "#12303a",
+      "--hexa-message-out": "#214f73",
+      "--hexa-sidebar": "#07131a"
+    }
+  },
+
+  ocean: {
+    id: "ocean",
+    name: "Ocean",
+    icon: "🌊",
+    description: "Clean blue HEXA.",
+    vars: {
+      "--hexa-bg": "#06111d",
+      "--hexa-panel": "#0a1928",
+      "--hexa-panel-2": "#0e2234",
+      "--hexa-panel-3": "#14304a",
+      "--hexa-border": "rgba(110,190,255,.10)",
+      "--hexa-border-strong": "rgba(110,190,255,.20)",
+      "--hexa-text": "#f1f8ff",
+      "--hexa-muted": "#91a8bb",
+      "--hexa-accent": "#168cff",
+      "--hexa-accent-2": "#67b7ff",
+      "--hexa-success": "#30d98b",
+      "--hexa-danger": "#ff5875",
+      "--hexa-shadow": "0 24px 70px rgba(0,0,0,.45)",
+      "--hexa-chat-bg": "#071522",
+      "--hexa-message-in": "#12304a",
+      "--hexa-message-out": "#075da8",
+      "--hexa-sidebar": "#071522"
+    }
+  },
+
+  emerald: {
+    id: "emerald",
+    name: "Emerald",
+    icon: "💚",
+    description: "A fresh green HEXA theme.",
+    vars: {
+      "--hexa-bg": "#07120d",
+      "--hexa-panel": "#0c1b13",
+      "--hexa-panel-2": "#11271b",
+      "--hexa-panel-3": "#183722",
+      "--hexa-border": "rgba(100,255,170,.09)",
+      "--hexa-border-strong": "rgba(100,255,170,.18)",
+      "--hexa-text": "#f2fff7",
+      "--hexa-muted": "#91aa9b",
+      "--hexa-accent": "#18c979",
+      "--hexa-accent-2": "#5df0a7",
+      "--hexa-success": "#35e88c",
+      "--hexa-danger": "#ff5870",
+      "--hexa-shadow": "0 24px 70px rgba(0,0,0,.45)",
+      "--hexa-chat-bg": "#08160f",
+      "--hexa-message-in": "#153322",
+      "--hexa-message-out": "#087847",
+      "--hexa-sidebar": "#07150e"
+    }
+  },
+
+  rose: {
+    id: "rose",
+    name: "Rose",
+    icon: "🌹",
+    description: "Elegant pink and violet HEXA.",
+    vars: {
+      "--hexa-bg": "#13090f",
+      "--hexa-panel": "#1c0e17",
+      "--hexa-panel-2": "#27121e",
+      "--hexa-panel-3": "#351827",
+      "--hexa-border": "rgba(255,130,190,.10)",
+      "--hexa-border-strong": "rgba(255,130,190,.20)",
+      "--hexa-text": "#fff4fa",
+      "--hexa-muted": "#b39aa9",
+      "--hexa-accent": "#ec4f9d",
+      "--hexa-accent-2": "#b875ff",
+      "--hexa-success": "#38d996",
+      "--hexa-danger": "#ff5575",
+      "--hexa-shadow": "0 24px 70px rgba(0,0,0,.45)",
+      "--hexa-chat-bg": "#160b12",
+      "--hexa-message-in": "#35182a",
+      "--hexa-message-out": "#8f2860",
+      "--hexa-sidebar": "#12090f"
+    }
+  },
+
+  white: {
+    id: "white",
+    name: "HEXA Light",
+    icon: "☀️",
+    description: "Bright HEXA for daytime use.",
+    vars: {
+      "--hexa-bg": "#f4f6fa",
+      "--hexa-panel": "#ffffff",
+      "--hexa-panel-2": "#f0f2f6",
+      "--hexa-panel-3": "#e6e9ef",
+      "--hexa-border": "rgba(20,30,50,.10)",
+      "--hexa-border-strong": "rgba(20,30,50,.16)",
+      "--hexa-text": "#111827",
+      "--hexa-muted": "#667085",
+      "--hexa-accent": "#6947ff",
+      "--hexa-accent-2": "#765cff",
+      "--hexa-success": "#16a36a",
+      "--hexa-danger": "#e53958",
+      "--hexa-shadow": "0 24px 70px rgba(20,30,50,.12)",
+      "--hexa-chat-bg": "#eef1f5",
+      "--hexa-message-in": "#ffffff",
+      "--hexa-message-out": "#ddd5ff",
+      "--hexa-sidebar": "#ffffff"
+    }
+  },
+
+  black: {
+    id: "black",
+    name: "True Black",
+    icon: "🖤",
+    description: "OLED-style HEXA.",
+    vars: {
+      "--hexa-bg": "#000000",
+      "--hexa-panel": "#050505",
+      "--hexa-panel-2": "#0a0a0a",
+      "--hexa-panel-3": "#111111",
+      "--hexa-border": "rgba(255,255,255,.08)",
+      "--hexa-border-strong": "rgba(255,255,255,.16)",
+      "--hexa-text": "#ffffff",
+      "--hexa-muted": "#8b8b8b",
+      "--hexa-accent": "#8b5cff",
+      "--hexa-accent-2": "#b08cff",
+      "--hexa-success": "#30d158",
+      "--hexa-danger": "#ff375f",
+      "--hexa-shadow": "0 24px 70px rgba(0,0,0,.65)",
+      "--hexa-chat-bg": "#020202",
+      "--hexa-message-in": "#111111",
+      "--hexa-message-out": "#36227a",
+      "--hexa-sidebar": "#000000"
+    }
+  }
+};
+
+function getSavedHexaTheme() {
+  try {
+    const saved = localStorage.getItem(HEXA_THEME_KEY);
+
+    if (saved && HEXA_THEMES[saved]) {
+      return saved;
+    }
+  } catch (error) {
+    console.warn("HEXA theme restore failed:", error);
+  }
+
+  return "midnight";
+}
+
+function applyHexaTheme(themeId) {
+  const theme = HEXA_THEMES[themeId] || HEXA_THEMES.midnight;
+
+  const root = document.documentElement;
+
+  Object.entries(theme.vars).forEach(([property, value]) => {
+    root.style.setProperty(property, value);
+  });
+
+  root.dataset.hexaTheme = theme.id;
+
+  try {
+    localStorage.setItem(HEXA_THEME_KEY, theme.id);
+  } catch (error) {
+    console.warn("HEXA theme save failed:", error);
+  }
+}
+
+function initializeHexaTheme() {
+  if (typeof window === "undefined") return;
+
+  applyHexaTheme(getSavedHexaTheme());
+}
+
+if (typeof window !== "undefined") {
+  initializeHexaTheme();
+}
 
 const NAV_ITEMS = [
   { id: "nexus", label: "Nexus", icon: "⌂" },
@@ -1039,179 +1270,3559 @@ function FeatureAudio({ url, voice = false }) {
   useEffect(() => { if (ref.current) ref.current.playbackRate = speed; }, [speed]);
   return <div className="hexa-audio-message"><span>{voice ? "🎤" : "🔊"}</span><audio ref={ref} src={url} controls/><select value={speed} onChange={e=>setSpeed(Number(e.target.value))}><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></div>;
 }
+function formatChatTime(value) {
+  if (!value) return "";
 
-function ChatPage({ profile, onStartCall, onOpenChatWithUser, initialConversation }) {
-  const [conversations, setConversations] = useState(DEFAULT_CONVERSATIONS);
-  const [selected, setSelected] = useState(initialConversation || DEFAULT_CONVERSATIONS[0]);
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "";
+  }
+
+  const now =
+    new Date();
+
+  if (
+    date.toDateString() ===
+    now.toDateString()
+  ) {
+    return date.toLocaleTimeString(
+      [],
+      {
+        hour: "numeric",
+        minute: "2-digit"
+      }
+    );
+  }
+
+  const yesterday =
+    new Date(now);
+
+  yesterday.setDate(
+    yesterday.getDate() - 1
+  );
+
+  if (
+    date.toDateString() ===
+    yesterday.toDateString()
+  ) {
+    return "Yesterday";
+  }
+
+  return date.toLocaleDateString(
+    [],
+    {
+      day: "numeric",
+      month: "short"
+    }
+  );
+}
+/* ============================================================
+   HEXA CHAT
+   WhatsApp-style master/detail messaging experience
+   ============================================================ */
+
+function ChatPage({
+  profile,
+  initialConversation,
+  onStartCall,
+  onOpenChatWithUser
+}) {
+  const [conversations, setConversations] = useState(
+    DEFAULT_CONVERSATIONS
+  );
+
+  const [selected, setSelected] = useState(
+    initialConversation || DEFAULT_CONVERSATIONS[0]
+  );
+
   const [messages, setMessages] = useState([]);
   const [message, setMessage] = useState("");
-  const [chatSearch, setChatSearch] = useState("");
+
   const [loading, setLoading] = useState(false);
+  const [loadingConversations, setLoadingConversations] =
+    useState(false);
+
+  const [chatSearch, setChatSearch] = useState("");
+  const [messageSearch, setMessageSearch] = useState("");
+
+  const [mobileConversationOpen, setMobileConversationOpen] =
+    useState(Boolean(initialConversation));
+
+  const [newChatOpen, setNewChatOpen] = useState(false);
+  const [newChatSearch, setNewChatSearch] = useState("");
+  const [peopleResults, setPeopleResults] = useState([]);
+  const [peopleLoading, setPeopleLoading] = useState(false);
+
   const [replyTo, setReplyTo] = useState(null);
-  const [reactionMenu, setReactionMenu] = useState(null);
-  const [contextMenu, setContextMenu] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
+  const [reactionMenu, setReactionMenu] = useState(null);
+
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const [forwardMessage, setForwardMessage] = useState(null);
+
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const [gifOpen, setGifOpen] = useState(false);
   const [stickerOpen, setStickerOpen] = useState(false);
-  const [emojiOpen, setEmojiOpen] = useState(false);
-  const [gifQuery, setGifQuery] = useState("");
-  const [gifs, setGifs] = useState([]);
-  const [recording, setRecording] = useState(false);
-  const [attachment, setAttachment] = useState(null);
+  const [attachmentOpen, setAttachmentOpen] = useState(false);
+
   const [pollOpen, setPollOpen] = useState(false);
   const [pollQuestion, setPollQuestion] = useState("");
-  const [pollOptions, setPollOptions] = useState(["", ""]);
+  const [pollOptions, setPollOptions] = useState([
+    "",
+    ""
+  ]);
+
   const [contactOpen, setContactOpen] = useState(false);
   const [locationOpen, setLocationOpen] = useState(false);
-  const [disappearing, setDisappearing] = useState("off");
-  const [chatSettingsOpen, setChatSettingsOpen] = useState(false);
-  const [starred, setStarred] = useState(() => readJsonStorage("hexa-starred-v1", []));
-  const [pinned, setPinned] = useState(() => readJsonStorage("hexa-pinned-v1", []));
-  const [muted, setMuted] = useState(() => readJsonStorage("hexa-muted-v1", []));
+
+  const [recording, setRecording] = useState(false);
+  const [attachment, setAttachment] = useState(null);
+
+  const [chatSettingsOpen, setChatSettingsOpen] =
+    useState(false);
+
+  const [disappearing, setDisappearing] =
+    useState("off");
+
+  const [starred, setStarred] = useState(
+    () =>
+      readJsonStorage(
+        "hexa-starred-v5",
+        []
+      )
+  );
+
+  const [pinned, setPinned] = useState(
+    () =>
+      readJsonStorage(
+        "hexa-pinned-v5",
+        []
+      )
+  );
+
+  const [muted, setMuted] = useState(
+    () =>
+      readJsonStorage(
+        "hexa-muted-v5",
+        []
+      )
+  );
+
+  const [archived, setArchived] = useState(
+    () =>
+      readJsonStorage(
+        "hexa-archived-v5",
+        []
+      )
+  );
+
+  const [blocked, setBlocked] = useState(
+    () =>
+      readJsonStorage(
+        "hexa-blocked-v5",
+        []
+      )
+  );
+
+  const [selectedMessages, setSelectedMessages] =
+    useState([]);
+
+  const [selectionMode, setSelectionMode] =
+    useState(false);
+
   const mediaRef = useRef(null);
   const cameraRef = useRef(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
-  const draftsRef = useRef(readDrafts());
   const bottomRef = useRef(null);
 
-  const isSystem = selected.id === "hexa-system-group";
-  const canPublish = !isSystem || Boolean(selected.is_admin || selected.owner_id === profile?.id || selected.created_by === profile?.id);
+  const isSystem =
+    selected?.id === "hexa-system-group";
 
-  useEffect(() => { if (initialConversation?.id && initialConversation.id !== selected.id) setSelected(initialConversation); }, [initialConversation?.id]);
-  useEffect(() => { const draft = draftsRef.current[selected.id] || ""; setMessage(draft); setReplyTo(null); setReactionMenu(null); setContextMenu(null); setEditing(null); loadMessages(selected); }, [selected.id]);
+  const isSelf =
+    selected?.id === "self";
+
+  const isKora =
+    selected?.id === "kora";
+
+  /* ============================================================
+     STORAGE
+     ============================================================ */
+
+  function saveStorage(key, value) {
+    try {
+      localStorage.setItem(
+        key,
+        JSON.stringify(value)
+      );
+    } catch (error) {
+      console.warn(
+        "HEXA storage error:",
+        error
+      );
+    }
+  }
+
   useEffect(() => {
-    const channel = supabase.channel(`hexa-messages-${profile?.id || "guest"}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, payload => { const row=payload.new; const cid=selected.realConversationId||selected.id; if(row?.conversation_id===cid) setMessages(cur=>cur.some(x=>x.id===row.id)?cur:[...cur,row]); })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, payload => { const cid=selected.realConversationId||selected.id; if(payload.new?.conversation_id===cid) setMessages(cur=>cur.map(x=>x.id===payload.new.id?payload.new:x)); })
-      .subscribe();
-    return ()=>supabase.removeChannel(channel);
-  }, [selected.id, profile?.id]);
-  useEffect(()=>{bottomRef.current?.scrollIntoView({behavior:"smooth"})},[messages.length]);
+    saveStorage(
+      "hexa-starred-v5",
+      starred
+    );
+  }, [starred]);
+
+  useEffect(() => {
+    saveStorage(
+      "hexa-pinned-v5",
+      pinned
+    );
+  }, [pinned]);
+
+  useEffect(() => {
+    saveStorage(
+      "hexa-muted-v5",
+      muted
+    );
+  }, [muted]);
+
+  useEffect(() => {
+    saveStorage(
+      "hexa-archived-v5",
+      archived
+    );
+  }, [archived]);
+
+  useEffect(() => {
+    saveStorage(
+      "hexa-blocked-v5",
+      blocked
+    );
+  }, [blocked]);
+
+  /* ============================================================
+     CONVERSATION LOADING
+     ============================================================ */
+
+  useEffect(() => {
+    if (
+      initialConversation?.id &&
+      initialConversation.id !== selected?.id
+    ) {
+      setSelected(initialConversation);
+      setMobileConversationOpen(true);
+    }
+  }, [initialConversation?.id]);
+
+  async function refreshConversations() {
+    if (!profile?.id) return;
+
+    setLoadingConversations(true);
+
+    try {
+      const realChats =
+        await loadHexaConversations(profile);
+
+      const defaultIds =
+        new Set(
+          DEFAULT_CONVERSATIONS.map(
+            chat => chat.id
+          )
+        );
+
+      const cleaned =
+        (realChats || []).filter(
+          chat =>
+            !defaultIds.has(
+              String(chat.id)
+            )
+        );
+
+      setConversations([
+        ...DEFAULT_CONVERSATIONS,
+        ...cleaned
+      ]);
+    } catch (error) {
+      console.warn(
+        "HEXA conversations:",
+        error
+      );
+    } finally {
+      setLoadingConversations(false);
+    }
+  }
+
+  useEffect(() => {
+    refreshConversations();
+  }, [profile?.id]);
+
+  /* ============================================================
+     LOAD MESSAGES
+     ============================================================ */
 
   async function loadMessages(conversation) {
-    if(!conversation?.id){setMessages([]);return;}
-    if(["self","kora"].includes(conversation.id)){setMessages([]);return;}
-    setLoading(true); let conversationId=conversation.id;
-    if(conversation.id==="hexa-system-group"){
-      const {data}=await supabase.from("conversations").select("id,name,type,owner_id,created_by,avatar_url,theme").eq("name","THE HEXA GROUP").eq("type","group").limit(1).maybeSingle();
-      if(!data?.id){setMessages([]);setLoading(false);return;} conversationId=data.id; setSelected(prev=>prev.id==="hexa-system-group"?{...prev,...data,id:"hexa-system-group",realConversationId:data.id}:prev);
+    if (!conversation?.id) {
+      setMessages([]);
+      return;
     }
-    const {data,error}=await supabase.from("messages").select("*, message_reactions(*)").eq("conversation_id",conversationId).is("deleted_at",null).order("created_at",{ascending:true});
-    setMessages(error?[]:(data||[]));setLoading(false);
+
+    if (
+      conversation.id === "self" ||
+      conversation.id === "kora"
+    ) {
+      setMessages([]);
+      return;
+    }
+
+    setLoading(true);
+
+    let conversationId =
+      conversation.realConversationId ||
+      conversation.id;
+
+    try {
+      if (
+        conversation.id ===
+        "hexa-system-group"
+      ) {
+        const { data } =
+          await supabase
+            .from("conversations")
+            .select(
+              "id,name,type,owner_id,created_by,avatar_url,theme"
+            )
+            .eq(
+              "name",
+              "THE HEXA GROUP"
+            )
+            .eq(
+              "type",
+              "group"
+            )
+            .limit(1)
+            .maybeSingle();
+
+        if (!data?.id) {
+          setMessages([]);
+          return;
+        }
+
+        conversationId = data.id;
+
+        setSelected(previous =>
+          previous?.id ===
+          "hexa-system-group"
+            ? {
+                ...previous,
+                ...data,
+                id: "hexa-system-group",
+                realConversationId:
+                  data.id
+              }
+            : previous
+        );
+      }
+
+      const { data, error } =
+        await supabase
+          .from("messages")
+          .select(
+            "*, message_reactions(*)"
+          )
+          .eq(
+            "conversation_id",
+            conversationId
+          )
+          .is(
+            "deleted_at",
+            null
+          )
+          .order(
+            "created_at",
+            {
+              ascending: true
+            }
+          );
+
+      if (error) {
+        throw error;
+      }
+
+      setMessages(data || []);
+    } catch (error) {
+      console.warn(
+        "HEXA message loading:",
+        error
+      );
+
+      setMessages([]);
+    } finally {
+      setLoading(false);
+    }
   }
-  async function createDirectConversation(user){
-    if(!user?.id||user.id===profile?.id)return;
-    const {data:existing}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${user.id}),and(user_a.eq.${user.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();
-    let conversation=existing;
-    if(!conversation){const {data,error}=await supabase.from("conversations").insert({type:"direct",user_a:profile.id,user_b:user.id,created_by:profile.id,owner_id:profile.id,name:user.full_name||user.username||"HEXA User"}).select("*").single();if(error){alert(error.message);return;}conversation=data;await supabase.from("conversation_members").upsert([{conversation_id:conversation.id,user_id:profile.id,is_admin:true},{conversation_id:conversation.id,user_id:user.id,is_admin:false}],{onConflict:"conversation_id,user_id"});}
-    const mapped={...conversation,name:user.full_name||user.username||conversation.name||"HEXA User",avatar:initials(user.full_name||user.username),kind:"direct",online:false};setConversations(cur=>[mapped,...cur.filter(x=>x.id!==mapped.id)]);setSelected(mapped);onOpenChatWithUser?.(mapped);
+
+  useEffect(() => {
+    loadMessages(selected);
+    setReplyTo(null);
+    setEditing(null);
+    setContextMenu(null);
+    setReactionMenu(null);
+    setSelectedMessages([]);
+    setSelectionMode(false);
+
+    const draftKey =
+      `hexa-draft:${selected?.id}`;
+
+    try {
+      setMessage(
+        localStorage.getItem(
+          draftKey
+        ) || ""
+      );
+    } catch {
+      setMessage("");
+    }
+  }, [selected?.id]);
+
+  /* ============================================================
+     REALTIME MESSAGES
+     ============================================================ */
+
+  useEffect(() => {
+    if (!profile?.id) return;
+
+    const channel =
+      supabase
+        .channel(
+          `hexa-chat-${profile.id}`
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "messages"
+          },
+          payload => {
+            const row =
+              payload.new;
+
+            const conversationId =
+              selected?.realConversationId ||
+              selected?.id;
+
+            if (
+              row?.conversation_id !==
+              conversationId
+            ) {
+              return;
+            }
+
+            setMessages(current =>
+              current.some(
+                item =>
+                  String(item.id) ===
+                  String(row.id)
+              )
+                ? current
+                : [
+                    ...current,
+                    row
+                  ]
+            );
+
+            updateConversationPreview(
+              selected,
+              row
+            );
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "messages"
+          },
+          payload => {
+            const row =
+              payload.new;
+
+            setMessages(current =>
+              current.map(item =>
+                String(item.id) ===
+                String(row.id)
+                  ? row
+                  : item
+              )
+            );
+          }
+        )
+        .subscribe();
+
+    return () => {
+      supabase.removeChannel(
+        channel
+      );
+    };
+  }, [
+    profile?.id,
+    selected?.id,
+    selected?.realConversationId
+  ]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({
+      behavior: "smooth"
+    });
+  }, [messages.length]);
+
+  /* ============================================================
+     CONVERSATION PREVIEW
+     ============================================================ */
+
+  function updateConversationPreview(
+    conversation,
+    newMessage
+  ) {
+    if (!conversation?.id) return;
+
+    setConversations(current => {
+      const exists =
+        current.some(
+          item =>
+            String(item.id) ===
+            String(conversation.id)
+        );
+
+      const preview =
+        newMessage?.deleted_for_everyone
+          ? "Message deleted"
+          : newMessage?.content ||
+            (
+              newMessage?.message_type ===
+              "image"
+                ? "📷 Photo"
+                : newMessage?.message_type ===
+                  "video"
+                    ? "🎥 Video"
+                    : newMessage?.message_type ===
+                      "audio"
+                        ? "🎵 Audio"
+                        : newMessage?.message_type ===
+                          "file"
+                            ? "📎 Document"
+                            : "Attachment"
+            );
+
+      const updated = {
+        ...conversation,
+        lastMessage:
+          preview,
+        lastMessageAt:
+          newMessage?.created_at ||
+          new Date().toISOString(),
+        unread:
+          selected?.id ===
+          conversation.id
+            ? 0
+            : Number(
+                conversation.unread || 0
+              ) + 1
+      };
+
+      if (!exists) {
+        return [
+          updated,
+          ...current
+        ];
+      }
+
+      return current
+        .map(item =>
+          String(item.id) ===
+          String(conversation.id)
+            ? updated
+            : item
+        )
+        .sort(
+          (a, b) =>
+            new Date(
+              b.lastMessageAt || 0
+            ) -
+            new Date(
+              a.lastMessageAt || 0
+            )
+        );
+    });
   }
-  function updateDraft(value){setMessage(value);draftsRef.current={...draftsRef.current,[selected.id]:value};writeDrafts(draftsRef.current);}
-  async function uploadFile(file){const bucket=import.meta.env.VITE_SUPABASE_STORAGE_BUCKET;if(!bucket)throw new Error("Set VITE_SUPABASE_STORAGE_BUCKET to enable persistent media uploads.");const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,"_");const path=`${profile.id}/messages/${Date.now()}-${safe}`;const {error}=await supabase.storage.from(bucket).upload(path,file,{upsert:false,contentType:file.type||"application/octet-stream"});if(error)throw error;return {path,url:supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl};}
-  async function insertMessage(payload){
-    const clientId=`${profile.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const optimistic={id:`local-${clientId}`,...payload,sender_id:profile.id,created_at:new Date().toISOString(),status:"sending",client_message_id:clientId};setMessages(cur=>[...cur,optimistic]);
-    const {data,error}=await supabase.from("messages").insert({...payload,sender_id:profile.id,client_message_id:clientId,status:"sent"}).select("*").single();
-    if(error){if(!navigator.onLine)writeLocalQueue([...readLocalQueue(),{...optimistic,queued_at:new Date().toISOString()}]);setMessages(cur=>cur.map(x=>x.id===optimistic.id?{...x,status:"queued"}:x));return null;}
-    setMessages(cur=>cur.map(x=>x.id===optimistic.id?data:x));return data;
+
+  /* ============================================================
+     DRAFTS
+     ============================================================ */
+
+  function saveDraft(value) {
+    setMessage(value);
+
+    if (!selected?.id) return;
+
+    try {
+      const key =
+        `hexa-draft:${selected.id}`;
+
+      if (value.trim()) {
+        localStorage.setItem(
+          key,
+          value
+        );
+      } else {
+        localStorage.removeItem(
+          key
+        );
+      }
+    } catch (error) {
+      console.warn(
+        "HEXA draft:",
+        error
+      );
+    }
   }
-  async function sendMessage(e){
-    e?.preventDefault();const text=message.trim();if(!text||!canPublish||!profile?.id)return;const reply=replyTo?.id||null;
-    if(editing){const {error}=await supabase.from("messages").update({content:text,metadata:{...(editing.metadata||{}),edited:true,edited_at:new Date().toISOString()}}).eq("id",editing.id).eq("sender_id",profile.id);if(error)alert(error.message);else setMessages(cur=>cur.map(x=>x.id===editing.id?{...x,content:text,metadata:{...(x.metadata||{}),edited:true}}:x));setEditing(null);updateDraft("");return;}
-    updateDraft("");setReplyTo(null);
-    if(selected.id==="kora"){const local={id:`local-${Date.now()}`,sender_id:profile.id,content:text,created_at:new Date().toISOString(),message_type:"text",metadata:reply?{reply_to_id:reply}: {}};setMessages(cur=>[...cur,local]);setTimeout(()=>setMessages(cur=>[...cur,{id:`kora-${Date.now()}`,sender_id:"kora",content:koraReply(text),created_at:new Date().toISOString(),message_type:"text"}]),450);return;}
-    await insertMessage({conversation_id:selected.realConversationId||selected.id,content:text,message_type:"text",reply_to_id:reply,metadata:{disappearing:disappearing==="off"?null:disappearing}});
+
+  /* ============================================================
+     NEW CHAT / PERSON SEARCH
+     ============================================================ */
+
+  useEffect(() => {
+    const term =
+      newChatSearch.trim();
+
+    if (!newChatOpen || !term) {
+      setPeopleResults([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const timer =
+      setTimeout(
+        async () => {
+          setPeopleLoading(true);
+
+          try {
+            const { data, error } =
+              await supabase
+                .from("profiles")
+                .select(
+                  "id,full_name,username,avatar_url,online,last_seen"
+                )
+                .or(
+                  `full_name.ilike.%${term}%,username.ilike.%${term}%`
+                )
+                .neq(
+                  "id",
+                  profile.id
+                )
+                .limit(20);
+
+            if (
+              !cancelled
+            ) {
+              if (error) {
+                throw error;
+              }
+
+              setPeopleResults(
+                data || []
+              );
+            }
+          } catch (error) {
+            console.warn(
+              "HEXA person search:",
+              error
+            );
+
+            if (!cancelled) {
+              setPeopleResults([]);
+            }
+          } finally {
+            if (!cancelled) {
+              setPeopleLoading(
+                false
+              );
+            }
+          }
+        },
+        250
+      );
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    newChatSearch,
+    newChatOpen,
+    profile?.id
+  ]);
+
+  async function createDirectConversation(
+    person
+  ) {
+    if (
+      !person?.id ||
+      !profile?.id ||
+      person.id === profile.id
+    ) {
+      return;
+    }
+
+    setLoadingConversations(
+      true
+    );
+
+    try {
+      let conversation =
+        null;
+
+      const { data: existing } =
+        await supabase
+          .from("conversations")
+          .select("*")
+          .eq(
+            "type",
+            "direct"
+          )
+          .or(
+            `and(user_a.eq.${profile.id},user_b.eq.${person.id}),and(user_a.eq.${person.id},user_b.eq.${profile.id})`
+          )
+          .limit(1)
+          .maybeSingle();
+
+      conversation =
+        existing || null;
+
+      if (!conversation) {
+        const { data, error } =
+          await supabase
+            .from(
+              "conversations"
+            )
+            .insert({
+              type: "direct",
+              user_a: profile.id,
+              user_b: person.id,
+              created_by:
+                profile.id,
+              owner_id:
+                profile.id
+            })
+            .select("*")
+            .single();
+
+        if (error) {
+          throw error;
+        }
+
+        conversation =
+          data;
+
+        try {
+          await supabase
+            .from(
+              "conversation_members"
+            )
+            .insert([
+              {
+                conversation_id:
+                  conversation.id,
+                user_id:
+                  profile.id
+              },
+              {
+                conversation_id:
+                  conversation.id,
+                user_id:
+                  person.id
+              }
+            ]);
+        } catch (memberError) {
+          console.warn(
+            "HEXA member insert:",
+            memberError
+          );
+        }
+      }
+
+      const chat = {
+        id: `direct:${conversation.id}`,
+        realConversationId:
+          conversation.id,
+        type: "direct",
+        kind: "direct",
+        name:
+          person.full_name ||
+          person.username ||
+          "HEXA User",
+        username:
+          person.username ||
+          "",
+        avatar_url:
+          person.avatar_url ||
+          null,
+        online:
+          Boolean(
+            person.online
+          ),
+        otherProfileId:
+          person.id,
+        unread: 0,
+        lastMessage:
+          conversation.last_message ||
+          "",
+        lastMessageAt:
+          conversation.updated_at ||
+          conversation.created_at ||
+          null
+      };
+
+      setConversations(
+        current => {
+          const without =
+            current.filter(
+              item =>
+                String(item.id) !==
+                String(chat.id)
+            );
+
+          return [
+            ...without,
+            chat
+          ];
+        }
+      );
+
+      setSelected(chat);
+      setMobileConversationOpen(
+        true
+      );
+
+      setNewChatOpen(false);
+      setNewChatSearch("");
+      onOpenChatWithUser?.();
+
+      await loadMessages(
+        chat
+      );
+    } catch (error) {
+      console.error(
+        "HEXA direct conversation:",
+        error
+      );
+
+      alert(
+        error?.message ||
+          "Unable to create this conversation."
+      );
+    } finally {
+      setLoadingConversations(
+        false
+      );
+    }
   }
-  async function sendAttachment(file){if(!file||!canPublish)return;try{const uploaded=await uploadFile(file);const type=file.type.startsWith("image/")?"image":file.type.startsWith("video/")?"video":file.type.startsWith("audio/")?"audio":"file";const row=await insertMessage({conversation_id:selected.realConversationId||selected.id,content:file.name,message_type:type,metadata:{url:uploaded.url,path:uploaded.path,file_name:file.name,mime_type:file.type,size:file.size,view_once:false}});if(row)await supabase.from("message_attachments").insert({message_id:row.id,user_id:profile.id,file_name:file.name,file_path:uploaded.path,file_url:uploaded.url,mime_type:file.type,file_size:file.size});setAttachment(null);setReplyTo(null);}catch(err){alert(err.message||"Attachment upload failed.");}}
-  async function sendViewOnce(file){if(!file||!canPublish)return;try{const uploaded=await uploadFile(file);await insertMessage({conversation_id:selected.realConversationId||selected.id,content:file.name,message_type:file.type.startsWith("video")?"video":"image",metadata:{url:uploaded.url,path:uploaded.path,file_name:file.name,mime_type:file.type,size:file.size,view_once:true}});}catch(err){alert(err.message)}}
-  async function toggleReaction(msg,reaction){if(!msg?.id||String(msg.id).startsWith("local-")||!profile?.id)return;const {data:existing}=await supabase.from("message_reactions").select("*").eq("message_id",msg.id).eq("user_id",profile.id).eq("reaction",reaction).maybeSingle();if(existing)await supabase.from("message_reactions").delete().eq("message_id",msg.id).eq("user_id",profile.id).eq("reaction",reaction);else await supabase.from("message_reactions").insert({message_id:msg.id,user_id:profile.id,reaction});setReactionMenu(null);loadMessages(selected);}
-  async function searchGifs(){const key=import.meta.env.VITE_GIPHY_API_KEY;if(!key){setGifs([]);return;}const q=encodeURIComponent(gifQuery.trim()||"trending");try{const r=await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${key}&q=${q}&limit=18&rating=pg-13`);const j=await r.json();setGifs(j.data||[]);}catch{setGifs([])}}
-  async function sendGif(gif){if(!gif?.images?.original?.url||!canPublish)return;await insertMessage({conversation_id:selected.realConversationId||selected.id,content:gif.title||"GIF",message_type:"gif",metadata:{url:gif.images.original.url,preview_url:gif.images.fixed_width?.url||gif.images.original.url,source:"giphy"}});setGifOpen(false);}
-  async function sendSticker(sticker){await insertMessage({conversation_id:selected.realConversationId||selected.id,content:"Sticker",message_type:"sticker",metadata:{sticker}});setStickerOpen(false)}
-  async function startRecording(){if(!navigator.mediaDevices?.getUserMedia){alert("Voice recording is not supported by this browser.");return;}try{const stream=await navigator.mediaDevices.getUserMedia({audio:true});const recorder=new MediaRecorder(stream);chunksRef.current=[];recorder.ondataavailable=e=>{if(e.data.size)chunksRef.current.push(e.data)};recorder.onstop=async()=>{const blob=new Blob(chunksRef.current,{type:recorder.mimeType||"audio/webm"});stream.getTracks().forEach(t=>t.stop());await sendAttachment(new File([blob],`voice-${Date.now()}.webm`,{type:blob.type}));};recorder.start();recorderRef.current=recorder;setRecording(true);}catch(err){alert(err.message||"Microphone permission denied.")}}
-  function stopRecording(){recorderRef.current?.stop();recorderRef.current=null;setRecording(false)}
-  async function flushOfflineQueue(){if(!navigator.onLine)return;const queue=readLocalQueue();if(!queue.length)return;const remaining=[];for(const item of queue){const {error}=await supabase.from("messages").insert({conversation_id:item.conversation_id,sender_id:profile.id,content:item.content,message_type:item.message_type||"text",metadata:item.metadata||{},reply_to_id:item.reply_to_id||null,client_message_id:item.client_message_id||`offline-${Date.now()}`});if(error)remaining.push(item)}writeLocalQueue(remaining);if(selected.id&&!['self','kora','hexa-system-group'].includes(selected.id))loadMessages(selected)}
-  useEffect(()=>{window.addEventListener("online",flushOfflineQueue);flushOfflineQueue();return()=>window.removeEventListener("online",flushOfflineQueue)},[selected.id,profile?.id]);
-  function persist(key,value){setStarred(value);writeJsonStorage(key,value)}
-  async function deleteMessage(msg, everyone=false){if(!msg?.id)return;if(String(msg.id).startsWith("local-")){setMessages(cur=>cur.filter(x=>x.id!==msg.id));return;}if(everyone&&msg.sender_id===profile.id){const {error}=await supabase.from("messages").update({deleted_at:new Date().toISOString(),content:"This message was deleted",metadata:{...(msg.metadata||{}),deleted_for_everyone:true}}).eq("id",msg.id).eq("sender_id",profile.id);if(error)alert(error.message);else setMessages(cur=>cur.filter(x=>x.id!==msg.id));}else{setMessages(cur=>cur.filter(x=>x.id!==msg.id));}}
-  async function forwardMessage(msg){const target=conversations.find(c=>c.id!==selected.id&&c.kind!=="system");if(!target){alert("Open another chat first to forward a message.");return;}await insertMessage({conversation_id:target.realConversationId||target.id,content:msg.content||"Forwarded message",message_type:msg.message_type||"text",metadata:{...(msg.metadata||{}),forwarded:true,forwarded_from:msg.id}});alert(`Forwarded to ${target.name}.`)}
-  async function copyMessage(msg){try{await navigator.clipboard?.writeText(msg.content||"");}catch{}setContextMenu(null)}
-  async function toggleStar(msg){const key=String(msg.id);const next=starred.includes(key)?starred.filter(x=>x!==key):[...starred,key];persist("hexa-starred-v1",next);setContextMenu(null)}
-  async function togglePin(msg){const key=String(msg.id);const next=pinned.includes(key)?pinned.filter(x=>x!==key):[...pinned,key];setPinned(next);writeJsonStorage("hexa-pinned-v1",next);setContextMenu(null)}
-  function editMessage(msg){setEditing(msg);updateDraft(msg.content||"");setContextMenu(null)}
-  function chooseEmoji(e){updateDraft(message+e);setEmojiOpen(false)}
-  async function sendPoll(){const opts=pollOptions.map(x=>x.trim()).filter(Boolean);if(!pollQuestion.trim()||opts.length<2)return;await insertMessage({conversation_id:selected.realConversationId||selected.id,content:pollQuestion.trim(),message_type:"poll",metadata:{question:pollQuestion.trim(),options:opts,votes:{}}});setPollQuestion("");setPollOptions(["",""]);setPollOpen(false)}
-  async function sendContact(){await insertMessage({conversation_id:selected.realConversationId||selected.id,content:profile.full_name||profile.username||"HEXA Contact",message_type:"contact",metadata:{user_id:profile.id,name:profile.full_name||profile.username,username:profile.username,phone:profile.phone||""}});setContactOpen(false)}
-  async function sendLocation(){if(!navigator.geolocation){alert("Location is not supported by this browser.");return;}navigator.geolocation.getCurrentPosition(async pos=>{await insertMessage({conversation_id:selected.realConversationId||selected.id,content:"Current location",message_type:"location",metadata:{latitude:pos.coords.latitude,longitude:pos.coords.longitude}});setLocationOpen(false)},err=>alert(err.message),{enableHighAccuracy:true})}
-  function setMute(){const key=String(selected.id);const next=muted.includes(key)?muted.filter(x=>x!==key):[...muted,key];setMuted(next);writeJsonStorage("hexa-muted-v1",next)}
-  const filtered=conversations.filter(c=>(c.name||"").toLowerCase().includes(chatSearch.toLowerCase()));
-  const messageResults=chatSearch.trim()?messages.filter(m=>String(m.content||"").toLowerCase().includes(chatSearch.toLowerCase())):[];
-  function renderMessage(item){
-    const own=item.sender_id===profile?.id,meta=item.metadata||{},reactions=item.message_reactions||[],isStarred=starred.includes(String(item.id)),isPinned=pinned.includes(String(item.id));
-    return <div id={`msg-${item.id}`} key={item.id} className={`message-row ${own?"own":""}`} onContextMenu={e=>{e.preventDefault();setContextMenu({id:item.id,x:e.clientX,y:e.clientY})}}>
-      <div className="message-bubble-wrap">
-        {item.reply_to_id&&<div className="reply-preview">↪ Replying to a message</div>}
-        <div className={`message-bubble ${meta.view_once?"view-once-bubble":""}`}>
-          {meta.forwarded&&<div className="forwarded-label">↪ Forwarded</div>}
-          {item.message_type==="image"&&meta.url?<img src={meta.url} alt={item.content} className="message-media"/>:null}
-          {item.message_type==="video"&&meta.url?<video src={meta.url} controls className="message-media"/>:null}
-          {item.message_type==="gif"&&meta.url?<img src={meta.url} alt={item.content} className="message-media gif-media"/>:null}
-          {item.message_type==="sticker"&&<div className="sticker-message">{meta.sticker||"🧩"}</div>}
-          {(item.message_type==="audio"||item.message_type==="voice")&&(meta.url?<FeatureAudio url={meta.url} voice={item.message_type==="voice"}/>:<span>🎤 Voice message</span>)}
-          {item.message_type==="poll"&&<div className="poll-message"><strong>🗳️ {meta.question||item.content}</strong>{(meta.options||[]).map((o,i)=><button key={i} type="button" onClick={()=>alert(`Vote recorded for: ${o}`)}>{o}<span>0 votes</span></button>)}</div>}
-          {item.message_type==="contact"&&<div className="shared-contact"><Avatar name={meta.name||item.content} size={44}/><div><strong>{meta.name||item.content}</strong><small>@{meta.username||"hexauser"}</small></div></div>}
-          {item.message_type==="location"&&<a className="location-card" href={`https://www.google.com/maps?q=${meta.latitude},${meta.longitude}`} target="_blank" rel="noreferrer">📍 Open shared location<br/><small>{Number(meta.latitude).toFixed(5)}, {Number(meta.longitude).toFixed(5)}</small></a>}
-          {item.message_type==="file"&&<div className="file-message">📄 <strong>{item.content}</strong></div>}
-          {!['image','video','gif','audio','voice','sticker','poll','contact','location','file'].includes(item.message_type)&&<span>{item.content}</span>}
-          <small>{isPinned?"📌 ":""}{isStarred?"⭐ ":""}{item.created_at?new Date(item.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}):""} {meta.edited?"· edited":""} {item.status==="queued"?"· queued":item.status==="sending"?"· sending":own?" · ✓✓":""}</small>
+
+  /* ============================================================
+     SEND MESSAGE
+     ============================================================ */
+
+  async function sendMessage(
+    event
+  ) {
+    event?.preventDefault();
+
+    const text =
+      message.trim();
+
+    if (
+      !text &&
+      !attachment
+    ) {
+      return;
+    }
+
+    if (isSystem) {
+      alert(
+        "Only authorized HEXA administrators can publish in THE HEXA GROUP."
+      );
+      return;
+    }
+
+    if (
+      selected?.id &&
+      blocked.includes(
+        String(
+          selected.id
+        )
+      )
+    ) {
+      alert(
+        "This contact is blocked."
+      );
+      return;
+    }
+
+    const conversationId =
+      selected.realConversationId ||
+      selected.id;
+
+    const optimisticId =
+      `local-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}`;
+
+    const newMessage = {
+      id: optimisticId,
+      conversation_id:
+        conversationId,
+      sender_id:
+        profile.id,
+      content:
+        text ||
+        attachment?.name ||
+        "",
+      message_type:
+        attachment?.type ||
+        "text",
+      created_at:
+        new Date().toISOString(),
+      reply_to:
+        replyTo?.id ||
+        null,
+      pending: true
+    };
+
+    setMessages(
+      current => [
+        ...current,
+        newMessage
+      ]
+    );
+
+    updateConversationPreview(
+      selected,
+      newMessage
+    );
+
+    setMessage("");
+    setReplyTo(null);
+    setAttachment(null);
+    setEmojiOpen(false);
+    setGifOpen(false);
+    setStickerOpen(false);
+    setAttachmentOpen(false);
+
+    try {
+      localStorage.removeItem(
+        `hexa-draft:${selected.id}`
+      );
+    } catch {}
+
+    /*
+     * Kora remains available as the HEXA AI chat.
+     */
+
+    if (isKora) {
+      const reply =
+        typeof koraReply ===
+        "function"
+          ? await koraReply(text)
+          : "I'm here to help.";
+
+      const koraMessage = {
+        id:
+          `kora-${Date.now()}`,
+        conversation_id:
+          "kora",
+        sender_id:
+          "kora",
+        content:
+          reply,
+        message_type:
+          "text",
+        created_at:
+          new Date().toISOString()
+      };
+
+      setMessages(
+        current => [
+          ...current.filter(
+            item =>
+              item.id !==
+              optimisticId
+          ),
+          {
+            ...newMessage,
+            pending: false
+          },
+          koraMessage
+        ]
+      );
+
+      updateConversationPreview(
+        selected,
+        koraMessage
+      );
+
+      return;
+    }
+
+    try {
+      const payload = {
+        conversation_id:
+          conversationId,
+        sender_id:
+          profile.id,
+        content:
+          text ||
+          attachment?.name ||
+          "",
+        message_type:
+          attachment?.type ||
+          "text",
+        reply_to:
+          replyTo?.id ||
+          null
+      };
+
+      const {
+        data,
+        error
+      } = await supabase
+        .from("messages")
+        .insert(payload)
+        .select(
+          "*, message_reactions(*)"
+        )
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setMessages(
+        current =>
+          current.map(item =>
+            item.id ===
+            optimisticId
+              ? data
+              : item
+          )
+      );
+
+      updateConversationPreview(
+        selected,
+        data
+      );
+    } catch (error) {
+      console.error(
+        "HEXA send message:",
+        error
+      );
+
+      /*
+       * Offline queue.
+       */
+
+      try {
+        const queue =
+          readJsonStorage(
+            "hexa-message-queue-v5",
+            []
+          );
+
+        queue.push({
+          ...newMessage,
+          pending: true
+        });
+
+        localStorage.setItem(
+          "hexa-message-queue-v5",
+          JSON.stringify(queue)
+        );
+      } catch {}
+
+      setMessages(
+        current =>
+          current.map(item =>
+            item.id ===
+            optimisticId
+              ? {
+                  ...item,
+                  pending: true,
+                  failed: true
+                }
+              : item
+          )
+      );
+    }
+  }
+
+  /* ============================================================
+     MESSAGE ACTIONS
+     ============================================================ */
+
+  async function copyMessage(
+    item
+  ) {
+    try {
+      await navigator.clipboard.writeText(
+        item?.content || ""
+      );
+    } catch {
+      alert(
+        "Unable to copy this message."
+      );
+    }
+
+    setContextMenu(null);
+  }
+
+  async function editMessage(
+    item
+  ) {
+    if (
+      item.sender_id !==
+      profile.id
+    ) {
+      return;
+    }
+
+    setEditing(item);
+    setMessage(
+      item.content || ""
+    );
+    setContextMenu(null);
+  }
+
+  async function saveEditedMessage() {
+    if (!editing) return;
+
+    const value =
+      message.trim();
+
+    if (!value) return;
+
+    try {
+      const { data, error } =
+        await supabase
+          .from("messages")
+          .update({
+            content:
+              value,
+            edited_at:
+              new Date().toISOString()
+          })
+          .eq(
+            "id",
+            editing.id
+          )
+          .select("*")
+          .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setMessages(
+        current =>
+          current.map(item =>
+            item.id ===
+            editing.id
+              ? data
+              : item
+          )
+      );
+
+      setEditing(null);
+      setMessage("");
+    } catch (error) {
+      console.error(
+        "HEXA edit:",
+        error
+      );
+    }
+  }
+
+  async function deleteMessage(
+    item,
+    everyone = false
+  ) {
+    if (!item?.id) return;
+
+    if (everyone) {
+      if (
+        item.sender_id !==
+        profile.id
+      ) {
+        return;
+      }
+
+      try {
+        const { data, error } =
+          await supabase
+            .from("messages")
+            .update({
+              deleted_at:
+                new Date().toISOString(),
+              deleted_for_everyone:
+                true,
+              content:
+                "This message was deleted"
+            })
+            .eq(
+              "id",
+              item.id
+            )
+            .select("*")
+            .single();
+
+        if (error) {
+          throw error;
+        }
+
+        setMessages(
+          current =>
+            current.map(item2 =>
+              item2.id ===
+              item.id
+                ? data
+                : item2
+            )
+        );
+      } catch (error) {
+        console.error(
+          "HEXA delete:",
+          error
+        );
+      }
+    } else {
+      /*
+       * Per-device deletion.
+       * This keeps the message hidden for this client
+       * without deleting it for the other participant.
+       */
+
+      try {
+        const key =
+          "hexa-deleted-messages-v5";
+
+        const deleted =
+          readJsonStorage(
+            key,
+            []
+          );
+
+        if (
+          !deleted.includes(
+            String(item.id)
+          )
+        ) {
+          deleted.push(
+            String(item.id)
+          );
+        }
+
+        saveStorage(
+          key,
+          deleted
+        );
+      } catch {}
+
+      setMessages(
+        current =>
+          current.filter(
+            item2 =>
+              String(item2.id) !==
+              String(item.id)
+          )
+      );
+    }
+
+    setContextMenu(null);
+  }
+
+  function toggleStar(item) {
+    const id =
+      String(item.id);
+
+    setStarred(current =>
+      current.includes(id)
+        ? current.filter(
+            x => x !== id
+          )
+        : [
+            ...current,
+            id
+          ]
+    );
+
+    setContextMenu(null);
+  }
+
+  function togglePin(item) {
+    const id =
+      String(item.id);
+
+    setPinned(current =>
+      current.includes(id)
+        ? current.filter(
+            x => x !== id
+          )
+        : [
+            ...current,
+            id
+          ]
+    );
+
+    setContextMenu(null);
+  }
+
+  /* ============================================================
+     REACTIONS
+     ============================================================ */
+
+  async function reactToMessage(
+    item,
+    emoji
+  ) {
+    if (!item?.id) return;
+
+    setReactionMenu(null);
+
+    try {
+      const existing =
+        item.message_reactions
+          ?.find(
+            reaction =>
+              String(
+                reaction.user_id
+              ) ===
+              String(profile.id)
+          );
+
+      if (existing) {
+        if (
+          existing.reaction ===
+          emoji
+        ) {
+          await supabase
+            .from(
+              "message_reactions"
+            )
+            .delete()
+            .eq(
+              "id",
+              existing.id
+            );
+        } else {
+          await supabase
+            .from(
+              "message_reactions"
+            )
+            .update({
+              reaction:
+                emoji
+            })
+            .eq(
+              "id",
+              existing.id
+            );
+        }
+      } else {
+        await supabase
+          .from(
+            "message_reactions"
+          )
+          .insert({
+            message_id:
+              item.id,
+            user_id:
+              profile.id,
+            reaction:
+              emoji
+          });
+      }
+
+      await loadMessages(
+        selected
+      );
+    } catch (error) {
+      console.warn(
+        "HEXA reaction:",
+        error
+      );
+    }
+  }
+
+  /* ============================================================
+     FORWARD
+     ============================================================ */
+
+  function openForward(item) {
+    setForwardMessage(
+      item
+    );
+    setForwardOpen(
+      true
+    );
+    setContextMenu(null);
+  }
+
+  async function forwardToChat(
+    conversation
+  ) {
+    if (
+      !forwardMessage ||
+      !conversation
+    ) {
+      return;
+    }
+
+    const conversationId =
+      conversation.realConversationId ||
+      conversation.id;
+
+    if (
+      conversation.id ===
+      "hexa-system-group"
+    ) {
+      alert(
+        "Messages cannot be forwarded into THE HEXA GROUP unless you have publishing permission."
+      );
+      return;
+    }
+
+    try {
+      const payload = {
+        conversation_id:
+          conversationId,
+        sender_id:
+          profile.id,
+        content:
+          forwardMessage.content ||
+          "",
+        message_type:
+          forwardMessage.message_type ||
+          "text",
+        forwarded: true,
+        forwarded_from:
+          forwardMessage.id
+      };
+
+      const {
+        data,
+        error
+      } = await supabase
+        .from("messages")
+        .insert(payload)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      updateConversationPreview(
+        conversation,
+        data
+      );
+
+      setForwardOpen(false);
+      setForwardMessage(null);
+    } catch (error) {
+      console.error(
+        "HEXA forwarding:",
+        error
+      );
+    }
+  }
+
+  /* ============================================================
+     CHAT CONTROLS
+     ============================================================ */
+
+  function toggleMute() {
+    const id =
+      String(selected.id);
+
+    setMuted(current =>
+      current.includes(id)
+        ? current.filter(
+            x => x !== id
+          )
+        : [
+            ...current,
+            id
+          ]
+    );
+  }
+
+  function toggleArchive() {
+    const id =
+      String(selected.id);
+
+    setArchived(current =>
+      current.includes(id)
+        ? current.filter(
+            x => x !== id
+          )
+        : [
+            ...current,
+            id
+          ]
+    );
+
+    setChatSettingsOpen(
+      false
+    );
+  }
+
+  function toggleBlock() {
+    const id =
+      String(selected.id);
+
+    setBlocked(current =>
+      current.includes(id)
+        ? current.filter(
+            x => x !== id
+          )
+        : [
+            ...current,
+            id
+          ]
+    );
+
+    setChatSettingsOpen(
+      false
+    );
+  }
+
+  function clearChat() {
+    setMessages([]);
+    setChatSettingsOpen(
+      false
+    );
+  }
+
+  /* ============================================================
+     MULTI SELECT
+     ============================================================ */
+
+  function toggleMessageSelection(
+    item
+  ) {
+    const id =
+      String(item.id);
+
+    setSelectionMode(
+      true
+    );
+
+    setSelectedMessages(
+      current =>
+        current.includes(id)
+          ? current.filter(
+              x => x !== id
+            )
+          : [
+              ...current,
+              id
+            ]
+    );
+  }
+
+  function cancelSelection() {
+    setSelectedMessages(
+      []
+    );
+    setSelectionMode(
+      false
+    );
+  }
+
+  async function deleteSelected() {
+    const selectedItems =
+      messages.filter(
+        item =>
+          selectedMessages.includes(
+            String(item.id)
+          )
+      );
+
+    for (
+      const item of selectedItems
+    ) {
+      await deleteMessage(
+        item,
+        item.sender_id ===
+          profile.id
+      );
+    }
+
+    cancelSelection();
+  }
+
+  /* ============================================================
+     SEARCH
+     ============================================================ */
+
+  const filteredConversations =
+    useMemo(() => {
+      const term =
+        chatSearch
+          .trim()
+          .toLowerCase();
+
+      let list =
+        conversations.filter(
+          conversation =>
+            !archived.includes(
+              String(
+                conversation.id
+              )
+            )
+        );
+
+      if (!term) {
+        return list;
+      }
+
+      return list.filter(
+        conversation =>
+          String(
+            conversation.name ||
+              ""
+          )
+            .toLowerCase()
+            .includes(term) ||
+          String(
+            conversation.lastMessage ||
+              ""
+          )
+            .toLowerCase()
+            .includes(term) ||
+          String(
+            conversation.username ||
+              ""
+          )
+            .toLowerCase()
+            .includes(term)
+      );
+    }, [
+      conversations,
+      chatSearch,
+      archived
+    ]);
+
+  const messageResults =
+    useMemo(() => {
+      const term =
+        messageSearch
+          .trim()
+          .toLowerCase();
+
+      if (!term) return [];
+
+      return messages.filter(
+        item =>
+          String(
+            item.content ||
+              ""
+          )
+            .toLowerCase()
+            .includes(term)
+      );
+    }, [
+      messages,
+      messageSearch
+    ]);
+
+  /* ============================================================
+     MESSAGE RENDERER
+     ============================================================ */
+
+  function renderMessage(item) {
+    const mine =
+      String(
+        item.sender_id
+      ) ===
+      String(profile.id);
+
+    const isSelected =
+      selectedMessages.includes(
+        String(item.id)
+      );
+
+    const reactions =
+      item.message_reactions ||
+      [];
+
+    return (
+      <div
+        key={item.id}
+        id={`msg-${item.id}`}
+        className={
+          `hexa-message-row ${
+            mine
+              ? "mine"
+              : "incoming"
+          } ${
+            isSelected
+              ? "selected-message"
+              : ""
+          }`
+        }
+        onContextMenu={event => {
+          event.preventDefault();
+
+          setContextMenu({
+            id: item.id,
+            x: event.clientX,
+            y: event.clientY
+          });
+        }}
+        onClick={() => {
+          if (
+            selectionMode
+          ) {
+            toggleMessageSelection(
+              item
+            );
+          }
+        }}
+      >
+        {!mine && (
+          <Avatar
+            src={
+              selected.avatar_url
+            }
+            name={
+              selected.name
+            }
+            size={30}
+          />
+        )}
+
+        <div
+          className={
+            `message-bubble ${
+              mine
+                ? "mine"
+                : ""
+            }`
+          }
+        >
+          {item.forwarded && (
+            <div className="forwarded-label">
+              ↪ Forwarded
+            </div>
+          )}
+
+          {item.reply_to && (
+            <div className="quoted-message">
+              ↩ Reply
+            </div>
+          )}
+
+          {item.message_type ===
+          "image" ? (
+            <img
+              src={
+                item.media_url
+              }
+              alt="Shared"
+              className="message-media"
+            />
+          ) : item.message_type ===
+            "video" ? (
+            <video
+              src={
+                item.media_url
+              }
+              controls
+              className="message-media"
+            />
+          ) : (
+            <div className="message-content">
+              {item.content}
+            </div>
+          )}
+
+          <div className="message-meta">
+            <span>
+              {item.created_at
+                ? new Date(
+                    item.created_at
+                  ).toLocaleTimeString(
+                    [],
+                    {
+                      hour:
+                        "numeric",
+                      minute:
+                        "2-digit"
+                    }
+                  )
+                : ""}
+            </span>
+
+            {item.edited_at && (
+              <span>
+                edited
+              </span>
+            )}
+
+            {mine && (
+              <span className="message-status">
+                {item.pending
+                  ? "◷"
+                  : "✓✓"}
+              </span>
+            )}
+          </div>
+
+          {reactions.length >
+            0 && (
+            <div className="message-reactions">
+              {reactions.map(
+                reaction => (
+                  <button
+                    key={
+                      reaction.id
+                    }
+                    type="button"
+                    onClick={() =>
+                      reactToMessage(
+                        item,
+                        reaction.reaction
+                      )
+                    }
+                  >
+                    {
+                      reaction.reaction
+                    }
+                  </button>
+                )
+              )}
+            </div>
+          )}
         </div>
-        <div className="message-tools"><button type="button" onClick={()=>setReplyTo(item)}>↩</button><button type="button" onClick={()=>setReactionMenu(reactionMenu===item.id?null:item.id)}>☺</button><button type="button" onClick={()=>toggleStar(item)}>⭐</button>{reactionMenu===item.id&&<div className="reaction-picker">{["❤️","😂","👍","🔥","😮","😢","👏","🎉","🙏","💯","🥰","😍"].map(r=><button key={r} type="button" onClick={()=>toggleReaction(item,r)}>{r}</button>)}</div>}</div>
-        {reactions.length>0&&<div className="reaction-summary">{[...new Set(reactions.map(r=>r.reaction))].slice(0,6).join(" ")} {reactions.length}</div>}
       </div>
-    </div>;
+    );
   }
-  return <section className="chat-layout" onClick={()=>contextMenu&&setContextMenu(null)}>
-    <div className="chat-list-panel">
-      <div className="chat-list-header"><div><h2>Chat</h2><span>{conversations.length} conversations</span></div><button className="new-chat-button" onClick={()=>mediaRef.current?.focus()}>＋</button></div>
-      <div className="chat-search"><span>⌕</span><input value={chatSearch} onChange={e=>setChatSearch(e.target.value)} placeholder="Search chats & messages"/></div>
-      <div className="conversation-list">{filtered.map(c=><button key={c.id} className={`conversation ${selected.id===c.id?"active":""}`} onClick={()=>setSelected(c)}><Avatar name={c.name} size={46} online={c.online}/><div className="conversation-content"><strong>{c.name}</strong><span>{c.kind==="system"?"Official HEXA":c.kind==="ai"?"HEXA AI":c.description||"Conversation"}</span></div>{muted.includes(String(c.id))&&<small>🔕</small>}</button>)}</div>
-      {messageResults.length>0&&<div className="chat-search-results"><strong>Messages in this chat</strong>{messageResults.slice(0,8).map(m=><button key={m.id} onClick={()=>document.getElementById(`msg-${m.id}`)?.scrollIntoView()}>{m.content}</button>)}</div>}
-    </div>
-    <div className="chat-main">
-      <div className="chat-header"><Avatar name={selected.name} size={42} online={selected.online}/><div><strong>{selected.name}</strong><span>{isSystem?"Official HEXA · read only":selected.kind==="ai"?"Kora AI":selected.online?"online":"last seen recently"}</span></div><div className="chat-header-actions"><button title="Voice call" onClick={()=>!isSystem&&selected.id!=="self"&&onStartCall?.(selected,"voice")}>☎</button><button title="Video call" onClick={()=>!isSystem&&selected.id!=="self"&&onStartCall?.(selected,"video")}>▣</button><button title="Chat settings" onClick={()=>setChatSettingsOpen(v=>!v)}>⋮</button></div></div>
-      {chatSettingsOpen&&<div className="chat-settings-popover"><strong>Chat settings</strong><label>Disappearing messages<select value={disappearing} onChange={e=>setDisappearing(e.target.value)}><option value="off">Off</option><option value="24h">24 hours</option><option value="7d">7 days</option><option value="90d">90 days</option></select></label><button onClick={setMute}>{muted.includes(String(selected.id))?"Unmute chat":"Mute chat"}</button><button onClick={()=>{setMessages([]);setChatSettingsOpen(false)}}>Clear chat</button><button onClick={()=>alert("Archive state saved for this chat.")}>Archive chat</button><button className="danger-text" onClick={()=>alert("Block/report controls are ready for your moderation policies.")}>Block / Report</button></div>}
-      <div className="messages-area">
-        {loading?<div className="empty-chat"><div className="loading-spinner"/><p>Loading messages…</p></div>:messages.length?messages.map(renderMessage):<div className="empty-chat"><div className="empty-chat-icon">{selected.avatar||"H"}</div><h3>{isSystem?"THE HEXA GROUP":`Chat with ${selected.name}`}</h3><p>{isSystem?"Official HEXA announcements appear here.":"Messages are end-to-end encrypted in the HEXA architecture."}</p></div>}
-        <div ref={bottomRef}/>
-      </div>
-      {contextMenu&&<div className="message-context-menu" style={{left:Math.min(contextMenu.x,window.innerWidth-220),top:Math.min(contextMenu.y,window.innerHeight-330)}} onClick={e=>e.stopPropagation()}>{(()=>{const m=messages.find(x=>x.id===contextMenu.id);if(!m)return null;return <>{<button onClick={()=>{setReplyTo(m);setContextMenu(null)}}>↩ Reply</button>}<button onClick={()=>copyMessage(m)}>📋 Copy</button><button onClick={()=>editMessage(m)} disabled={m.sender_id!==profile.id}>✏️ Edit</button><button onClick={()=>toggleStar(m)}>⭐ {starred.includes(String(m.id))?"Unstar":"Star"}</button><button onClick={()=>togglePin(m)}>📌 {pinned.includes(String(m.id))?"Unpin":"Pin"}</button><button onClick={()=>forwardMessage(m)}>↪ Forward</button><button onClick={()=>deleteMessage(m,false)}>🗑 Delete for me</button>{m.sender_id===profile.id&&<button onClick={()=>deleteMessage(m,true)}>🗑 Delete for everyone</button>}</>})()}</div>}
-      {replyTo&&<div className="reply-bar"><span>↩ Replying to: {replyTo.content||"media"}</span><button type="button" onClick={()=>setReplyTo(null)}>×</button></div>}
-      {editing&&<div className="reply-bar"><span>✏️ Editing message</span><button type="button" onClick={()=>{setEditing(null);updateDraft("")}}>Cancel</button></div>}
-      {emojiOpen&&<div className="emoji-panel"><div className="emoji-tones">{["🖐️","🖐🏻","🖐🏼","🖐🏽","🖐🏾","🖐🏿"].map(x=><button key={x} onClick={()=>chooseEmoji(x)}>{x}</button>)}</div><div className="emoji-grid">{"😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 ☹️ 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🫡 🤭 🤫 🤥 😶 🫠 🙄 😬 😮‍💨 🤐 🤔 ❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💯 🔥 🎉 👏 🙏 👍 👎 💕 💔 ✨".split(" ").map(x=><button key={x} onClick={()=>chooseEmoji(x)}>{x}</button>)}</div></div>}
-      {stickerOpen&&<div className="sticker-panel"><strong>HEXA Stickers</strong><div className="sticker-grid">{["😎","😂","❤️","🔥","🥰","🎉","👑","🚀","💯","🤝","😈","🫶","🦋","🌟","💡","🧠"].map(x=><button key={x} onClick={()=>sendSticker(x)}>{x}</button>)}</div><small>Custom sticker packs can be stored in HEXA media storage.</small></div>}
-      {gifOpen&&<div className="gif-panel"><div className="gif-search"><input value={gifQuery} onChange={e=>setGifQuery(e.target.value)} onKeyDown={e=>e.key==='Enter'&&searchGifs()} placeholder="Search GIPHY"/><button type="button" onClick={searchGifs}>Search</button></div><div className="gif-grid">{gifs.map(g=><button key={g.id} type="button" onClick={()=>sendGif(g)}><img src={g.images.fixed_width?.url||g.images.original.url} alt={g.title}/></button>)}</div>{!import.meta.env.VITE_GIPHY_API_KEY&&<small>Set VITE_GIPHY_API_KEY to enable GIPHY search.</small>}</div>}
-      {pollOpen&&<div className="feature-popover"><h3>Create poll</h3><input className="modal-input" value={pollQuestion} onChange={e=>setPollQuestion(e.target.value)} placeholder="Ask a question"/>{pollOptions.map((o,i)=><input key={i} className="modal-input" value={o} onChange={e=>setPollOptions(a=>a.map((x,j)=>j===i?e.target.value:x))} placeholder={`Option ${i+1}`}/>)}<button onClick={()=>setPollOptions(a=>[...a,""])}>＋ Add option</button><button className="hero-primary" onClick={sendPoll}>Send poll</button></div>}
-      {contactOpen&&<div className="feature-popover"><h3>Share contact</h3><p>Share your HEXA profile with this chat.</p><button className="hero-primary" onClick={sendContact}>Share contact</button></div>}
-      {locationOpen&&<div className="feature-popover"><h3>Share location</h3><p>Send your current GPS location to this chat.</p><button className="hero-primary" onClick={sendLocation}>Send current location</button></div>}
-      <form className="message-composer" onSubmit={sendMessage}>
-        <button type="button" title="Emoji" disabled={!canPublish} onClick={()=>setEmojiOpen(v=>!v)}>☺</button>
-        <button type="button" title="Attachment" disabled={!canPublish} onClick={()=>mediaRef.current?.click()}>＋</button>
-        <button type="button" title="Camera" disabled={!canPublish} onClick={()=>cameraRef.current?.click()}>📷</button>
-        <input ref={mediaRef} type="file" hidden accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.txt" onChange={e=>{const f=e.target.files?.[0];if(f){setAttachment(f);sendAttachment(f)}e.target.value=""}}/>
-        <input ref={cameraRef} type="file" hidden accept="image/*,video/*" capture="environment" onChange={e=>{const f=e.target.files?.[0];if(f){setAttachment(f);sendAttachment(f)}e.target.value=""}}/>
-        <input value={message} onChange={e=>updateDraft(e.target.value)} disabled={!canPublish} placeholder={isSystem&&!canPublish?"Only HEXA admins can publish here":editing?"Edit message…":"Type a message…"}/>
-        <button type="button" className="composer-action" title="GIF" disabled={!canPublish} onClick={()=>{setGifOpen(v=>!v);if(!gifs.length)searchGifs()}}>GIF</button>
-        <button type="button" className="composer-action" title="Stickers" disabled={!canPublish} onClick={()=>setStickerOpen(v=>!v)}>🧩</button>
-        <button type="button" className="composer-action" title="Poll" disabled={!canPublish} onClick={()=>setPollOpen(v=>!v)}>📊</button>
-        <button type="button" className="composer-action" title="Contact" disabled={!canPublish} onClick={()=>setContactOpen(v=>!v)}>👤</button>
-        <button type="button" className="composer-action" title="Location" disabled={!canPublish} onClick={()=>setLocationOpen(v=>!v)}>📍</button>
-        <button type="button" className="composer-action" title="View once media" disabled={!canPublish} onClick={()=>{const input=document.createElement('input');input.type='file';input.accept='image/*,video/*';input.onchange=e=>sendViewOnce(e.target.files?.[0]);input.click()}}>1×</button>
-        <button type="button" className="composer-action" title={recording?"Stop recording":"Voice message"} disabled={!canPublish} onClick={recording?stopRecording:startRecording}>{recording?"■":"🎤"}</button>
-        <button className="send-button" type="submit" disabled={!message.trim()||!canPublish}>➤</button>
-      </form>
-    </div>
-  </section>;
+
+  /* ============================================================
+     RETURN
+     ============================================================ */
+
+  return (
+    <section
+      className={
+        `chat-layout ${
+          mobileConversationOpen
+            ? "mobile-chat-open"
+            : "mobile-chat-list"
+        }`
+      }
+      onClick={() => {
+        if (contextMenu) {
+          setContextMenu(null);
+        }
+      }}
+    >
+
+      {/* ======================================================
+          CHAT LIST
+          ====================================================== */}
+
+      <aside className="chat-list-panel">
+
+        <div className="chat-list-header">
+
+          <div>
+            <h2>
+              Chat
+            </h2>
+
+            <span>
+              {
+                conversations.length
+              } conversations
+            </span>
+          </div>
+
+          <button
+            className="new-chat-button"
+            type="button"
+            title="New chat"
+            onClick={() =>
+              setNewChatOpen(
+                true
+              )
+            }
+          >
+            ＋
+          </button>
+
+        </div>
+
+        <div className="chat-search">
+
+          <span>
+            ⌕
+          </span>
+
+          <input
+            value={
+              chatSearch
+            }
+            onChange={event =>
+              setChatSearch(
+                event.target
+                  .value
+              )
+            }
+            placeholder="Search chats"
+          />
+
+        </div>
+
+        <div className="conversation-list">
+
+          {loadingConversations &&
+            !conversations.length && (
+              <div className="chat-loading">
+                Loading chats…
+              </div>
+            )}
+
+          {filteredConversations.map(
+            conversation => (
+              <button
+                key={
+                  conversation.id
+                }
+                type="button"
+                className={
+                  `conversation ${
+                    selected?.id ===
+                    conversation.id
+                      ? "active"
+                      : ""
+                  }`
+                }
+                onClick={() => {
+                  setSelected(
+                    conversation
+                  );
+
+                  setMobileConversationOpen(
+                    true
+                  );
+
+                  setConversations(
+                    current =>
+                      current.map(
+                        item =>
+                          String(
+                            item.id
+                          ) ===
+                          String(
+                            conversation.id
+                          )
+                            ? {
+                                ...item,
+                                unread: 0
+                              }
+                            : item
+                      )
+                  );
+                }}
+              >
+
+                <Avatar
+                  src={
+                    conversation.avatar_url
+                  }
+                  name={
+                    conversation.name
+                  }
+                  size={48}
+                  online={
+                    conversation.online
+                  }
+                />
+
+                <div className="conversation-content">
+
+                  <div className="conversation-topline">
+
+                    <strong>
+                      {
+                        conversation.name
+                      }
+                    </strong>
+
+                    {conversation.lastMessageAt && (
+                      <time>
+                        {formatChatTime(
+                          conversation.lastMessageAt
+                        )}
+                      </time>
+                    )}
+
+                  </div>
+
+                  <div className="conversation-bottomline">
+
+                    <span>
+                      {
+                        conversation.lastMessage ||
+                        conversation.description ||
+                        "No messages yet"
+                      }
+                    </span>
+
+                    {conversation.unread >
+                      0 && (
+                      <b className="unread-badge">
+                        {conversation.unread >
+                        99
+                          ? "99+"
+                          : conversation.unread}
+                      </b>
+                    )}
+
+                  </div>
+
+                </div>
+
+                {muted.includes(
+                  String(
+                    conversation.id
+                  )
+                ) && (
+                  <small>
+                    🔕
+                  </small>
+                )}
+
+              </button>
+            )
+          )}
+
+          {!filteredConversations.length && (
+            <div className="empty-chat-list">
+              <div>
+                💬
+              </div>
+
+              <strong>
+                No chats found
+              </strong>
+
+              <span>
+                Start a new HEXA conversation.
+              </span>
+            </div>
+          )}
+
+        </div>
+
+      </aside>
+
+      {/* ======================================================
+          CHAT MAIN
+          ====================================================== */}
+
+      <main className="chat-main">
+
+        <header className="chat-header">
+
+          <button
+            className="mobile-chat-back"
+            type="button"
+            onClick={() =>
+              setMobileConversationOpen(
+                false
+              )
+            }
+          >
+            ←
+          </button>
+
+          <Avatar
+            src={
+              selected?.avatar_url
+            }
+            name={
+              selected?.name
+            }
+            size={42}
+            online={
+              selected?.online
+            }
+          />
+
+          <div className="chat-header-copy">
+
+            <strong>
+              {
+                selected?.name
+              }
+            </strong>
+
+            <span>
+              {isSystem
+                ? "Official HEXA · read only"
+                : isKora
+                  ? "Kora AI"
+                  : selected?.online
+                    ? "online"
+                    : "last seen recently"}
+            </span>
+
+          </div>
+
+          <div className="chat-header-actions">
+
+            {!isSystem &&
+              !isSelf && (
+                <>
+                  <button
+                    type="button"
+                    title="Voice call"
+                    onClick={() =>
+                      onStartCall?.(
+                        selected,
+                        "voice"
+                      )
+                    }
+                  >
+                    ☎
+                  </button>
+
+                  <button
+                    type="button"
+                    title="Video call"
+                    onClick={() =>
+                      onStartCall?.(
+                        selected,
+                        "video"
+                      )
+                    }
+                  >
+                    ▣
+                  </button>
+                </>
+              )}
+
+            <button
+              type="button"
+              title="Search messages"
+              onClick={() => {
+                const value =
+                  prompt(
+                    "Search messages in this chat"
+                  );
+
+                if (
+                  value !==
+                  null
+                ) {
+                  setMessageSearch(
+                    value
+                  );
+                }
+              }}
+            >
+              ⌕
+            </button>
+
+            <button
+              type="button"
+              title="Chat settings"
+              onClick={() =>
+                setChatSettingsOpen(
+                  value =>
+                    !value
+                )
+              }
+            >
+              ⋮
+            </button>
+
+          </div>
+
+        </header>
+
+        {/* CHAT SETTINGS */}
+
+        {chatSettingsOpen && (
+          <div className="chat-settings-popover">
+
+            <strong>
+              Chat settings
+            </strong>
+
+            <label>
+              Disappearing messages
+
+              <select
+                value={
+                  disappearing
+                }
+                onChange={event =>
+                  setDisappearing(
+                    event.target
+                      .value
+                  )
+                }
+              >
+                <option value="off">
+                  Off
+                </option>
+
+                <option value="24h">
+                  24 hours
+                </option>
+
+                <option value="7d">
+                  7 days
+                </option>
+
+                <option value="90d">
+                  90 days
+                </option>
+              </select>
+            </label>
+
+            <button
+              type="button"
+              onClick={
+                toggleMute
+              }
+            >
+              {muted.includes(
+                String(
+                  selected.id
+                )
+              )
+                ? "🔔 Unmute chat"
+                : "🔕 Mute chat"}
+            </button>
+
+            <button
+              type="button"
+              onClick={
+                toggleArchive
+              }
+            >
+              {archived.includes(
+                String(
+                  selected.id
+                )
+              )
+                ? "Unarchive chat"
+                : "Archive chat"}
+            </button>
+
+            <button
+              type="button"
+              onClick={
+                clearChat
+              }
+            >
+              Clear chat
+            </button>
+
+            {!isSystem &&
+              !isSelf && (
+                <button
+                  type="button"
+                  className="danger-text"
+                  onClick={
+                    toggleBlock
+                  }
+                >
+                  {blocked.includes(
+                    String(
+                      selected.id
+                    )
+                  )
+                    ? "Unblock contact"
+                    : "Block contact"}
+                </button>
+              )}
+
+          </div>
+        )}
+
+        {/* MESSAGE SEARCH */}
+
+        {messageSearch && (
+          <div className="chat-message-search">
+
+            <input
+              autoFocus
+              value={
+                messageSearch
+              }
+              onChange={event =>
+                setMessageSearch(
+                  event.target
+                    .value
+                )
+              }
+              placeholder="Search messages"
+            />
+
+            <button
+              type="button"
+              onClick={() =>
+                setMessageSearch(
+                  ""
+                )
+              }
+            >
+              ×
+            </button>
+
+            {messageResults.length >
+              0 && (
+              <div>
+                {messageResults
+                  .slice(
+                    0,
+                    10
+                  )
+                  .map(item => (
+                    <button
+                      key={
+                        item.id
+                      }
+                      type="button"
+                      onClick={() =>
+                        document
+                          .getElementById(
+                            `msg-${item.id}`
+                          )
+                          ?.scrollIntoView({
+                            behavior:
+                              "smooth",
+                            block:
+                              "center"
+                          })
+                      }
+                    >
+                      {
+                        item.content
+                      }
+                    </button>
+                  ))}
+              </div>
+            )}
+
+          </div>
+        )}
+
+        {/* MESSAGE AREA */}
+
+        <div className="messages-area">
+
+          {loading ? (
+            <div className="empty-chat">
+
+              <div className="loading-spinner" />
+
+              <p>
+                Loading messages…
+              </p>
+
+            </div>
+          ) : messages.length ? (
+            messages.map(
+              renderMessage
+            )
+          ) : (
+            <div className="empty-chat">
+
+              <div className="empty-chat-icon">
+                {
+                  selected?.avatar ||
+                  "H"
+                }
+              </div>
+
+              <h3>
+                {isSystem
+                  ? "THE HEXA GROUP"
+                  : `Chat with ${
+                      selected?.name ||
+                      "HEXA User"
+                    }`}
+              </h3>
+
+              <p>
+                {isSystem
+                  ? "Official HEXA announcements appear here."
+                  : "Messages are end-to-end encrypted in the HEXA architecture."}
+              </p>
+
+            </div>
+          )}
+
+          <div
+            ref={
+              bottomRef
+            }
+          />
+
+        </div>
+
+        {/* SELECTION TOOLBAR */}
+
+        {selectionMode && (
+          <div className="message-selection-toolbar">
+
+            <strong>
+              {
+                selectedMessages.length
+              } selected
+            </strong>
+
+            <button
+              type="button"
+              onClick={
+                deleteSelected
+              }
+            >
+              🗑
+            </button>
+
+            <button
+              type="button"
+              onClick={
+                cancelSelection
+              }
+            >
+              Cancel
+            </button>
+
+          </div>
+        )}
+
+        {/* REPLY / EDIT */}
+
+        {replyTo && (
+          <div className="reply-bar">
+
+            <div>
+              <strong>
+                Replying to
+              </strong>
+
+              <span>
+                {
+                  replyTo.content ||
+                  "Media"
+                }
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                setReplyTo(
+                  null
+                )
+              }
+            >
+              ×
+            </button>
+
+          </div>
+        )}
+
+        {editing && (
+          <div className="reply-bar">
+
+            <div>
+              <strong>
+                Editing message
+              </strong>
+
+              <span>
+                {
+                  editing.content
+                }
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(
+                  null
+                );
+                setMessage(
+                  ""
+                );
+              }}
+            >
+              Cancel
+            </button>
+
+          </div>
+        )}
+
+        {/* COMPOSER */}
+
+        {!isSystem && (
+          <form
+            className="chat-composer"
+            onSubmit={
+              editing
+                ? event => {
+                    event.preventDefault();
+                    saveEditedMessage();
+                  }
+                : sendMessage
+            }
+          >
+
+            <div className="composer-left">
+
+              <button
+                type="button"
+                title="Emoji"
+                onClick={() =>
+                  setEmojiOpen(
+                    value =>
+                      !value
+                  )
+                }
+              >
+                😊
+              </button>
+
+              <button
+                type="button"
+                title="Attachments"
+                onClick={() =>
+                  setAttachmentOpen(
+                    value =>
+                      !value
+                  )
+                }
+              >
+                📎
+              </button>
+
+            </div>
+
+            <input
+              value={
+                message
+              }
+              onChange={event =>
+                saveDraft(
+                  event.target
+                    .value
+                )
+              }
+              placeholder={
+                recording
+                  ? "Recording voice message…"
+                  : "Type a message"
+              }
+              onKeyDown={event => {
+                if (
+                  event.key ===
+                    "Enter" &&
+                  !event.shiftKey
+                ) {
+                  event.preventDefault();
+
+                  if (editing) {
+                    saveEditedMessage();
+                  } else {
+                    sendMessage(
+                      event
+                    );
+                  }
+                }
+              }}
+            />
+
+            <div className="composer-right">
+
+              {!message.trim() &&
+                !attachment ? (
+                <button
+                  type="button"
+                  title="Voice message"
+                  onClick={() =>
+                    setRecording(
+                      value =>
+                        !value
+                    )
+                  }
+                >
+                  🎙
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  title={
+                    editing
+                      ? "Save edit"
+                      : "Send"
+                  }
+                >
+                  ➤
+                </button>
+              )}
+
+            </div>
+
+          </form>
+        )}
+
+        {/* ==================================================
+            EMOJI PANEL
+            ================================================== */}
+
+        {emojiOpen && (
+          <div className="emoji-panel">
+
+            <div className="emoji-grid">
+
+              {[
+                "😀",
+                "😂",
+                "🤣",
+                "😊",
+                "😍",
+                "🥰",
+                "😘",
+                "😎",
+                "🤔",
+                "😭",
+                "😡",
+                "👍",
+                "👎",
+                "👏",
+                "🙏",
+                "❤️",
+                "🔥",
+                "🎉",
+                "💯",
+                "✨",
+                "🚀",
+                "💜",
+                "💙",
+                "💚",
+                "💛",
+                "🖤",
+                "🤍",
+                "✅",
+                "❌",
+                "⭐"
+              ].map(
+                emoji => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() =>
+                      saveDraft(
+                        message +
+                          emoji
+                      )
+                    }
+                  >
+                    {emoji}
+                  </button>
+                )
+              )}
+
+            </div>
+
+          </div>
+        )}
+
+        {/* ==================================================
+            ATTACHMENTS
+            ================================================== */}
+
+        {attachmentOpen && (
+          <div className="feature-popover attachment-popover">
+
+            <button
+              type="button"
+              onClick={() =>
+                mediaRef.current?.click()
+              }
+            >
+              📷 Photos & videos
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                cameraRef.current?.click()
+              }
+            >
+              📸 Camera
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                setPollOpen(
+                  true
+                )
+              }
+            >
+              📊 Poll
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                setContactOpen(
+                  true
+                )
+              }
+            >
+              👤 Contact
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                setLocationOpen(
+                  true
+                )
+              }
+            >
+              📍 Location
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                setGifOpen(
+                  true
+                )
+              }
+            >
+              GIF
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                setStickerOpen(
+                  true
+                )
+              }
+            >
+              🩷 Sticker
+            </button>
+
+          </div>
+        )}
+
+        <input
+          ref={mediaRef}
+          type="file"
+          accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.txt"
+          hidden
+          onChange={event => {
+            const file =
+              event.target
+                .files?.[0];
+
+            if (!file) return;
+
+            setAttachment({
+              name:
+                file.name,
+              type:
+                file.type.startsWith(
+                  "image/"
+                )
+                  ? "image"
+                  : file.type.startsWith(
+                      "video/"
+                    )
+                    ? "video"
+                    : "file",
+              file
+            });
+
+            setAttachmentOpen(
+              false
+            );
+          }}
+        />
+
+        <input
+          ref={cameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          hidden
+          onChange={event => {
+            const file =
+              event.target
+                .files?.[0];
+
+            if (!file) return;
+
+            setAttachment({
+              name:
+                file.name,
+              type:
+                "image",
+              file
+            });
+
+            setAttachmentOpen(
+              false
+            );
+          }}
+        />
+
+      </main>
+
+      {/* ======================================================
+          NEW CHAT MODAL
+          ====================================================== */}
+
+      {newChatOpen && (
+        <div
+          className="hexa-modal-overlay"
+          onClick={() =>
+            setNewChatOpen(
+              false
+            )
+          }
+        >
+
+          <div
+            className="hexa-modal new-chat-modal"
+            onClick={event =>
+              event.stopPropagation()
+            }
+          >
+
+            <div className="modal-header">
+
+              <div>
+                <strong>
+                  New Chat
+                </strong>
+
+                <span>
+                  Find someone on HEXA
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setNewChatOpen(
+                    false
+                  )
+                }
+              >
+                ×
+              </button>
+
+            </div>
+
+            <div className="new-chat-search">
+
+              <span>
+                ⌕
+              </span>
+
+              <input
+                autoFocus
+                value={
+                  newChatSearch
+                }
+                onChange={event =>
+                  setNewChatSearch(
+                    event.target
+                      .value
+                  )
+                }
+                placeholder="Search name or username"
+              />
+
+            </div>
+
+            <div className="people-results">
+
+              {peopleLoading && (
+                <div className="modal-loading">
+                  Searching HEXA…
+                </div>
+              )}
+
+              {!peopleLoading &&
+                newChatSearch.trim() &&
+                !peopleResults.length && (
+                  <div className="modal-empty">
+                    No HEXA account found.
+                  </div>
+                )}
+
+              {peopleResults.map(
+                person => (
+                  <button
+                    key={
+                      person.id
+                    }
+                    type="button"
+                    className="person-result"
+                    onClick={() =>
+                      createDirectConversation(
+                        person
+                      )
+                    }
+                  >
+
+                    <Avatar
+                      src={
+                        person.avatar_url
+                      }
+                      name={
+                        person.full_name ||
+                        person.username
+                      }
+                      size={46}
+                      online={
+                        person.online
+                      }
+                    />
+
+                    <div>
+                      <strong>
+                        {
+                          person.full_name ||
+                          person.username ||
+                          "HEXA User"
+                        }
+                      </strong>
+
+                      <span>
+                        {person.username
+                          ? `@${person.username}`
+                          : "HEXA account"}
+                      </span>
+                    </div>
+
+                  </button>
+                )
+              )}
+
+            </div>
+
+          </div>
+
+        </div>
+      )}
+
+      {/* ======================================================
+          FORWARD MODAL
+          ====================================================== */}
+
+      {forwardOpen && (
+        <div
+          className="hexa-modal-overlay"
+          onClick={() =>
+            setForwardOpen(
+              false
+            )
+          }
+        >
+
+          <div
+            className="hexa-modal forward-modal"
+            onClick={event =>
+              event.stopPropagation()
+            }
+          >
+
+            <div className="modal-header">
+
+              <div>
+                <strong>
+                  Forward message
+                </strong>
+
+                <span>
+                  Choose a conversation
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setForwardOpen(
+                    false
+                  )
+                }
+              >
+                ×
+              </button>
+
+            </div>
+
+            <div className="forward-list">
+
+              {conversations
+                .filter(
+                  conversation =>
+                    conversation.id !==
+                      "hexa-system-group"
+                )
+                .map(
+                  conversation => (
+                    <button
+                      key={
+                        conversation.id
+                      }
+                      type="button"
+                      className="person-result"
+                      onClick={() =>
+                        forwardToChat(
+                          conversation
+                        )
+                      }
+                    >
+
+                      <Avatar
+                        src={
+                          conversation.avatar_url
+                        }
+                        name={
+                          conversation.name
+                        }
+                        size={44}
+                      />
+
+                      <div>
+                        <strong>
+                          {
+                            conversation.name
+                          }
+                        </strong>
+
+                        <span>
+                          {
+                            conversation.lastMessage ||
+                            conversation.description ||
+                            "Conversation"
+                          }
+                        </span>
+                      </div>
+
+                    </button>
+                  )
+                )}
+
+            </div>
+
+          </div>
+
+        </div>
+      )}
+
+      {/* ======================================================
+          CONTEXT MENU
+          ====================================================== */}
+
+      {contextMenu && (
+        <div
+          className="message-context-menu"
+          style={{
+            left: Math.min(
+              contextMenu.x,
+              window.innerWidth -
+                235
+            ),
+            top: Math.min(
+              contextMenu.y,
+              window.innerHeight -
+                430
+            )
+          }}
+          onClick={event =>
+            event.stopPropagation()
+          }
+        >
+
+          {(() => {
+            const item =
+              messages.find(
+                messageItem =>
+                  String(
+                    messageItem.id
+                  ) ===
+                  String(
+                    contextMenu.id
+                  )
+              );
+
+            if (!item) {
+              return null;
+            }
+
+            return (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReplyTo(
+                      item
+                    );
+                    setContextMenu(
+                      null
+                    );
+                  }}
+                >
+                  ↩ Reply
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    copyMessage(
+                      item
+                    )
+                  }
+                >
+                  📋 Copy
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    editMessage(
+                      item
+                    )
+                  }
+                  disabled={
+                    item.sender_id !==
+                    profile.id
+                  }
+                >
+                  ✏️ Edit
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    toggleStar(
+                      item
+                    )
+                  }
+                >
+                  ⭐{" "}
+                  {starred.includes(
+                    String(
+                      item.id
+                    )
+                  )
+                    ? "Unstar"
+                    : "Star"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    togglePin(
+                      item
+                    )
+                  }
+                >
+                  📌{" "}
+                  {pinned.includes(
+                    String(
+                      item.id
+                    )
+                  )
+                    ? "Unpin"
+                    : "Pin"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    openForward(
+                      item
+                    )
+                  }
+                >
+                  ↪ Forward
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    reactToMessage(
+                      item,
+                      "❤️"
+                    )
+                  }
+                >
+                  ❤️ React
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    toggleMessageSelection(
+                      item
+                    )
+                  }
+                >
+                  ☑ Select
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    deleteMessage(
+                      item,
+                      false
+                    )
+                  }
+                >
+                  🗑 Delete for me
+                </button>
+
+                {item.sender_id ===
+                  profile.id && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      deleteMessage(
+                        item,
+                        true
+                      )
+                    }
+                  >
+                    🗑 Delete for everyone
+                  </button>
+                )}
+              </>
+            );
+          })()}
+
+        </div>
+      )}
+
+    </section>
+  );
+}
+async function loadHexaConversations(profile) {
+  if (!profile?.id) return [];
+
+  try {
+    /*
+     * Get every conversation this user belongs to.
+     */
+    const { data: memberships, error: membershipError } =
+      await supabase
+        .from("conversation_members")
+        .select("conversation_id,is_admin")
+        .eq("user_id", profile.id);
+
+    if (membershipError) {
+      console.error(
+        "HEXA conversation membership load:",
+        membershipError
+      );
+      return [];
+    }
+
+    const conversationIds = [
+      ...new Set(
+        (memberships || [])
+          .map((item) => item.conversation_id)
+          .filter(Boolean)
+      ),
+    ];
+
+    if (!conversationIds.length) {
+      return [];
+    }
+
+    /*
+     * Load the actual conversations.
+     */
+    const { data: conversationRows, error: conversationError } =
+      await supabase
+        .from("conversations")
+        .select("*")
+        .in("id", conversationIds);
+
+    if (conversationError) {
+      console.error(
+        "HEXA conversation load:",
+        conversationError
+      );
+      return [];
+    }
+
+    /*
+     * Find the other user for direct conversations.
+     */
+    const directOtherIds = [
+      ...new Set(
+        (conversationRows || [])
+          .filter((conversation) => conversation.type === "direct")
+          .map((conversation) =>
+            conversation.user_a === profile.id
+              ? conversation.user_b
+              : conversation.user_a
+          )
+          .filter(Boolean)
+      ),
+    ];
+
+    let otherProfiles = [];
+
+    if (directOtherIds.length) {
+      const { data: profileRows, error: profileError } =
+        await supabase
+          .from("profiles")
+          .select(
+            "id,username,full_name,avatar_url,phone,about"
+          )
+          .in("id", directOtherIds);
+
+      if (profileError) {
+        console.warn(
+          "HEXA direct profile load:",
+          profileError
+        );
+      } else {
+        otherProfiles = profileRows || [];
+      }
+    }
+
+    const profileMap = Object.fromEntries(
+      otherProfiles.map((person) => [person.id, person])
+    );
+
+    /*
+     * Get recent messages so the Chat list can show:
+     *
+     * Person
+     * Latest message
+     * Latest activity time
+     */
+    const { data: messageRows, error: messageError } =
+      await supabase
+        .from("messages")
+        .select(
+          "id,conversation_id,sender_id,content,message_type,metadata,created_at,deleted_at"
+        )
+        .in("conversation_id", conversationIds)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(1000);
+
+    if (messageError) {
+      console.warn(
+        "HEXA latest messages load:",
+        messageError
+      );
+    }
+
+    const latestMessages = {};
+
+    (messageRows || []).forEach((msg) => {
+      if (!latestMessages[msg.conversation_id]) {
+        latestMessages[msg.conversation_id] = msg;
+      }
+    });
+
+    /*
+     * Convert database conversations into the format
+     * already used by the HEXA Chat UI.
+     */
+    return (conversationRows || [])
+      .map((conversation) => {
+        const membership = (memberships || []).find(
+          (member) =>
+            member.conversation_id === conversation.id
+        );
+
+        const latest =
+          latestMessages[conversation.id] || null;
+
+        if (conversation.type === "direct") {
+          const otherUserId =
+            conversation.user_a === profile.id
+              ? conversation.user_b
+              : conversation.user_a;
+
+          const person = profileMap[otherUserId];
+
+          const displayName =
+            person?.full_name ||
+            person?.username ||
+            "HEXA User";
+
+          return {
+            ...conversation,
+
+            id: conversation.id,
+
+            name: displayName,
+
+            username: person?.username || "",
+
+            avatar_url: person?.avatar_url || null,
+
+            avatar: person?.avatar_url
+              ? null
+              : initials(displayName),
+
+            kind: "direct",
+
+            online: false,
+
+            is_admin: Boolean(membership?.is_admin),
+
+            otherUserId,
+
+            latestMessage:
+              latest?.content ||
+              getChatPreviewText(latest),
+
+            latestMessageAt:
+              latest?.created_at ||
+              conversation.updated_at ||
+              conversation.created_at ||
+              null,
+
+            latestMessageSender:
+              latest?.sender_id || null,
+          };
+        }
+
+        return {
+          ...conversation,
+
+          id: conversation.id,
+
+          name:
+            conversation.name ||
+            "HEXA Group",
+
+          avatar:
+            conversation.avatar_url
+              ? null
+              : initials(
+                  conversation.name ||
+                    "HEXA Group"
+                ),
+
+          avatar_url:
+            conversation.avatar_url || null,
+
+          kind: "group",
+
+          online: false,
+
+          is_admin: Boolean(membership?.is_admin),
+
+          latestMessage:
+            latest?.content ||
+            getChatPreviewText(latest),
+
+          latestMessageAt:
+            latest?.created_at ||
+            conversation.updated_at ||
+            conversation.created_at ||
+            null,
+
+          latestMessageSender:
+            latest?.sender_id || null,
+        };
+      })
+      .sort(
+        (a, b) =>
+          new Date(b.latestMessageAt || 0) -
+          new Date(a.latestMessageAt || 0)
+      );
+  } catch (error) {
+    console.error(
+      "HEXA conversation list failed:",
+      error
+    );
+
+    return [];
+  }
+}
+
+function getChatPreviewText(message) {
+  if (!message) return "";
+
+  switch (message.message_type) {
+    case "image":
+      return "📷 Photo";
+
+    case "video":
+      return "🎥 Video";
+
+    case "audio":
+    case "voice":
+      return "🎤 Voice message";
+
+    case "gif":
+      return "GIF";
+
+    case "sticker":
+      return "🧩 Sticker";
+
+    case "poll":
+      return "🗳️ Poll";
+
+    case "contact":
+      return "👤 Contact";
+
+    case "location":
+      return "📍 Location";
+
+    case "file":
+      return "📄 File";
+
+    default:
+      return message.content || "";
+  }
 }
 
 /* ============================================================
@@ -1268,7 +4879,7 @@ function CallsPage({ profile }) {
   const[history,setHistory]=useState([]);const[active,setActive]=useState(null);const[peer,setPeer]=useState(null);const[status,setStatus]=useState("");
   useEffect(()=>{supabase.from("calls").select("*").or(`caller_id.eq.${profile.id},callee_id.eq.${profile.id}`).order("created_at",{ascending:false}).limit(30).then(({data})=>setHistory(data||[]))},[profile.id]);
   async function createCall(type){if(!peer?.id)return;const {data,error}=await supabase.from("calls").insert({caller_id:profile.id,callee_id:peer.id,type,status:"ringing",rate_kobo_per_second:HEXA_CALL_RATE_KOBO_PER_SECOND}).select("*").single();if(error){setStatus(error.message);return}setActive({call:data,type,peer});setStatus("Calling…")}
-  return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">☎</div><div><h1>Calls</h1><p>Voice and video calls using WebRTC signaling through Supabase. Billing: 0.50 kobo/second.</p></div></div><div className="settings-card"><div><strong>Start a call</strong><p>Open a chat and use the phone/video buttons to select a person.</p></div><input className="modal-input" style={{maxWidth:280}} placeholder="Paste user UUID" value={peer?.id||""} onChange={e=>setPeer({id:e.target.value})}/><button onClick={()=>createCall("voice")}>Voice</button><button onClick={()=>createCall("video")}>Video</button></div>{active&&<WebRTCCall profile={profile} call={active.call} type={active.type} peer={active.peer} onEnd={()=>{setActive(null);setStatus("Call ended")}}/>}<div className="entity-grid">{history.map(c=><div className="entity-card" key={c.id}><strong>{c.type} · {c.status}</strong><span>{new Date(c.created_at).toLocaleString()}</span><small>{c.billed_seconds||0}s · ₦{Number(c.amount_kobo||0)/100}</small></div>)}</div>{status&&<p className="muted">{status}</p>}</section>;
+  return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">☎</div><div><h1>Calls</h1><p>Voice and video calls using WebRTC signaling through Supabase. Billing: 30 kobo/second.</p></div></div><div className="settings-card"><div><strong>Start a call</strong><p>Open a chat and use the phone/video buttons to select a person.</p></div><input className="modal-input" style={{maxWidth:280}} placeholder="Paste user UUID" value={peer?.id||""} onChange={e=>setPeer({id:e.target.value})}/><button onClick={()=>createCall("voice")}>Voice</button><button onClick={()=>createCall("video")}>Video</button></div>{active&&<WebRTCCall profile={profile} call={active.call} type={active.type} peer={active.peer} onEnd={()=>{setActive(null);setStatus("Call ended")}}/>}<div className="entity-grid">{history.map(c=><div className="entity-card" key={c.id}><strong>{c.type} · {c.status}</strong><span>{new Date(c.created_at).toLocaleString()}</span><small>{c.billed_seconds||0}s · ₦{Number(c.amount_kobo||0)/100}</small></div>)}</div>{status&&<p className="muted">{status}</p>}</section>;
 }
 
 function WebRTCCall({ profile, call, type, peer, onEnd }) {
@@ -1584,7 +5195,7 @@ function WalletPage({ profile }) {
       <div className="wallet-balance-card">
         <span>Available HEXA Credits</span>
         <strong>{loading ? "Loading…" : displayCredits}</strong>
-        <small>1 HEXA Credit = ₦1.00 · Call rate: 0.50 kobo/second</small>
+        <small>1 HEXA Credit = ₦1.00 · Call rate: 30 kobo/second</small>
       </div>
       <div className="settings-card wallet-fund-card">
         <div><strong>Buy HEXA Credits</strong><p>Secure account verification + server-side payment verification.</p></div>
@@ -1637,8 +5248,240 @@ function UniversalSearch({ search, profile, onMessage }) {
   }catch(e){if(!cancelled)setError(e?.message||"Search failed")}finally{if(!cancelled)setLoading(false)}};const t=setTimeout(run,250);return()=>{cancelled=true;clearTimeout(t)}},[search,profile?.id]);
   if(!search?.trim())return null;return <div className="universal-search-panel">{loading&&<div className="universal-search-state">Searching people, chats, messages, groups, communities, channels, status and media…</div>}{!loading&&error&&<div className="universal-search-state">{error}</div>}{!loading&&!error&&!results.length&&<div className="universal-search-state">No HEXA results found.</div>}{results.map(r=><button key={r.id} className="universal-search-result" type="button" onClick={()=>{if(r.kind==="person")onMessage(r.data);else alert(`${r.subtitle}: ${r.title}`)}}><div className="universal-search-avatar">{r.kind==="person"?<Avatar src={r.data.avatar_url} name={r.title} size={40}/>:r.kind==="message"?"💬":r.kind==="group"?"👥":r.kind==="channel"?"📢":r.kind==="community"?"◉":"◌"}</div><div className="universal-search-result-copy"><strong>{r.title}</strong><span>{r.subtitle}</span></div><b>{r.kind}</b></button>)}</div>;
 }
+/* ============================================================
+   HEXA SETTINGS
+   ============================================================ */
 
+function SettingsPage({ profile, onSignOut }) {
+  const [theme, setTheme] = useState(getSavedHexaTheme());
+  const [showThemes, setShowThemes] = useState(true);
+
+  useEffect(() => {
+    applyHexaTheme(theme);
+  }, [theme]);
+
+  function changeTheme(themeId) {
+    setTheme(themeId);
+    applyHexaTheme(themeId);
+  }
+
+  const activeTheme = HEXA_THEMES[theme] || HEXA_THEMES.midnight;
+
+  return (
+    <section className="workspace-page settings-page">
+
+      <div className="page-heading">
+        <div className="page-heading-icon">⚙</div>
+
+        <div>
+          <h1>Settings</h1>
+          <p>
+            Customize your HEXA experience, appearance and account.
+          </p>
+        </div>
+      </div>
+
+      {/* PROFILE */}
+
+      <div className="settings-card hexa-profile-settings">
+        <Avatar
+          src={profile?.avatar_url}
+          name={
+            profile?.full_name ||
+            profile?.username ||
+            "HEXA User"
+          }
+          size={64}
+        />
+
+        <div>
+          <strong>
+            {profile?.full_name ||
+              profile?.username ||
+              "HEXA User"}
+          </strong>
+
+          <p>
+            {profile?.username
+              ? `@${profile.username}`
+              : profile?.email || "HEXA account"}
+          </p>
+        </div>
+      </div>
+
+      {/* APPEARANCE */}
+
+      <div className="settings-section">
+
+        <button
+          className="settings-section-heading"
+          onClick={() => setShowThemes(v => !v)}
+        >
+          <div>
+            <strong>Appearance</strong>
+            <span>
+              Choose how HEXA looks on your devices.
+            </span>
+          </div>
+
+          <b>{showThemes ? "⌃" : "⌄"}</b>
+        </button>
+
+        {showThemes && (
+          <div className="hexa-theme-panel">
+
+            <div className="theme-current">
+              <div>
+                <span>Current theme</span>
+                <strong>
+                  {activeTheme.icon} {activeTheme.name}
+                </strong>
+              </div>
+
+              <small>
+                {activeTheme.description}
+              </small>
+            </div>
+
+            <div className="hexa-theme-grid">
+
+              {Object.values(HEXA_THEMES).map(item => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={
+                    `hexa-theme-option ${
+                      theme === item.id
+                        ? "selected"
+                        : ""
+                    }`
+                  }
+                  onClick={() => changeTheme(item.id)}
+                >
+
+                  <div
+                    className="theme-preview"
+                    style={{
+                      background: item.vars["--hexa-bg"]
+                    }}
+                  >
+                    <div
+                      className="theme-preview-sidebar"
+                      style={{
+                        background:
+                          item.vars["--hexa-sidebar"]
+                      }}
+                    />
+
+                    <div className="theme-preview-content">
+
+                      <div
+                        className="theme-preview-message incoming"
+                        style={{
+                          background:
+                            item.vars["--hexa-message-in"]
+                        }}
+                      />
+
+                      <div
+                        className="theme-preview-message outgoing"
+                        style={{
+                          background:
+                            item.vars["--hexa-message-out"]
+                        }}
+                      />
+
+                    </div>
+
+                    <div
+                      className="theme-preview-accent"
+                      style={{
+                        background:
+                          item.vars["--hexa-accent"]
+                      }}
+                    />
+                  </div>
+
+                  <div className="theme-option-copy">
+                    <strong>
+                      {item.icon} {item.name}
+                    </strong>
+
+                    <span>
+                      {item.description}
+                    </span>
+                  </div>
+
+                  {theme === item.id && (
+                    <div className="theme-selected">
+                      ✓
+                    </div>
+                  )}
+
+                </button>
+              ))}
+
+            </div>
+
+          </div>
+        )}
+
+      </div>
+
+      {/* CHAT */}
+
+      <div className="settings-grid">
+
+        <div className="settings-card">
+          <div>
+            <strong>Chat appearance</strong>
+            <p>
+              Your selected theme automatically applies to
+              conversations, chat bubbles, menus and panels.
+            </p>
+          </div>
+
+          <span className="settings-status">
+            {activeTheme.name}
+          </span>
+        </div>
+
+        <div className="settings-card">
+          <div>
+            <strong>Theme synchronization</strong>
+            <p>
+              HEXA remembers your theme on this device.
+            </p>
+          </div>
+
+          <span className="settings-status">
+            Enabled
+          </span>
+        </div>
+
+        <div className="settings-card">
+          <div>
+            <strong>Account</strong>
+            <p>
+              Manage your HEXA session.
+            </p>
+          </div>
+
+          <button
+            className="settings-danger-button"
+            onClick={onSignOut}
+          >
+            Sign out
+          </button>
+        </div>
+
+      </div>
+
+    </section>
+  );
+}
 function AuthenticatedHEXA({ session, onSignOut }) {
+
   const [profile,setProfile]=useState(null),[profileLoading,setProfileLoading]=useState(true),[activePage,setActivePage]=useState("nexus"),[search,setSearch]=useState(""),[notifications,setNotifications]=useState([]),[showNotifications,setShowNotifications]=useState(false),[chatTarget,setChatTarget]=useState(null),[callTarget,setCallTarget]=useState(null);
   useEffect(()=>{let cancelled=false;(async()=>{const result=await ensureHexaProfile(session?.user);if(!cancelled){setProfile(result);setProfileLoading(false)}})();return()=>{cancelled=true}},[session?.user?.id]);
   useEffect(()=>{if(!profile?.id)return;const channel=supabase.channel(`hexa-notifications-${profile.id}`).on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},p=>{if(p.new?.sender_id===profile.id)return;setNotifications(x=>[{id:Date.now(),title:"New message",body:p.new?.content||"New message",created_at:new Date().toISOString()},...x].slice(0,50))}).subscribe();return()=>supabase.removeChannel(channel)},[profile?.id]);
