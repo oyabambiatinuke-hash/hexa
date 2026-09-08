@@ -1305,14 +1305,6 @@ function Sidebar({
                 @{profile?.username || "hexauser"}
               </span>
             </div>
-const savedPassword = localStorage.getItem(
-  `hexa-password-${user.id}`
-);
-
-if (!savedPassword) 
-  setShowHexaPasswordSetup(true);
- else 
-  setShowHexaPasswordLock(true)
 
 
           </div>
