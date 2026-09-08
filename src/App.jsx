@@ -76,7 +76,7 @@ const HEXA_CONFIG_ERROR =
   !HEXA_RUNTIME_CONFIG.supabaseUrl || !HEXA_RUNTIME_CONFIG.supabaseKey
     ? "HEXA is missing its Supabase environment variables. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your deployment settings."
     : "";
-const HEXA_CALL_RATE_KOBO_PER_SECOND = 50;
+
 
 
 /* ============================================================
@@ -5380,6 +5380,1499 @@ function WalletPage({ profile }) {
       {transactions.map(tx => <div className="entity-card" key={tx.id}><strong>{tx.type === "credit_purchase" ? "HEXA Credits Purchase" : (tx.type || "Transaction")}</strong><span>{tx.description || "HEXA Wallet transaction"}</span><small>{tx.status || "pending"} · ₦{(Number(tx.amount_kobo || 0) / 100).toFixed(2)} · {new Date(tx.created_at).toLocaleString()}</small></div>)}
     </div>
   </section>;
+}
+/* ============================================================
+   HEXA WEBRTC CALLING SYSTEM
+   Voice + Video
+   Ringing + Answer + Decline
+   Microphone + Camera permissions
+   WebRTC offer/answer/ICE signaling
+   Call termination
+   ============================================================ */
+
+const HEXA_CALL_RATE_KOBO_PER_SECOND = 30;
+
+function WebRTCCall({ profile, call, type, peer, onEnd }) {
+  const localVideo = React.useRef(null);
+  const remoteVideo = React.useRef(null);
+  const pcRef = React.useRef(null);
+  const localStreamRef = React.useRef(null);
+  const signalChannelRef = React.useRef(null);
+
+  const [connected, setConnected] = React.useState(false);
+  const [muted, setMuted] = React.useState(false);
+  const [cameraEnabled, setCameraEnabled] = React.useState(type === "video");
+  const [error, setError] = React.useState("");
+  const [permissionState, setPermissionState] = React.useState("checking");
+  const [ending, setEnding] = React.useState(false);
+
+  const processedSignalsRef = React.useRef(new Set());
+  const makingOfferRef = React.useRef(false);
+  const stoppedRef = React.useRef(false);
+
+  const isCaller =
+    String(profile?.id) === String(call?.caller_id);
+
+  const isVideoCall = type === "video";
+
+  /* ----------------------------------------------------------
+     SAFE SIGNAL INSERT
+     ---------------------------------------------------------- */
+
+  async function insertSignal(signalType, payload) {
+    if (!call?.id || !profile?.id) return;
+
+    const { error } = await supabase
+      .from("call_signals")
+      .insert({
+        call_id: String(call.id),
+        sender_id: String(profile.id),
+        receiver_id: String(peer?.id || ""),
+        type: signalType,
+        payload: payload || {},
+      });
+
+    if (error) {
+      console.error("HEXA signaling error:", error);
+      if (!stoppedRef.current) {
+        setError(`Call signaling failed: ${error.message}`);
+      }
+    }
+  }
+
+  /* ----------------------------------------------------------
+     MEDIA PERMISSION
+     ---------------------------------------------------------- */
+
+  async function requestMedia() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error(
+        "Your browser does not support microphone/camera calling."
+      );
+    }
+
+    setPermissionState("requesting");
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: isVideoCall
+          ? {
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              facingMode: "user",
+            }
+          : false,
+      });
+
+      if (stoppedRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return null;
+      }
+
+      localStreamRef.current = stream;
+
+      if (localVideo.current && isVideoCall) {
+        localVideo.current.srcObject = stream;
+      }
+
+      setPermissionState("granted");
+
+      return stream;
+    } catch (err) {
+      console.error("HEXA media permission:", err);
+
+      let message =
+        err?.message ||
+        "HEXA could not access your microphone or camera.";
+
+      if (
+        err?.name === "NotAllowedError" ||
+        err?.name === "PermissionDeniedError"
+      ) {
+        message = isVideoCall
+          ? "HEXA needs permission to use your camera and microphone. Allow both in your browser's site settings, then try again."
+          : "HEXA needs permission to use your microphone. Allow microphone access in your browser's site settings, then try again.";
+      }
+
+      if (err?.name === "NotFoundError") {
+        message = isVideoCall
+          ? "No camera or microphone was found on this device."
+          : "No microphone was found on this device.";
+      }
+
+      if (err?.name === "NotReadableError") {
+        message =
+          "Your microphone or camera is being used by another application. Close other apps using it and try again.";
+      }
+
+      setPermissionState("denied");
+      setError(message);
+
+      throw err;
+    }
+  }
+
+  /* ----------------------------------------------------------
+     HANDLE REMOTE SIGNAL
+     ---------------------------------------------------------- */
+
+  async function handleSignal(signal) {
+    if (!signal || !pcRef.current) return;
+
+    if (String(signal.sender_id) === String(profile.id)) {
+      return;
+    }
+
+    const signalKey = String(signal.id);
+
+    if (processedSignalsRef.current.has(signalKey)) {
+      return;
+    }
+
+    processedSignalsRef.current.add(signalKey);
+
+    const pc = pcRef.current;
+
+    try {
+      if (signal.type === "offer") {
+        await pc.setRemoteDescription(
+          new RTCSessionDescription(signal.payload)
+        );
+
+        const answer = await pc.createAnswer();
+
+        await pc.setLocalDescription(answer);
+
+        await insertSignal(
+          "answer",
+          answer
+        );
+
+        return;
+      }
+
+      if (signal.type === "answer") {
+        if (
+          pc.signalingState !== "have-local-offer"
+        ) {
+          return;
+        }
+
+        await pc.setRemoteDescription(
+          new RTCSessionDescription(signal.payload)
+        );
+
+        return;
+      }
+
+      if (signal.type === "ice") {
+        if (!signal.payload) return;
+
+        try {
+          await pc.addIceCandidate(
+            new RTCIceCandidate(signal.payload)
+          );
+        } catch (iceError) {
+          console.warn(
+            "HEXA ICE candidate could not be added:",
+            iceError
+          );
+        }
+
+        return;
+      }
+
+    } catch (err) {
+      console.error(
+        "HEXA WebRTC signal error:",
+        err
+      );
+
+      if (!stoppedRef.current) {
+        setError(
+          err?.message ||
+            "HEXA call negotiation failed."
+        );
+      }
+    }
+  }
+
+  /* ----------------------------------------------------------
+     INITIALIZE CALL
+     ---------------------------------------------------------- */
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    async function initialize() {
+      try {
+        if (!profile?.id || !call?.id) {
+          throw new Error(
+            "Call information is incomplete."
+          );
+        }
+
+        const stream = await requestMedia();
+
+        if (!mounted || !stream) return;
+
+        /* ----------------------------------------------
+           STUN + OPTIONAL TURN
+           ---------------------------------------------- */
+
+        const iceServers = [
+          {
+            urls: [
+              "stun:stun.l.google.com:19302",
+              "stun:stun1.l.google.com:19302",
+            ],
+          },
+        ];
+
+        if (import.meta.env.VITE_TURN_URL) {
+          iceServers.push({
+            urls: import.meta.env.VITE_TURN_URL,
+            username:
+              import.meta.env.VITE_TURN_USERNAME,
+            credential:
+              import.meta.env.VITE_TURN_CREDENTIAL,
+          });
+        }
+
+        const pc = new RTCPeerConnection({
+          iceServers,
+          iceCandidatePoolSize: 10,
+        });
+
+        pcRef.current = pc;
+
+        /* ----------------------------------------------
+           LOCAL MEDIA
+           ---------------------------------------------- */
+
+        stream
+          .getTracks()
+          .forEach((track) => {
+            pc.addTrack(track, stream);
+          });
+
+        /* ----------------------------------------------
+           REMOTE MEDIA
+           ---------------------------------------------- */
+
+        pc.ontrack = (event) => {
+          if (
+            remoteVideo.current &&
+            event.streams?.[0]
+          ) {
+            remoteVideo.current.srcObject =
+              event.streams[0];
+
+            remoteVideo.current
+              .play()
+              .catch(() => {});
+          }
+        };
+
+        /* ----------------------------------------------
+           ICE
+           ---------------------------------------------- */
+
+        pc.onicecandidate = async (event) => {
+          if (!event.candidate) return;
+
+          await insertSignal(
+            "ice",
+            event.candidate.toJSON()
+          );
+        };
+
+        /* ----------------------------------------------
+           CONNECTION STATE
+           ---------------------------------------------- */
+
+        pc.onconnectionstatechange = () => {
+          if (!mounted) return;
+
+          const state = pc.connectionState;
+
+          console.log(
+            "HEXA call connection:",
+            state
+          );
+
+          if (state === "connected") {
+            setConnected(true);
+            setError("");
+          }
+
+          if (state === "connecting") {
+            setConnected(false);
+          }
+
+          if (
+            state === "failed" ||
+            state === "disconnected"
+          ) {
+            setConnected(false);
+
+            if (!stoppedRef.current) {
+              setError(
+                "The call connection was lost."
+              );
+            }
+          }
+
+          if (state === "closed") {
+            setConnected(false);
+          }
+        };
+
+        /* ----------------------------------------------
+           SUPABASE REALTIME SIGNALING
+           ---------------------------------------------- */
+
+        const channel = supabase
+          .channel(`hexa-call-${call.id}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "call_signals",
+              filter: `call_id=eq.${call.id}`,
+            },
+            async (payload) => {
+              await handleSignal(
+                payload.new
+              );
+            }
+          )
+          .subscribe();
+
+        signalChannelRef.current = channel;
+
+        /* ----------------------------------------------
+           LOAD EXISTING SIGNALS
+           ---------------------------------------------- */
+
+        const {
+          data: existingSignals,
+          error: signalError,
+        } = await supabase
+          .from("call_signals")
+          .select("*")
+          .eq("call_id", call.id)
+          .order("id", {
+            ascending: true,
+          });
+
+        if (signalError) {
+          console.warn(
+            "HEXA signal history:",
+            signalError
+          );
+        }
+
+        for (
+          const signal of existingSignals || []
+        ) {
+          await handleSignal(signal);
+        }
+
+        /* ----------------------------------------------
+           CALLER CREATES OFFER
+           ---------------------------------------------- */
+
+        if (isCaller) {
+          const alreadyHasOffer =
+            (existingSignals || []).some(
+              (signal) =>
+                signal.type === "offer" &&
+                String(signal.sender_id) ===
+                  String(profile.id)
+            );
+
+          if (!alreadyHasOffer) {
+            makingOfferRef.current = true;
+
+            try {
+              const offer =
+                await pc.createOffer({
+                  offerToReceiveAudio: true,
+                  offerToReceiveVideo:
+                    isVideoCall,
+                });
+
+              await pc.setLocalDescription(
+                offer
+              );
+
+              await insertSignal(
+                "offer",
+                offer
+              );
+            } finally {
+              makingOfferRef.current = false;
+            }
+          }
+        }
+
+        if (!mounted) return;
+
+      } catch (err) {
+        console.error(
+          "HEXA call initialization:",
+          err
+        );
+
+        if (mounted && !stoppedRef.current) {
+          if (
+            !err?.message?.includes(
+              "Permission"
+            )
+          ) {
+            setError(
+              err?.message ||
+                "Unable to start HEXA call."
+            );
+          }
+        }
+      }
+    }
+
+    initialize();
+
+    return () => {
+      mounted = false;
+      stoppedRef.current = true;
+
+      if (
+        signalChannelRef.current
+      ) {
+        supabase.removeChannel(
+          signalChannelRef.current
+        );
+
+        signalChannelRef.current = null;
+      }
+
+      if (localStreamRef.current) {
+        localStreamRef.current
+          .getTracks()
+          .forEach((track) => {
+            track.stop();
+          });
+
+        localStreamRef.current = null;
+      }
+
+      if (pcRef.current) {
+        pcRef.current.close();
+        pcRef.current = null;
+      }
+    };
+  }, [
+    call?.id,
+    profile?.id,
+    peer?.id,
+    type,
+  ]);
+
+  /* ----------------------------------------------------------
+     MUTE
+     ---------------------------------------------------------- */
+
+  function toggleMute() {
+    const stream =
+      localStreamRef.current;
+
+    if (!stream) return;
+
+    const audioTracks =
+      stream.getAudioTracks();
+
+    const nextMuted = !muted;
+
+    audioTracks.forEach(
+      (track) => {
+        track.enabled = !nextMuted;
+      }
+    );
+
+    setMuted(nextMuted);
+  }
+
+  /* ----------------------------------------------------------
+     CAMERA
+     ---------------------------------------------------------- */
+
+  function toggleCamera() {
+    if (!isVideoCall) return;
+
+    const stream =
+      localStreamRef.current;
+
+    if (!stream) return;
+
+    const videoTracks =
+      stream.getVideoTracks();
+
+    const nextEnabled =
+      !cameraEnabled;
+
+    videoTracks.forEach(
+      (track) => {
+        track.enabled = nextEnabled;
+      }
+    );
+
+    setCameraEnabled(
+      nextEnabled
+    );
+  }
+
+  /* ----------------------------------------------------------
+     END CALL
+     ---------------------------------------------------------- */
+
+  async function endCall(reason = "user") {
+    if (ending) return;
+
+    setEnding(true);
+
+    stoppedRef.current = true;
+
+    try {
+      const { error: rpcError } =
+        await supabase.rpc(
+          "finalize_hexa_call",
+          {
+            p_call_id: call.id,
+            p_ended_reason: reason,
+          }
+        );
+
+      if (rpcError) {
+        console.error(
+          "HEXA call finalization:",
+          rpcError
+        );
+
+        /*
+          Do not leave the user trapped inside
+          the call just because billing finalization
+          failed.
+        */
+      }
+    } catch (err) {
+      console.error(
+        "HEXA call ending:",
+        err
+      );
+    }
+
+    if (localStreamRef.current) {
+      localStreamRef.current
+        .getTracks()
+        .forEach((track) => {
+          track.stop();
+        });
+
+      localStreamRef.current = null;
+    }
+
+    if (pcRef.current) {
+      pcRef.current
+        .getSenders()
+        .forEach((sender) => {
+          try {
+            sender.track?.stop();
+          } catch {}
+        });
+
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+
+    if (
+      signalChannelRef.current
+    ) {
+      supabase.removeChannel(
+        signalChannelRef.current
+      );
+
+      signalChannelRef.current = null;
+    }
+
+    onEnd?.();
+  }
+
+  /* ----------------------------------------------------------
+     PERMISSION SCREEN
+     ---------------------------------------------------------- */
+
+  if (
+    permissionState === "denied"
+  ) {
+    return (
+      <div
+        className="story-viewer"
+        style={{ zIndex: 1200 }}
+      >
+        <div
+          className="coming-card"
+          style={{
+            width: "min(460px, 92vw)",
+            textAlign: "center",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 54,
+              marginBottom: 12,
+            }}
+          >
+            🎙️
+          </div>
+
+          <h2>
+            HEXA needs permission
+          </h2>
+
+          <p>
+            {error ||
+              "Allow microphone access to make calls."}
+          </p>
+
+          {isVideoCall && (
+            <p>
+              Video calls also require camera
+              permission.
+            </p>
+          )}
+
+          <button
+            className="hero-primary"
+            onClick={() =>
+              window.location.reload()
+            }
+          >
+            Try again
+          </button>
+
+          <button
+            className="hero-secondary"
+            onClick={() =>
+              endCall("permission_denied")
+            }
+            style={{
+              marginTop: 8,
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ----------------------------------------------------------
+     CALL UI
+     ---------------------------------------------------------- */
+
+  return (
+    <div
+      className="story-viewer"
+      style={{
+        zIndex: 1100,
+      }}
+    >
+      <div className="call-shell">
+
+        <div className="call-header">
+          <div>
+            <strong>
+              {isVideoCall
+                ? "HEXA Video Call"
+                : "HEXA Voice Call"}
+            </strong>
+
+            <span
+              style={{
+                display: "block",
+                fontSize: 12,
+                opacity: 0.7,
+              }}
+            >
+              {connected
+                ? "Connected"
+                : permissionState ===
+                    "requesting"
+                  ? "Requesting microphone access…"
+                  : "Connecting…"}
+            </span>
+          </div>
+        </div>
+
+        {isVideoCall ? (
+          <div className="call-video-grid">
+
+            <video
+              ref={remoteVideo}
+              autoPlay
+              playsInline
+              className="call-remote-video"
+            />
+
+            <video
+              ref={localVideo}
+              autoPlay
+              muted
+              playsInline
+              className="call-local-video"
+            />
+
+          </div>
+        ) : (
+          <div className="call-audio-stage">
+
+            <div className="call-avatar">
+              <Avatar
+                src={peer?.avatar_url}
+                name={
+                  peer?.full_name ||
+                  peer?.username ||
+                  "HEXA User"
+                }
+                size={100}
+              />
+            </div>
+
+            <h2>
+              {peer?.full_name ||
+                peer?.username ||
+                "HEXA User"}
+            </h2>
+
+            <p>
+              {connected
+                ? "Connected"
+                : "Calling…"}
+            </p>
+
+            {muted && (
+              <span>
+                🔇 Microphone muted
+              </span>
+            )}
+
+          </div>
+        )}
+
+        {error && (
+          <div className="call-error">
+            {error}
+          </div>
+        )}
+
+        <div className="call-controls">
+
+          <button
+            type="button"
+            onClick={toggleMute}
+            title={
+              muted
+                ? "Unmute microphone"
+                : "Mute microphone"
+            }
+          >
+            {muted
+              ? "🔇"
+              : "🎙️"}
+          </button>
+
+          {isVideoCall && (
+            <button
+              type="button"
+              onClick={toggleCamera}
+              title={
+                cameraEnabled
+                  ? "Turn camera off"
+                  : "Turn camera on"
+              }
+            >
+              {cameraEnabled
+                ? "📹"
+                : "🚫"}
+            </button>
+          )}
+
+          <button
+            type="button"
+            className="danger-button"
+            disabled={ending}
+            onClick={() =>
+              endCall("user")
+            }
+          >
+            {ending
+              ? "Ending…"
+              : "End call"}
+          </button>
+
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+
+/* ============================================================
+   HEXA CALL LAUNCHER
+   ============================================================ */
+
+function WebRTCCallLauncher({
+  profile,
+  target,
+  onClose,
+}) {
+  const [call, setCall] =
+    React.useState(null);
+
+  const [error, setError] =
+    React.useState("");
+
+  const [starting, setStarting] =
+    React.useState(true);
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    async function createCall() {
+      try {
+        const conversation =
+          target?.conversation;
+
+        if (
+          !conversation?.id
+        ) {
+          throw new Error(
+            "This conversation cannot be used for calling."
+          );
+        }
+
+        const otherUser =
+          String(conversation.user_a) ===
+          String(profile.id)
+            ? conversation.user_b
+            : conversation.user_a;
+
+        if (!otherUser) {
+          throw new Error(
+            "The other HEXA user could not be found."
+          );
+        }
+
+        /*
+          IMPORTANT:
+          The database RPC creates/repairs conversation
+          membership and creates the ringing call.
+        */
+
+        const {
+          data,
+          error: rpcError,
+        } = await supabase.rpc(
+          "hexa_create_call",
+          {
+            p_callee_id: otherUser,
+            p_conversation_id:
+              conversation.id,
+            p_external: false,
+            p_type:
+              target?.type === "video"
+                ? "video"
+                : "voice",
+          }
+        );
+
+        if (!mounted) return;
+
+        if (rpcError) {
+          throw rpcError;
+        }
+
+        if (!data?.id) {
+          throw new Error(
+            "HEXA did not receive a call ID."
+          );
+        }
+
+        setCall(data);
+
+      } catch (err) {
+        console.error(
+          "HEXA create call:",
+          err
+        );
+
+        if (mounted) {
+          setError(
+            err?.message ||
+              "Unable to start the call."
+          );
+        }
+
+      } finally {
+        if (mounted) {
+          setStarting(false);
+        }
+      }
+    }
+
+    createCall();
+
+    return () => {
+      mounted = false;
+    };
+  }, [
+    profile?.id,
+    target?.type,
+    target?.conversation?.id,
+  ]);
+
+  if (error) {
+    return (
+      <div
+        className="story-viewer"
+        style={{ zIndex: 1200 }}
+      >
+        <div
+          className="coming-card"
+          style={{
+            width: "min(460px, 92vw)",
+          }}
+        >
+          <h2>
+            Call unavailable
+          </h2>
+
+          <p>{error}</p>
+
+          <button
+            className="hero-primary"
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (starting || !call) {
+    return (
+      <div
+        className="story-viewer"
+        style={{ zIndex: 1200 }}
+      >
+        <div
+          className="coming-card"
+          style={{
+            textAlign: "center",
+          }}
+        >
+          <div
+            className="loading-spinner"
+          />
+
+          <h2>
+            Starting HEXA call…
+          </h2>
+
+          <p>
+            Connecting to the other user.
+          </p>
+
+          <button
+            className="hero-secondary"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <WebRTCCall
+      profile={profile}
+      call={call}
+      type={
+        call.type ||
+        target?.type ||
+        "voice"
+      }
+      peer={{
+        id: call.callee_id,
+      }}
+      onEnd={onClose}
+    />
+  );
+}
+
+
+/* ============================================================
+   HEXA INCOMING CALL WATCHER
+   ============================================================ */
+
+function IncomingCallWatcher({
+  profile,
+}) {
+  const [incoming, setIncoming] =
+    React.useState(null);
+
+  const [answering, setAnswering] =
+    React.useState(false);
+
+  React.useEffect(() => {
+    if (!profile?.id) return;
+
+    let mounted = true;
+
+    async function showIncomingCall(call) {
+      if (!mounted) return;
+
+      if (
+        !call ||
+        call.status !== "ringing"
+      ) {
+        return;
+      }
+
+      if (
+        String(call.callee_id) !==
+        String(profile.id)
+      ) {
+        return;
+      }
+
+      const {
+        data: peer,
+      } = await supabase
+        .from("profiles")
+        .select(
+          "id,username,full_name,avatar_url"
+        )
+        .eq(
+          "id",
+          call.caller_id
+        )
+        .maybeSingle();
+
+      if (!mounted) return;
+
+      setIncoming({
+        call,
+        peer:
+          peer || {
+            id: call.caller_id,
+            full_name: "HEXA User",
+          },
+      });
+    }
+
+    async function loadExistingCalls() {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("calls")
+        .select("*")
+        .eq(
+          "callee_id",
+          profile.id
+        )
+        .eq(
+          "status",
+          "ringing"
+        )
+        .order(
+          "created_at",
+          {
+            ascending: false,
+          }
+        )
+        .limit(1);
+
+      if (error) {
+        console.warn(
+          "HEXA incoming calls:",
+          error
+        );
+        return;
+      }
+
+      if (data?.[0]) {
+        await showIncomingCall(
+          data[0]
+        );
+      }
+    }
+
+    loadExistingCalls();
+
+    /* ----------------------------------------------------------
+       REALTIME INCOMING CALLS
+       ---------------------------------------------------------- */
+
+    const channel =
+      supabase
+        .channel(
+          `hexa-incoming-calls-${profile.id}`
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "calls",
+            filter: `callee_id=eq.${profile.id}`,
+          },
+          async (payload) => {
+            await showIncomingCall(
+              payload.new
+            );
+          }
+        )
+        .subscribe();
+
+    /* ----------------------------------------------------------
+       WATCH CALL STATUS
+       ---------------------------------------------------------- */
+
+    const statusChannel =
+      supabase
+        .channel(
+          `hexa-call-status-${profile.id}`
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "calls",
+          },
+          (payload) => {
+            const call =
+              payload.new;
+
+            if (
+              incoming &&
+              String(call.id) ===
+                String(
+                  incoming.call.id
+                )
+            ) {
+              if (
+                [
+                  "declined",
+                  "ended",
+                  "cancelled",
+                  "missed",
+                ].includes(
+                  call.status
+                )
+              ) {
+                setIncoming(null);
+              }
+            }
+          }
+        )
+        .subscribe();
+
+    return () => {
+      mounted = false;
+
+      supabase.removeChannel(
+        channel
+      );
+
+      supabase.removeChannel(
+        statusChannel
+      );
+    };
+  }, [profile?.id]);
+
+  /* ----------------------------------------------------------
+     ANSWER
+     ---------------------------------------------------------- */
+
+  async function answerCall() {
+    if (
+      !incoming ||
+      answering
+    ) {
+      return;
+    }
+
+    setAnswering(true);
+
+    try {
+      /*
+        Request microphone/camera permission BEFORE
+        moving into the active call UI.
+      */
+
+      if (
+        !navigator.mediaDevices?.getUserMedia
+      ) {
+        throw new Error(
+          "Your browser does not support microphone and camera calling."
+        );
+      }
+
+      const media =
+        await navigator.mediaDevices.getUserMedia(
+          {
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+            video:
+              incoming.call.type ===
+              "video"
+                ? {
+                    width: {
+                      ideal: 1280,
+                    },
+                    height: {
+                      ideal: 720,
+                    },
+                    facingMode:
+                      "user",
+                  }
+                : false,
+          }
+        );
+
+      /*
+        Stop this permission-check stream.
+        WebRTCCall will acquire and own the actual stream.
+      */
+
+      media
+        .getTracks()
+        .forEach((track) =>
+          track.stop()
+        );
+
+      const {
+        data,
+        error,
+      } = await supabase.rpc(
+        "hexa_answer_call",
+        {
+          p_call_id:
+            incoming.call.id,
+        }
+      );
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data?.id) {
+        throw new Error(
+          "HEXA could not accept the call."
+        );
+      }
+
+      setIncoming({
+        ...incoming,
+        call: data,
+        accepted: true,
+      });
+
+    } catch (err) {
+      console.error(
+        "HEXA answer call:",
+        err
+      );
+
+      let message =
+        err?.message ||
+        "Unable to answer the call.";
+
+      if (
+        err?.name ===
+          "NotAllowedError" ||
+        err?.name ===
+          "PermissionDeniedError"
+      ) {
+        message =
+          "HEXA needs microphone permission" +
+          (
+            incoming.call.type ===
+            "video"
+              ? " and camera permission."
+              : "."
+          );
+      }
+
+      alert(message);
+
+    } finally {
+      setAnswering(false);
+    }
+  }
+
+  /* ----------------------------------------------------------
+     DECLINE
+     ---------------------------------------------------------- */
+
+  async function declineCall() {
+    if (!incoming) return;
+
+    try {
+      const {
+        error,
+      } = await supabase.rpc(
+        "hexa_decline_call",
+        {
+          p_call_id:
+            incoming.call.id,
+        }
+      );
+
+      if (error) {
+        console.error(
+          "HEXA decline call:",
+          error
+        );
+      }
+    } finally {
+      setIncoming(null);
+    }
+  }
+
+  if (!incoming) {
+    return null;
+  }
+
+  /* ----------------------------------------------------------
+     ACCEPTED CALL
+     ---------------------------------------------------------- */
+
+  if (incoming.accepted) {
+    return (
+      <WebRTCCall
+        profile={profile}
+        call={incoming.call}
+        type={
+          incoming.call.type
+        }
+        peer={{
+          id:
+            incoming.call
+              .caller_id,
+        }}
+        onEnd={() =>
+          setIncoming(null)
+        }
+      />
+    );
+  }
+
+  /* ----------------------------------------------------------
+     RINGING UI
+     ---------------------------------------------------------- */
+
+  return (
+    <div
+      className="story-viewer"
+      style={{
+        zIndex: 1300,
+      }}
+    >
+      <div
+        className="coming-card"
+        style={{
+          width: "min(420px, 92vw)",
+          textAlign: "center",
+        }}
+      >
+
+        <Avatar
+          src={
+            incoming.peer
+              ?.avatar_url
+          }
+          name={
+            incoming.peer
+              ?.full_name ||
+            incoming.peer
+              ?.username ||
+            "HEXA User"
+          }
+          size={92}
+        />
+
+        <h2>
+          {incoming.peer
+            ?.full_name ||
+            incoming.peer
+              ?.username ||
+            "HEXA User"}
+        </h2>
+
+        <p>
+          Incoming{" "}
+          {incoming.call.type ===
+          "video"
+            ? "video"
+            : "voice"}{" "}
+          call
+        </p>
+
+        <div
+          className="hero-actions"
+        >
+          <button
+            className="hero-secondary"
+            disabled={answering}
+            onClick={
+              declineCall
+            }
+          >
+            Decline
+          </button>
+
+          <button
+            className="hero-primary"
+            disabled={answering}
+            onClick={
+              answerCall
+            }
+          >
+            {answering
+              ? "Answering…"
+              : "Answer"}
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
 }
 
 function UniversalSearch({ search, profile, onMessage }) {
