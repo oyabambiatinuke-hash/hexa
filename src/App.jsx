@@ -76,7 +76,7 @@ const HEXA_CONFIG_ERROR =
   !HEXA_RUNTIME_CONFIG.supabaseUrl || !HEXA_RUNTIME_CONFIG.supabaseKey
     ? "HEXA is missing its Supabase environment variables. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your deployment settings."
     : "";
-const HEXA_CALL_RATE_KOBO_PER_SECOND = 50;
+const HEXA_CALL_RATE_KOBO_PER_SECOND = 30;
 
 
 /* ============================================================
@@ -411,19 +411,20 @@ if (typeof window !== "undefined") {
 const NAV_ITEMS = [
   { id: "nexus", label: "Home", icon: "⌂" },
   { id: "chat", label: "Chats", icon: "💬" },
+  { id: "voice-chat", label: "Voice Chat", icon: "🎧" },
+  { id: "voice-call", label: "Voice Call", icon: "☎" },
+  { id: "video-chat", label: "Video Chat", icon: "🎥" },
+  { id: "video-call", label: "Video Call", icon: "📹" },
   { id: "status", label: "Status", icon: "◌" },
-  { id: "calls", label: "Calls", icon: "☎" },
   { id: "groups", label: "Groups", icon: "👥" },
   { id: "communities", label: "Communities", icon: "◉" },
   { id: "channels", label: "Channels", icon: "▣" },
-  { id: "projects", label: "Projects", icon: "◆" },
   { id: "kora", label: "Kora", icon: "✦" },
-  { id: "wallet", label: "Wallet", icon: "₦" },
   { id: "settings", label: "Settings", icon: "⚙" },
 ];
 
 const HEXA_FEATURES = [
-  ["Messaging", "1:1 chats", "Group chats", "Replies", "Forward", "Edit", "Delete for me/everyone", "Copy", "Star", "Pin", "Search", "Reactions", "Emoji + skin tones", "GIFs", "Stickers", "Animated stickers", "Images", "Videos", "Files", "Audio", "Voice messages", "Playback speed", "Waveform", "Contacts", "Current/live location", "Polls", "Link previews", "Mentions", "Timestamps", "Delivered/read", "Typing/recording", "Unread counts", "Drafts", "Disappearing messages", "View-once media"],
+  ["Messaging", "1:1 chats", "Group chats", "Replies", "Forward", "Edit", "Delete for me/everyone", "Copy", "Star", "Pin", "Search", "Reactions", "Emoji + skin tones", "GIFs", "Stickers", "Animated stickers", "Images", "Videos", "Files", "Audio", "Playback speed", "Waveform", "Contacts", "Current/live location", "Polls", "Link previews", "Mentions", "Timestamps", "Delivered/read", "Typing/recording", "Unread counts", "Drafts", "Disappearing messages", "View-once media"],
   ["Groups", "Create", "Add/remove members", "Owner", "Multiple admins", "Permissions", "Invite links", "Name/photo/description", "Member search", "Mentions", "Announcements", "Group media/files", "Polls", "Reactions", "Replies", "Group calls", "Participant management", "Leave/report/delete"],
   ["Calls", "1:1 voice", "1:1 video", "Group voice", "Group video", "Incoming/outgoing", "Accept/decline/missed", "Mute", "Speaker", "Camera", "Front/rear camera", "PiP", "Call history", "Add participants", "Call links", "Privacy/security", "WebRTC", "STUN/TURN", "Network quality"],
   ["Status", "Text/photo/video/GIF", "Captions", "Emoji/stickers/drawing", "Privacy", "Viewers", "Seen/unseen", "Reactions", "Replies", "Navigation", "24-hour expiry", "Delete", "Notifications", "Mute"],
@@ -1421,12 +1422,6 @@ function koraReply(input) {
   return "I’m Kora. I can help you navigate HEXA, plan messages, explain features, and work with the tools connected to your workspace.";
 }
 
-function FeatureAudio({ url, voice = false }) {
-  const ref = useRef(null);
-  const [speed, setSpeed] = useState(1);
-  useEffect(() => { if (ref.current) ref.current.playbackRate = speed; }, [speed]);
-  return <div className="hexa-audio-message"><span>{voice ? "🎤" : "🔊"}</span><audio ref={ref} src={url} controls/><select value={speed} onChange={e=>setSpeed(Number(e.target.value))}><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></div>;
-}
 function formatChatTime(value) {
   if (!value) return "";
 
@@ -1576,7 +1571,6 @@ function ChatPage({
   const [contactOpen, setContactOpen] = useState(false);
   const [locationOpen, setLocationOpen] = useState(false);
 
-  const [recording, setRecording] = useState(false);
   const [attachment, setAttachment] = useState(null);
 
   const [chatSettingsOpen, setChatSettingsOpen] =
@@ -1633,8 +1627,6 @@ function ChatPage({
 
   const mediaRef = useRef(null);
   const cameraRef = useRef(null);
-  const recorderRef = useRef(null);
-  const chunksRef = useRef([]);
   const bottomRef = useRef(null);
 
   const isSystem =
@@ -3075,8 +3067,8 @@ function ChatPage({
             if (item.message_type === "video" && mediaUrl) {
               return <video src={mediaUrl} controls className="message-media" />;
             }
-            if (["audio", "voice"].includes(item.message_type) && mediaUrl) {
-              return <FeatureAudio url={mediaUrl} voice={item.message_type === "voice"} />;
+            if (item.message_type === "audio" && mediaUrl) {
+              return <audio src={mediaUrl} controls className="message-audio" />;
             }
             if (item.message_type === "file" && mediaUrl) {
               return <a className="message-file" href={mediaUrl} target="_blank" rel="noreferrer">📎 {item.content || attachmentRow?.file_name || "Download file"}</a>;
@@ -3422,31 +3414,10 @@ function ChatPage({
             {!isSystem &&
               !isSelf && (
                 <>
-                  <button
-                    type="button"
-                    title="Voice call"
-                    onClick={() =>
-                      onStartCall?.(
-                        selected,
-                        "voice"
-                      )
-                    }
-                  >
-                    ☎
-                  </button>
-
-                  <button
-                    type="button"
-                    title="Video call"
-                    onClick={() =>
-                      onStartCall?.(
-                        selected,
-                        "video"
-                      )
-                    }
-                  >
-                    ▣
-                  </button>
+                  <button type="button" title="Voice call" onClick={() => onStartCall?.(selected, "voice", "call")}>☎</button>
+                  <button type="button" title="Voice chat" onClick={() => onStartCall?.(selected, "voice", "chat")}>🎧</button>
+                  <button type="button" title="Video call" onClick={() => onStartCall?.(selected, "video", "call")}>📹</button>
+                  <button type="button" title="Video chat" onClick={() => onStartCall?.(selected, "video", "chat")}>🎥</button>
                 </>
               )}
 
@@ -3864,11 +3835,7 @@ function ChatPage({
                     .value
                 )
               }
-              placeholder={
-                recording
-                  ? "Recording voice message…"
-                  : "Type a message"
-              }
+              placeholder="Type a message"
               onKeyDown={event => {
                 if (
                   event.key ===
@@ -3889,34 +3856,13 @@ function ChatPage({
             />
 
             <div className="composer-right">
-
-              {!message.trim() &&
-                !attachment ? (
-                <button
-                  type="button"
-                  title="Voice message"
-                  onClick={() =>
-                    setRecording(
-                      value =>
-                        !value
-                    )
-                  }
-                >
-                  🎙
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  title={
-                    editing
-                      ? "Save edit"
-                      : "Send"
-                  }
-                >
-                  ➤
-                </button>
-              )}
-
+              <button
+                type="submit"
+                title={editing ? "Save edit" : "Send"}
+                className="composer-send-button"
+              >
+                ➤
+              </button>
             </div>
 
           </form>
@@ -4841,8 +4787,7 @@ function getChatPreviewText(message) {
       return "🎥 Video";
 
     case "audio":
-    case "voice":
-      return "🎤 Voice message";
+      return "🔊 Audio";
 
     case "gif":
       return "GIF";
@@ -4917,6 +4862,77 @@ function StatusPage({ profile }) {
   return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">◌</div><div><h1>Status</h1><p>Share text, photos and videos that expire after 24 hours.</p></div><button className="hero-primary heading-action" onClick={()=>setShow(true)}>＋ Create Status</button></div><div className="status-row"><button className="create-status-card" onClick={()=>setShow(true)}><div className="create-status-plus">＋</div><strong>Create Status</strong><span>Text, photo or video</span></button>{statuses.map(s=><button key={s.id} className="status-card unseen" onClick={()=>setViewer(s)}><div className="status-preview">{s.media_url&&s.media_type==="image"?<img src={s.media_url} alt=""/>:s.media_url&&s.media_type==="video"?<video src={s.media_url}/>:<span>Aa</span>}</div><strong>{s.text||s.description||"Media status"}</strong><span>{new Date(s.created_at).toLocaleString()}</span></button>)}</div>{show&&<div className="modal-backdrop" onClick={()=>setShow(false)}><div className="status-modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><h2>Create Status</h2><button onClick={()=>setShow(false)}>×</button></div><form onSubmit={create}><textarea className="modal-input modal-textarea" value={text} onChange={e=>setText(e.target.value)} placeholder="What's happening?"/><input className="modal-input" value={description} onChange={e=>setDescription(e.target.value)} placeholder="Caption / description"/><button type="button" className="media-picker" onClick={()=>fileRef.current?.click()}><span>📷</span><div><strong>{file?file.file.name:"Add photo or video"}</strong><small>Camera, gallery or laptop file</small></div></button><input ref={fileRef} hidden type="file" accept="image/*,video/*" capture="environment" onChange={pick}/>{file&&<div className="status-media-preview">{file.kind==="video"?<video controls src={file.url}/>:<img src={file.url} alt="Preview"/>}</div>}<button className="hero-primary">Post Status</button></form></div></div>}{viewer&&<div className="story-viewer" onClick={()=>setViewer(null)}><button className="story-close" onClick={()=>setViewer(null)}>×</button><div className="story-content" onClick={e=>e.stopPropagation()}>{viewer.media_url&&viewer.media_type==="video"?<video controls autoPlay src={viewer.media_url}/>:viewer.media_url?<img src={viewer.media_url} alt="Status"/>:<div className="story-text">{viewer.text}</div>}<div className="story-caption">{viewer.description||viewer.text}</div><div className="story-actions"><button onClick={()=>like(viewer)}>❤️</button><button>😂</button><button>😮</button></div></div></div>}</section>;
 }
 
+function LiveMediaModePage({ profile, mode = "voice-chat" }) {
+  const isVideo = mode === "video-chat" || mode === "video-call";
+  const isCall = mode === "voice-call" || mode === "video-call";
+  const title = isVideo
+    ? (isCall ? "Video Call" : "Video Chat")
+    : (isCall ? "Voice Call" : "Voice Chat");
+  const icon = isVideo ? (isCall ? "📹" : "🎥") : (isCall ? "☎" : "🎧");
+  const [people, setPeople] = useState([]);
+  const [peer, setPeer] = useState(null);
+  const [search, setSearch] = useState("");
+  const [active, setActive] = useState(null);
+  const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    const term = search.trim();
+    if (term.length < 2) { setPeople([]); return; }
+    const timer = setTimeout(async () => {
+      const pattern = `%${term}%`;
+      const { data } = await supabase.from("profiles")
+        .select("id,username,full_name,avatar_url")
+        .neq("id", profile.id)
+        .or(`username.ilike.${pattern},full_name.ilike.${pattern}`)
+        .limit(12);
+      setPeople(data || []);
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [search, profile?.id]);
+
+  async function start() {
+    if (!peer?.id) { setStatus(`Select a HEXA user for ${title.toLowerCase()}.`); return; }
+    const { data: direct, error: directError } = await supabase.rpc("hexa_get_or_create_direct", { p_other_user_id: peer.id });
+    if (directError || !direct?.id) { setStatus(directError?.message || "Unable to open the direct conversation."); return; }
+    const { data, error } = await supabase.rpc("hexa_create_call", {
+      p_conversation_id: direct.id, p_callee_id: peer.id, p_type: isVideo ? "video" : "voice", p_external: false
+    });
+    if (error) { setStatus(error.message); return; }
+    setActive({ call: data, type: isVideo ? "video" : "voice", peer, mode });
+    setStatus(isCall ? `Starting ${title.toLowerCase()}…` : `Opening ${title.toLowerCase()}…`);
+  }
+
+  return (
+    <section className="workspace-page live-media-page">
+      <div className="page-heading">
+        <div className="page-heading-icon">{icon}</div>
+        <div><h1>{title}</h1><p>{isCall ? `Private HEXA ${isVideo ? "video" : "voice"} calling.` : `Live ${isVideo ? "video" : "audio"} conversation in real time.`}</p></div>
+      </div>
+
+      <div className="live-media-card">
+        <div className="live-media-intro">
+          <div className="live-media-icon">{icon}</div>
+          <div><strong>{title}</strong><span>{isCall ? "Ring one HEXA user and talk in real time." : "Start a live conversation. Nothing is recorded or sent as a voice message."}</span></div>
+        </div>
+        <input className="modal-input" placeholder="Search name or username" value={search} onChange={e => setSearch(e.target.value)} />
+        <div className="people-results">
+          {people.map(person => (
+            <button key={person.id} className="person-result" type="button" onClick={() => { setPeer(person); setSearch(person.username ? `@${person.username}` : person.full_name || ""); setPeople([]); setStatus(""); }}>
+              <Avatar src={person.avatar_url} name={person.full_name || person.username} size={46} />
+              <div><strong>{person.full_name || person.username || "HEXA User"}</strong><span>{person.username ? `@${person.username}` : "HEXA account"}</span></div>
+            </button>
+          ))}
+        </div>
+        {peer && <div className="live-selected-peer"><Avatar src={peer.avatar_url} name={peer.full_name || peer.username} size={48} /><div><strong>{peer.full_name || peer.username}</strong><span>{peer.username ? `@${peer.username}` : "HEXA account"}</span></div></div>}
+        <button className="hero-primary live-start-button" onClick={start} disabled={!peer}>{icon} {title}</button>
+        {status && <p className="muted">{status}</p>}
+      </div>
+
+      {active && <WebRTCCall profile={profile} call={active.call} type={active.type} peer={active.peer} mode={active.mode} onEnd={() => { setActive(null); setStatus(`${title} ended.`); }} />}
+    </section>
+  );
+}
+
 function CallsPage({ profile }) {
   const [history, setHistory] = useState([]);
   const [people, setPeople] = useState([]);
@@ -4986,7 +5002,7 @@ function CallsPage({ profile }) {
     <section className="workspace-page">
       <div className="page-heading">
         <div className="page-heading-icon">☎</div>
-        <div><h1>Calls</h1><p>Private HEXA-to-HEXA voice and video calls. External calling can be billed server-side at ₦0.50/second.</p></div>
+        <div><h1>Calls</h1><p>Private HEXA voice calls, video calls, Voice Chat and Video Chat.</p></div>
       </div>
 
       <div className="settings-card">
@@ -5001,7 +5017,12 @@ function CallsPage({ profile }) {
           ))}
         </div>
         {peer && <div className="selection-pill"><Avatar src={peer.avatar_url} name={peer.full_name || peer.username} size={32} /><span>{peer.full_name || peer.username}</span></div>}
-        <div className="hero-actions"><button className="hero-secondary" onClick={() => createCall("voice")} disabled={!peer}>☎ Voice</button><button className="hero-primary" onClick={() => createCall("video")} disabled={!peer}>▣ Video</button></div>
+        <div className="hero-actions call-mode-actions">
+          <button className="hero-secondary" onClick={() => createCall("voice")} disabled={!peer}>☎ Voice Call</button>
+          <button className="hero-secondary" onClick={() => createCall("voice")} disabled={!peer}>🎧 Voice Chat</button>
+          <button className="hero-primary" onClick={() => createCall("video")} disabled={!peer}>📹 Video Call</button>
+          <button className="hero-primary" onClick={() => createCall("video")} disabled={!peer}>🎥 Video Chat</button>
+        </div>
       </div>
 
       {status && <p className="muted">{status}</p>}
@@ -5009,14 +5030,14 @@ function CallsPage({ profile }) {
 
       <div className="section-heading" style={{ marginTop: 22 }}><div><h2>Call history</h2><p>Recent call activity for this HEXA account.</p></div><button className="hero-secondary" onClick={loadCalls}>Refresh</button></div>
       <div className="entity-grid">
-        {history.map((c) => <div className="entity-card" key={c.id}><strong>{c.type} · {c.status}</strong><span>{new Date(c.created_at).toLocaleString()}</span><small>{c.billed_seconds || 0}s · ₦{(Number(c.amount_kobo || 0) / 100).toFixed(2)}</small></div>)}
+        {history.map((c) => <div className="entity-card" key={c.id}><strong>{c.type} · {c.status}</strong><span>{new Date(c.created_at).toLocaleString()}</span><small>{c.billed_seconds || 0}s</small></div>)}
         {!history.length && <div className="entity-card"><strong>No calls yet</strong><span>Your HEXA voice/video call history will appear here.</span></div>}
       </div>
     </section>
   );
 }
 
-function WebRTCCall({ profile, call, type, peer, onEnd }) {
+function WebRTCCall({ profile, call, type, peer, mode = "call", onEnd }) {
   const localVideo = useRef(null);
   const remoteVideo = useRef(null);
   const pcRef = useRef(null);
@@ -5150,7 +5171,7 @@ function WebRTCCall({ profile, call, type, peer, onEnd }) {
     <div className="story-viewer" style={{ zIndex: 800 }}>
       <div className="call-shell">
         <div className="call-header">
-          <strong>{type === "video" ? "HEXA Video Call" : "HEXA Voice Call"}</strong>
+          <strong>{mode === "voice-chat" ? "HEXA Voice Chat" : mode === "video-chat" ? "HEXA Video Chat" : type === "video" ? "HEXA Video Call" : "HEXA Voice Call"}</strong>
           <span>{connected ? "Connected" : call?.status === "ringing" ? "Ringing…" : "Connecting…"}</span>
         </div>
         {type === "video" ? (
@@ -5212,7 +5233,7 @@ function WebRTCCallLauncher({ profile, target, onClose }) {
     return <div className="story-viewer"><div className="coming-card"><h2>Call unavailable</h2><p>{error}</p><button onClick={onClose}>Close</button></div></div>;
   }
   return call ? (
-    <WebRTCCall profile={profile} call={{ ...call.data, callee_id: call.peer.id }} type={target.type} peer={call.peer} onEnd={onClose} />
+    <WebRTCCall profile={profile} call={{ ...call.data, callee_id: call.peer.id }} type={target.type} peer={call.peer} mode={target.mode || "call"} onEnd={onClose} />
   ) : (
     <div className="story-viewer"><div className="coming-card"><h2>Starting call…</h2><p>Waiting for the other HEXA user to answer.</p></div></div>
   );
@@ -5289,190 +5310,6 @@ function IncomingCallWatcher({ profile }) {
     </div>
   </div>;
 }
-function normalizeHexaPhone(value = "") {
-  return String(value || "").replace(/[^0-9+]/g, "").trim();
-}
-
-function WalletPage({ profile }) {
-  const [balance, setBalance] = useState(null);
-  const [transactions, setTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [amount, setAmount] = useState(5000);
-  const [username, setUsername] = useState(profile?.username ? `@${profile.username}` : "");
-  const [phone, setPhone] = useState(profile?.phone_number || "");
-  const [password, setPassword] = useState("");
-  const [showBuyCredits, setShowBuyCredits] = useState(false);
-  const [funding, setFunding] = useState(false);
-
-  async function loadWallet() {
-    if (!profile?.id) return;
-    setLoading(true);
-    setError("");
-    try {
-      const [walletResult, txResult] = await Promise.all([
-        supabase.from("wallets").select("balance_kobo,currency").eq("user_id", profile.id).maybeSingle(),
-        supabase.from("wallet_transactions").select("id,type,amount_kobo,status,description,created_at").eq("user_id", profile.id).order("created_at", { ascending: false }).limit(50),
-      ]);
-      if (walletResult.error) throw walletResult.error;
-      if (txResult.error) throw txResult.error;
-      setBalance(walletResult.data?.balance_kobo ?? 0);
-      setTransactions(txResult.data || []);
-    } catch (e) {
-      setError(e?.message || "Wallet data could not be loaded. Create the HEXA wallet tables/RLS before enabling payments.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadWallet();
-    setUsername(profile?.username ? `@${profile.username}` : "");
-    setPhone(profile?.phone_number || "");
-  }, [profile?.id, profile?.username, profile?.phone_number]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const reference = params.get("reference") || params.get("trxref");
-    const walletResult = params.get("wallet");
-    if (reference && walletResult === "success") {
-      (async () => {
-        setFunding(true);
-        const { data, error: verifyError } = await supabase.functions.invoke(import.meta.env.VITE_HEXA_PAYMENT_FUNCTION || "hexa-payment", {
-          body: { action: "verify", reference },
-        });
-        if (verifyError || data?.error) {
-          setError(verifyError?.message || data?.error || "Payment verification failed.");
-        } else {
-          setError("");
-          await loadWallet();
-        }
-        const clean = new URL(window.location.href);
-        clean.searchParams.delete("wallet");
-        clean.searchParams.delete("reference");
-        clean.searchParams.delete("trxref");
-        window.history.replaceState({}, "", clean.toString());
-        setFunding(false);
-      })();
-    }
-  }, []);
-
-  async function startFunding() {
-    const naira = Number(amount);
-    if (!Number.isFinite(naira) || naira < 100) {
-      alert("Enter a valid HEXA Credits amount of at least ₦100.");
-      return;
-    }
-    if (!profile?.email) {
-      setError("Your HEXA profile does not have an email address for secure payment checkout.");
-      return;
-    }
-
-    const cleanUsername = String(username || "").trim().replace(/^@/, "").toLowerCase();
-    const cleanPhone = normalizeHexaPhone(phone);
-    if (!cleanUsername || !cleanPhone || !password) {
-      setError("Enter your HEXA username, phone number and password before buying credits.");
-      return;
-    }
-    if (cleanUsername !== String(profile.username || "").toLowerCase()) {
-      setError("The HEXA username does not match the signed-in account.");
-      return;
-    }
-    if (cleanPhone.length < 7) {
-      setError("Enter a valid phone number.");
-      return;
-    }
-
-    setFunding(true);
-    setError("");
-
-    // Re-authenticate with Supabase Auth. The password is sent only to Supabase Auth;
-    // it is never stored in HEXA Wallet tables or sent to the payment provider.
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: profile.email,
-      password,
-    });
-    if (authError) {
-      setError("Security check failed: your HEXA password is incorrect.");
-      setFunding(false);
-      return;
-    }
-
-    const { data: initData, error: invokeError } = await supabase.functions.invoke(import.meta.env.VITE_HEXA_PAYMENT_FUNCTION || "hexa-payment", {
-      body: {
-        action: "initialize_credits",
-        amount_naira: naira,
-        hexa_username: cleanUsername,
-        phone_number: cleanPhone,
-      },
-    });
-
-    if (invokeError || initData?.error) {
-      setError(invokeError?.message || initData?.error || "Unable to start HEXA Credits payment.");
-      setFunding(false);
-      return;
-    }
-    setPassword("");
-    if (initData?.authorization_url) {
-      window.location.assign(initData.authorization_url);
-      return;
-    }
-    if (initData?.ussd_code || initData?.ussd || initData?.instructions) {
-      const code = initData.ussd_code || initData.ussd || "";
-      alert(["HEXA PAYMENT", "", code ? `USSD: ${code}` : "", initData.instructions || "Follow the payment instructions on your phone.", "", "After payment, HEXA will verify the transaction on the server."].filter(Boolean).join("\n"));
-      setFunding(false);
-      return;
-    }
-    setError("The payment service did not return a usable payment instruction.");
-    setFunding(false);
-  }
-
-  const displayNaira = Number(balance || 0) / 100;
-  const displayCredits = displayNaira.toFixed(2);
-
-  return <section className="workspace-page">
-    <div className="page-heading">
-      <div className="page-heading-icon">₦</div>
-      <div><h1>HEXA Wallet</h1><p>Buy HEXA Credits, pay for HEXA services and view your transaction history.</p></div>
-    </div>
-
-    <div className="wallet-grid">
-      <div className="wallet-balance-card">
-        <span>Available HEXA Credits</span>
-        <strong>{loading ? "Loading…" : displayCredits}</strong>
-        <small>1 HEXA Credit = ₦1.00 · External call rate: 50 kobo/second</small>
-      </div>
-      <div className="settings-card wallet-fund-card">
-        <div><strong>Buy HEXA Credits</strong><p>Secure account verification + server-side payment verification.</p></div>
-        <button className="hero-primary" onClick={() => setShowBuyCredits(true)} disabled={funding}>Buy Credits</button>
-      </div>
-    </div>
-
-    {showBuyCredits && <div className="hexa-modal-backdrop">
-      <div className="entity-modal wallet-credit-modal">
-        <div className="section-heading">
-          <div><h2>Buy HEXA Credits</h2><p>Simple phone-style payment. Verify your HEXA account, then complete payment securely.</p></div>
-          <button className="hero-secondary" onClick={() => { setShowBuyCredits(false); setPassword(""); setError(""); }}>Close</button>
-        </div>
-        <label className="wallet-security-field"><span>HEXA Username</span><input className="modal-input" value={username} onChange={e => setUsername(e.target.value)} placeholder="@yourusername" autoComplete="username" /></label>
-        <label className="wallet-security-field"><span>Phone Number</span><input className="modal-input" value={phone} onChange={e => setPhone(e.target.value)} placeholder="080XXXXXXXX" inputMode="tel" autoComplete="tel" /></label>
-        <label className="wallet-security-field"><span>HEXA Password</span><input className="modal-input" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your HEXA password" autoComplete="current-password" /></label>
-        <label className="wallet-security-field"><span>Amount (₦)</span><input className="modal-input" type="number" min="100" step="100" value={amount} onChange={e => setAmount(e.target.value)} /></label>
-        <div className="wallet-security-note">🔐 Your password is used only for the Supabase authentication check. HEXA does not store it and never sends it to the payment provider. Payment confirmation is verified server-side.</div>
-        {error && <div className="auth-alert auth-error"><span>!</span>{error}</div>}
-        <button className="hero-primary wallet-buy-button" onClick={startFunding} disabled={funding}>{funding ? "Starting secure payment…" : `Buy ${Number(amount || 0).toLocaleString("en-NG")} HEXA Credits`}</button>
-      </div>
-    </div>}
-
-    {error && !showBuyCredits && <div className="auth-alert auth-error" style={{marginTop:14}}><span>!</span>{error}</div>}
-    <div className="section-heading" style={{marginTop:22}}><div><h2>Transactions</h2><p>Wallet activity, HEXA Credit purchases and call charges.</p></div><button className="hero-secondary" onClick={loadWallet}>Refresh</button></div>
-    <div className="entity-grid">
-      {!loading && !transactions.length && <div className="entity-card"><strong>No transactions yet</strong><span>Your verified HEXA Credits and wallet activity will appear here.</span></div>}
-      {transactions.map(tx => <div className="entity-card" key={tx.id}><strong>{tx.type === "credit_purchase" ? "HEXA Credits Purchase" : (tx.type || "Transaction")}</strong><span>{tx.description || "HEXA Wallet transaction"}</span><small>{tx.status || "pending"} · ₦{(Number(tx.amount_kobo || 0) / 100).toFixed(2)} · {new Date(tx.created_at).toLocaleString()}</small></div>)}
-    </div>
-  </section>;
-}
-
 function UniversalSearch({ search, profile, onMessage }) {
   const [results,setResults]=useState([]),[loading,setLoading]=useState(false),[error,setError]=useState("");
   useEffect(()=>{let cancelled=false;const run=async()=>{const term=String(search||"").trim();if(term.length<2){setResults([]);setError("");return;}setLoading(true);setError("");const pattern=`%${term}%`;try{
@@ -5786,8 +5623,7 @@ function AuthenticatedHEXA({ session, onSignOut }) {
           const message = payload.new;
           if (!message || message.sender_id === profile.id) return;
 
-          const body = message.content ||
-            (message.message_type === "voice" ? "🎙 Voice message" : "New HEXA message");
+          const body = message.content || "New HEXA message";
           const notification = {
             id: `${message.id || Date.now()}-${Date.now()}`,
             title: "New HEXA message",
@@ -5828,16 +5664,18 @@ function AuthenticatedHEXA({ session, onSignOut }) {
   if(profileLoading)return <div className="hexa-loading-screen"><div className="loading-logo">H</div><div className="loading-spinner"/><strong>Opening HEXA…</strong><span>Preparing your workspace</span></div>;
   let page; switch(activePage){
     case "nexus":page=<NexusHome profile={profile} setActivePage={setActivePage}/>;break;
-    case "chat":page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type)=>setCallTarget({conversation:c,type})} onOpenChatWithUser={()=>setSearch("")}/>;break;
+    case "chat":page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type,mode)=>setCallTarget({conversation:c,type,mode: mode === "chat" ? (type === "video" ? "video-chat" : "voice-chat") : (type === "video" ? "video-call" : "voice-call")})} onOpenChatWithUser={()=>setSearch("")}/>;break;
     case "groups":page=<GroupsPage profile={profile} onOpenChat={c=>{setChatTarget(c);setActivePage("chat")}}/>;break;
     case "communities":page=<CommunitiesPage profile={profile}/>;break;
     case "channels":page=<ChannelsPage profile={profile}/>;break;
     case "status":page=<StatusPage profile={profile}/>;break;
     case "calls":page=<CallsPage profile={profile}/>;break;
-    case "wallet":page=<WalletPage profile={profile}/>;break;
+    case "voice-chat":page=<LiveMediaModePage profile={profile} mode="voice-chat"/>;break;
+    case "voice-call":page=<LiveMediaModePage profile={profile} mode="voice-call"/>;break;
+    case "video-chat":page=<LiveMediaModePage profile={profile} mode="video-chat"/>;break;
+    case "video-call":page=<LiveMediaModePage profile={profile} mode="video-call"/>;break;
     case "kora":page=<KoraPage profile={profile}/>;break;
     case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut}/>;break;
-    case "projects":page=<WorkspacePlaceholder title="Projects" description="Organize collaborative work." icon="◆"/>;break;
     default:page=<NexusHome profile={profile} setActivePage={setActivePage}/>;
   }
   return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div></div>;
@@ -8269,5 +8107,23 @@ function WorkspacePlaceholder({ title, description, icon, children }) { return <
     max-width: 88% !important;
   }
 }
+
+/* ============================================================
+   HEXA LIVE COMMUNICATION MODES
+   ============================================================ */
+.live-media-page { max-width: 980px; }
+.live-media-card { background: var(--hexa-panel); border: 1px solid var(--hexa-border); border-radius: 18px; padding: 22px; display: grid; gap: 14px; max-width: 760px; }
+.live-media-intro { display: flex; align-items: center; gap: 14px; }
+.live-media-icon { width: 54px; height: 54px; border-radius: 16px; display: grid; place-items: center; background: color-mix(in srgb, var(--hexa-accent) 14%, transparent); font-size: 26px; }
+.live-media-intro strong, .live-media-intro span { display:block; }
+.live-media-intro strong { font-size: 16px; }
+.live-media-intro span { margin-top: 4px; color: var(--hexa-muted); font-size: 12px; line-height: 1.45; }
+.live-selected-peer { display:flex; align-items:center; gap:12px; padding:10px 12px; border-radius:12px; background:var(--hexa-panel-2); }
+.live-selected-peer strong, .live-selected-peer span { display:block; }
+.live-selected-peer span { margin-top:2px; color:var(--hexa-muted); font-size:10px; }
+.live-start-button { min-height:48px; }
+.call-mode-actions { display:grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+.message-audio { width:min(300px,100%); }
+@media (max-width:760px){ .call-mode-actions { grid-template-columns:1fr; } .live-media-card { padding:16px; border-radius:14px; } }
 
 `;
