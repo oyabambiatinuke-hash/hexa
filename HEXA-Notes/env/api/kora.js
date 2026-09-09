@@ -58,6 +58,17 @@ export const supabase = createClient(
 const OFFLINE_QUEUE_KEY = "hexa-message-queue-v5";
 const LEGACY_OFFLINE_QUEUE_KEYS = ["hexa-message-queue-v2", "hexa-message-queue-v4"];
 const DRAFTS_KEY = "hexa-chat-drafts-v4";
+
+const LOCAL_CHAT_IDS = new Set(["self", "kora", "hexa-system-group"]);
+
+function isHexaUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
+}
+
+function isLocalHexaChat(conversation) {
+  return Boolean(conversation && LOCAL_CHAT_IDS.has(String(conversation.id)));
+}
+
 const HEXA_MAX_MESSAGE_LENGTH = 10000;
 const HEXA_MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
@@ -415,12 +426,13 @@ const NAV_ITEMS = [
   { id: "groups", label: "Groups", icon: "👥" },
   { id: "communities", label: "Communities", icon: "◉" },
   { id: "channels", label: "Channels", icon: "▣" },
+  { id: "calls", label: "Calls", icon: "☎" },
   { id: "kora", label: "Kora", icon: "✦" },
   { id: "settings", label: "Settings", icon: "⚙" },
 ];
 
 const HEXA_FEATURES = [
-  ["Messaging", "1:1 chats", "Group chats", "Replies", "Forward", "Edit", "Delete for me/everyone", "Copy", "Star", "Pin", "Search", "Reactions", "Emoji + skin tones", "GIFs", "Stickers", "Animated stickers", "Images", "Videos", "Files", "Audio", "Playback speed", "Waveform", "Contacts", "Current/live location", "Polls", "Link previews", "Mentions", "Timestamps", "Delivered/read", "Typing/recording", "Unread counts", "Drafts", "Disappearing messages", "View-once media"],
+  ["Messaging", "1:1 chats", "Group chats", "Replies", "Forward", "Edit", "Delete for me/everyone", "Copy", "Star", "Pin", "Search", "Reactions", "Emoji + skin tones", "GIFs", "Stickers", "Animated stickers", "Images", "Videos", "Files", "Audio", "Voice messages", "Playback speed", "Waveform", "Contacts", "Current/live location", "Polls", "Link previews", "Mentions", "Timestamps", "Delivered/read", "Typing/recording", "Unread counts", "Drafts", "Disappearing messages", "View-once media"],
   ["Groups", "Create", "Add/remove members", "Owner", "Multiple admins", "Permissions", "Invite links", "Name/photo/description", "Member search", "Mentions", "Announcements", "Group media/files", "Polls", "Reactions", "Replies", "Group calls", "Participant management", "Leave/report/delete"],
   ["Calls", "1:1 voice", "1:1 video", "Group voice", "Group video", "Incoming/outgoing", "Accept/decline/missed", "Mute", "Speaker", "Camera", "Front/rear camera", "PiP", "Call history", "Add participants", "Call links", "Privacy/security", "WebRTC", "STUN/TURN", "Network quality"],
   ["Status", "Text/photo/video/GIF", "Captions", "Emoji/stickers/drawing", "Privacy", "Viewers", "Seen/unseen", "Reactions", "Replies", "Navigation", "24-hour expiry", "Delete", "Notifications", "Mute"],
@@ -2002,10 +2014,7 @@ function ChatPage({
       return;
     }
 
-    if (
-      conversation.id === "self" ||
-      conversation.id === "kora"
-    ) {
+    if (isLocalHexaChat(conversation)) {
       setMessages([]);
       return;
     }
@@ -2181,6 +2190,8 @@ function ChatPage({
             const conversationId =
               selected?.realConversationId ||
               selected?.id;
+
+            if (isLocalHexaChat(selected) || !isHexaUuid(conversationId)) return;
 
             if (
               row?.conversation_id !==
@@ -2471,6 +2482,285 @@ function ChatPage({
       setLoadingConversations(false);
     }
   }
+
+  /* ============================================================
+     VOICE RECORDING + MEDIA UPLOAD
+     ============================================================ */
+
+  const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordingBlob, setRecordingBlob] = useState(null);
+  const [recordingPreviewUrl, setRecordingPreviewUrl] = useState("");
+  const mediaRecorderRef = useRef(null);
+  const recordingChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (recordingPreviewUrl) URL.revokeObjectURL(recordingPreviewUrl);
+      const stream = mediaRecorderRef.current?.stream;
+      stream?.getTracks?.().forEach((track) => track.stop());
+    };
+  }, [recordingPreviewUrl]);
+
+  function clearRecordingState() {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    mediaRecorderRef.current?.stream?.getTracks?.().forEach((track) => track.stop());
+    mediaRecorderRef.current = null;
+    recordingChunksRef.current = [];
+    setRecording(false);
+    setRecordingSeconds(0);
+  }
+
+  function cancelVoiceRecording() {
+    if (recordingPreviewUrl) URL.revokeObjectURL(recordingPreviewUrl);
+    setRecordingBlob(null);
+    setRecordingPreviewUrl("");
+    clearRecordingState();
+  }
+
+  async function startVoiceRecording() {
+    if (isSystem || isSelf || isKora || isLocalHexaChat(selected)) return;
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      safeAlert("Voice recording is not supported by this browser.");
+      return;
+    }
+
+    try {
+      cancelVoiceRecording();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const preferred = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"].find((type) => MediaRecorder.isTypeSupported?.(type));
+      const recorder = preferred ? new MediaRecorder(stream, { mimeType: preferred }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      recordingChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size) recordingChunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(recordingChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        if (blob.size) {
+          setRecordingBlob(blob);
+          const preview = URL.createObjectURL(blob);
+          setRecordingPreviewUrl(preview);
+        }
+        stream.getTracks().forEach((track) => track.stop());
+      };
+      recorder.start(250);
+      setRecording(true);
+      setRecordingSeconds(0);
+      recordingTimerRef.current = setInterval(() => setRecordingSeconds((value) => value + 1), 1000);
+    } catch (error) {
+      safeAlert(error?.message || "Microphone access was denied.");
+      clearRecordingState();
+    }
+  }
+
+  function stopVoiceRecording() {
+    if (!mediaRecorderRef.current) return;
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    setRecording(false);
+    try {
+      mediaRecorderRef.current.stop();
+    } catch {}
+  }
+
+  function formatRecordingTime(total) {
+    const seconds = Number(total || 0);
+    return `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
+  }
+
+  async function uploadChatBlob(blob, fileName = "voice-message.webm") {
+    const bucket = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET;
+    if (!bucket) throw new Error("Set VITE_SUPABASE_STORAGE_BUCKET before sending media.");
+    const conversationId = selected?.realConversationId || selected?.id;
+    if (!isHexaUuid(conversationId)) throw new Error("This conversation is not ready for media uploads.");
+    const path = `${profile.id}/chat/${conversationId}/${Date.now()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    const { error } = await supabase.storage.from(bucket).upload(path, blob, { contentType: blob.type || "audio/webm", upsert: false });
+    if (error) throw error;
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+    return { bucket, path, url: data?.publicUrl || "" };
+  }
+
+  async function sendVoiceMessage() {
+    if (!recordingBlob || !selected?.id || isLocalHexaChat(selected) || isSystem) return;
+    if (recordingSeconds < 1) {
+      cancelVoiceRecording();
+      return;
+    }
+
+    const blob = recordingBlob;
+    const duration = recordingSeconds;
+    try {
+      setLoading(true);
+      const upload = await uploadChatBlob(blob, `voice-${Date.now()}.webm`);
+      const clientMessageId = `hexa-${crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+      const payload = {
+        conversation_id: selected.realConversationId || selected.id,
+        sender_id: profile.id,
+        content: "Voice message",
+        message_type: "voice",
+        client_message_id: clientMessageId,
+        status: "sent",
+        metadata: {
+          storage_bucket: upload.bucket,
+          storage_path: upload.path,
+          file_url: upload.url,
+          mime_type: blob.type || "audio/webm",
+          duration_seconds: duration,
+        },
+      };
+      const { data, error } = await supabase.from("messages").insert(payload).select("*, message_reactions(*), message_attachments(*), message_user_actions(*)").single();
+      if (error) throw error;
+      await supabase.from("message_attachments").insert({
+        message_id: data.id,
+        user_id: profile.id,
+        file_name: `voice-${Date.now()}.webm`,
+        file_path: upload.path,
+        file_url: upload.url,
+        mime_type: blob.type || "audio/webm",
+        file_size: blob.size,
+        duration,
+      });
+      setMessages((current) => [...current, { ...data, metadata: { ...(data.metadata || {}), file_url: upload.url } }]);
+      updateConversationPreview(selected, data);
+      cancelVoiceRecording();
+    } catch (error) {
+      safeAlert(error?.message || "Unable to send the voice message.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /* ============================================================
+     SEND MESSAGE
+     ============================================================ */
+
+  async function sendMessage(event) {
+    event?.preventDefault();
+    const text = message.trim();
+    if (!text && !attachment) return;
+
+    if (isSystem && !isSystemAdmin) {
+      safeAlert("Only authorized HEXA administrators can publish in THE HEXA GROUP.");
+      return;
+    }
+
+    if (!selected?.id || isLocalHexaChat(selected)) {
+      if (isKora) {
+        const localId = `local-${Date.now()}`;
+        const next = [...messages, { id: localId, role: "user", sender_id: profile.id, conversation_id: "kora", content: text, message_type: "text", created_at: new Date().toISOString() }];
+        setMessages(next);
+        setMessage("");
+        setReplyTo(null);
+        try {
+          const reply = await askKora({ messages: next.map((m) => ({ role: m.sender_id === "kora" ? "kora" : "user", text: m.content })), profile });
+          setMessages((current) => [...current, { id: `kora-${Date.now()}`, role: "kora", sender_id: "kora", conversation_id: "kora", content: reply, message_type: "text", created_at: new Date().toISOString() }]);
+        } catch (error) {
+          safeAlert(error?.message || "Kora could not respond.");
+        }
+      }
+      return;
+    }
+
+    if (!isHexaUuid(selected.realConversationId || selected.id)) {
+      safeAlert("This conversation is not ready yet.");
+      return;
+    }
+
+    if (selected?.otherUserId && blocked.includes(String(selected.otherUserId))) {
+      safeAlert("This contact is blocked.");
+      return;
+    }
+
+    const inputError = validateMessageInput(text, attachment?.file || attachment);
+    if (inputError) {
+      safeAlert(inputError);
+      return;
+    }
+
+    const conversationId = selected.realConversationId || selected.id;
+    const clientMessageId = `hexa-${crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+    const optimisticId = `local-${clientMessageId}`;
+    let upload = null;
+    const messageType = attachment?.type || "text";
+
+    if (attachment?.file) {
+      try {
+        upload = await uploadChatAttachment(attachment.file);
+      } catch (error) {
+        safeAlert(error?.message || "Unable to upload this attachment.");
+        return;
+      }
+    }
+
+    const optimisticMessage = {
+      id: optimisticId,
+      conversation_id: conversationId,
+      sender_id: profile.id,
+      content: text || attachment?.name || "",
+      message_type: messageType,
+      created_at: new Date().toISOString(),
+      reply_to_id: replyTo?.id || null,
+      client_message_id: clientMessageId,
+      status: "sending",
+      metadata: upload ? { storage_bucket: upload.bucket, storage_path: upload.path, file_url: upload.url } : {},
+      message_attachments: upload ? [{ file_name: attachment.name, file_path: upload.path, file_url: upload.url, mime_type: attachment.file.type, file_size: attachment.file.size }] : [],
+      pending: true,
+    };
+
+    setMessages((current) => [...current, optimisticMessage]);
+    updateConversationPreview(selected, optimisticMessage);
+    const oldAttachment = attachment;
+    setMessage("");
+    setReplyTo(null);
+    setAttachment(null);
+    setEmojiOpen(false);
+    setGifOpen(false);
+    setStickerOpen(false);
+    setAttachmentOpen(false);
+    try { localStorage.removeItem(`hexa-draft:${selected.id}`); } catch {}
+
+    try {
+      const payload = {
+        conversation_id: conversationId,
+        sender_id: profile.id,
+        receiver_id: selected.otherUserId || null,
+        content: text || oldAttachment?.name || "",
+        message_type: messageType,
+        reply_to_id: oldAttachment ? null : (replyTo?.id || null),
+        client_message_id: clientMessageId,
+        metadata: upload ? { storage_bucket: upload.bucket, storage_path: upload.path, file_url: upload.url, mime_type: oldAttachment?.file?.type || null, file_name: oldAttachment?.name || null, file_size: oldAttachment?.file?.size || null } : {},
+        status: "sent",
+      };
+      const { data, error } = await supabase.from("messages").insert(payload).select("*, message_reactions(*), message_attachments(*), message_user_actions(*)").single();
+      if (error) throw error;
+      if (upload) {
+        const { error: attachmentError } = await supabase.from("message_attachments").insert({ message_id: data.id, user_id: profile.id, file_name: oldAttachment.name, file_path: upload.path, file_url: upload.url, mime_type: oldAttachment.file.type || "application/octet-stream", file_size: oldAttachment.file.size || 0 });
+        if (attachmentError) console.warn("HEXA attachment record:", attachmentError.message);
+      }
+      setMessages((current) => current.map((item) => item.id === optimisticId ? data : item));
+      updateConversationPreview(selected, data);
+    } catch (error) {
+      console.error("HEXA send message:", error);
+      setMessages((current) => current.map((item) => item.id === optimisticId ? { ...item, pending: true, failed: true, status: "failed" } : item));
+      if (!oldAttachment?.file) {
+        try {
+          const queue = readLocalQueue();
+          queue.push({ ...optimisticMessage, pending: true, failed: true });
+          writeLocalQueue(queue);
+        } catch {}
+      }
+      safeAlert(error?.message || "Message could not be sent.");
+    }
+  }
+
   /* ============================================================
      MESSAGE ACTIONS
      ============================================================ */
@@ -2693,7 +2983,7 @@ function ChatPage({
     if (!forwardMessage || !conversation) return;
 
     const conversationId = conversation.realConversationId || conversation.id;
-    if (conversation.id === "hexa-system-group" || conversation.type === "system_group") {
+    if (isLocalHexaChat(conversation) || !isHexaUuid(conversationId)) {
       safeAlert("Messages cannot be forwarded into THE HEXA GROUP unless you have publishing permission.");
       return;
     }
@@ -3049,9 +3339,7 @@ function ChatPage({
         <div className="chat-list-header">
 
           <div>
-            <h2>
-              Chat
-            </h2>
+            <h2>Chats</h2>
 
             <span>
               {
@@ -3705,6 +3993,25 @@ function ChatPage({
 
         {/* COMPOSER */}
 
+        {recording && (
+          <div className="voice-recording-bar">
+            <span className="recording-dot">●</span>
+            <strong>Recording {formatRecordingTime(recordingSeconds)}</strong>
+            <div className="voice-wave">{Array.from({ length: 18 }).map((_, i) => <i key={i} style={{ animationDelay: `${i * 55}ms` }} />)}</div>
+            <button type="button" onClick={cancelVoiceRecording}>Cancel</button>
+            <button type="button" className="send-voice-button" onClick={stopVoiceRecording}>Stop</button>
+          </div>
+        )}
+        {!recording && recordingBlob && (
+          <div className="voice-recording-bar preview">
+            <span>🎙</span>
+            <audio src={recordingPreviewUrl} controls />
+            <span>{formatRecordingTime(recordingSeconds)}</span>
+            <button type="button" onClick={cancelVoiceRecording}>Delete</button>
+            <button type="button" className="send-voice-button" onClick={sendVoiceMessage}>Send</button>
+          </div>
+        )}
+
         {!isSystem && (
           <form
             className="chat-composer"
@@ -3744,6 +4051,15 @@ function ChatPage({
                 }
               >
                 📎
+              </button>
+
+              <button
+                type="button"
+                title="Voice message"
+                className={recording ? "recording-active" : ""}
+                onClick={recording ? stopVoiceRecording : startVoiceRecording}
+              >
+                {recording ? "⏺" : "🎙"}
               </button>
 
             </div>
@@ -5548,10 +5864,6 @@ function AuthenticatedHEXA({ session, onSignOut }) {
 
     // Ask once for browser notifications. The user can deny this and HEXA
     // will continue using the in-app notification center normally.
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission().catch(() => {});
-    }
-
     const channel = supabase
       .channel(`hexa-notifications-${profile.id}`)
       .on(
@@ -8047,6 +8359,18 @@ function WorkspacePlaceholder({ title, description, icon, children }) { return <
     max-width: 88% !important;
   }
 }
+
+.voice-recording-bar { display:flex; align-items:center; gap:10px; padding:10px 14px; border-top:1px solid var(--hexa-border); background:var(--hexa-panel-2); }
+.voice-recording-bar.preview { padding-top:8px; padding-bottom:8px; }
+.voice-recording-bar audio { flex:1; min-width:140px; max-width:360px; height:34px; }
+.recording-dot { color:#ff4d67; animation:hexaPulse 1s infinite; }
+.voice-wave { flex:1; display:flex; align-items:center; justify-content:center; gap:3px; height:28px; overflow:hidden; }
+.voice-wave i { width:3px; height:8px; border-radius:99px; background:var(--hexa-accent); animation:hexaWave .8s ease-in-out infinite alternate; }
+.voice-wave i:nth-child(2n){height:14px}.voice-wave i:nth-child(3n){height:20px}.voice-wave i:nth-child(4n){height:11px}
+.recording-active { color:#ff5570 !important; background:rgba(255,77,103,.09) !important; }
+.send-voice-button { background:var(--hexa-accent) !important; color:#fff !important; border-radius:10px !important; padding:8px 12px !important; }
+@keyframes hexaPulse { 50% { opacity:.35; } }
+@keyframes hexaWave { from { transform:scaleY(.65); opacity:.55; } to { transform:scaleY(1.15); opacity:1; } }
 
 /* ============================================================
    HEXA LIVE COMMUNICATION MODES
