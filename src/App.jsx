@@ -76,7 +76,7 @@ const HEXA_CONFIG_ERROR =
   !HEXA_RUNTIME_CONFIG.supabaseUrl || !HEXA_RUNTIME_CONFIG.supabaseKey
     ? "HEXA is missing its Supabase environment variables. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your deployment settings."
     : "";
-const HEXA_CALL_RATE_KOBO_PER_SECOND = 30;
+const HEXA_CALL_RATE_KOBO_PER_SECOND = 50;
 
 
 /* ============================================================
@@ -419,7 +419,6 @@ const NAV_ITEMS = [
   { id: "wallet", label: "Wallet", icon: "₦" },
   { id: "projects", label: "Projects", icon: "◆" },
   { id: "kora", label: "Kora", icon: "✦" },
-  { id: "developer", label: "Developer Hub", icon: "</>" },
   { id: "settings", label: "Settings", icon: "⚙" },
 ];
 
@@ -572,43 +571,6 @@ function readJsonStorage(key, fallback) {
 }
 function writeJsonStorage(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
-}
-
-/* ============================================================
-   SYSTEM / DESKTOP NOTIFICATIONS
-   ============================================================ */
-
-async function registerHexaServiceWorker() {
-  if (typeof window === "undefined" || !("serviceWorker" in navigator)) return null;
-  try { return await navigator.serviceWorker.register("/hexa-sw.js", { scope: "/" }); }
-  catch (error) { console.warn("HEXA service worker registration:", error); return null; }
-}
-
-async function requestHexaSystemNotifications() {
-  if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
-  if (Notification.permission === "default") {
-    try { return await Notification.requestPermission(); } catch { return "denied"; }
-  }
-  return Notification.permission;
-}
-
-async function showHexaSystemNotification(title, body, data = {}) {
-  if (typeof window === "undefined" || !("Notification" in window)) return;
-  if (Notification.permission !== "granted") return;
-  const options = {
-    body: String(body || "You have a new HEXA notification."),
-    icon: "/favicon.ico", badge: "/favicon.ico",
-    tag: data.tag || "hexa-notification", renotify: true,
-    data: { url: data.url || `${window.location.origin}/`, ...data },
-  };
-  try {
-    const registration = await registerHexaServiceWorker();
-    if (registration?.showNotification) { await registration.showNotification(title, options); return; }
-  } catch (error) { console.warn("HEXA service-worker notification:", error); }
-  try {
-    const notification = new Notification(title, options);
-    notification.onclick = () => { try { window.focus(); } catch {} notification.close(); };
-  } catch (error) { console.warn("HEXA browser notification:", error); }
 }
 
 function readLocalQueue() {
@@ -1342,9 +1304,9 @@ function Sidebar({
                 @{profile?.username || "hexauser"}
               </span>
             </div>
-const savedPassword = profile?.id
-  ? localStorage.getItem(`hexa-password-${profile.id}`)
-  : null;
+const savedPassword = localStorage.getItem(
+  `hexa-password-${user.id}`
+);
 
 if (!savedPassword) 
   setShowHexaPasswordSetup(true);
@@ -1623,7 +1585,6 @@ function ChatPage({
 
   const [contactOpen, setContactOpen] = useState(false);
   const [locationOpen, setLocationOpen] = useState(false);
-  const [voiceChatOpen, setVoiceChatOpen] = useState(false);
 
   const [recording, setRecording] = useState(false);
   const [attachment, setAttachment] = useState(null);
@@ -3496,14 +3457,6 @@ function ChatPage({
                   >
                     ▣
                   </button>
-
-                  <button
-                    type="button"
-                    title="Start live voice chat"
-                    onClick={() => setVoiceChatOpen(true)}
-                  >
-                    🎙️
-                  </button>
                 </>
               )}
 
@@ -4640,376 +4593,9 @@ function ChatPage({
         </div>
       )}
 
-          {voiceChatOpen && !isSystem && !isSelf && selected?.id && (
-        <VoiceChatRoom
-          profile={profile}
-          roomId={selected.id}
-          roomName={selected.name || "HEXA Voice Chat"}
-          onClose={() => setVoiceChatOpen(false)}
-        />
-      )}
-
     </section>
   );
 }
-
-function VoiceChatRoom({ profile, roomId, roomName, onClose }) {
-  const [joined, setJoined] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [participants, setParticipants] = useState([]);
-  const [error, setError] = useState("");
-
-  const channelRef = useRef(null);
-  const streamRef = useRef(null);
-  const peersRef = useRef(new Map());
-  const audioNodesRef = useRef(new Map());
-  const participantStateRef = useRef({});
-
-  const rtcConfig = useMemo(() => ({
-    iceServers: [
-      { urls: "stun:stun.l.google.com:19302" },
-      ...(import.meta.env.VITE_TURN_URL
-        ? [{
-            urls: import.meta.env.VITE_TURN_URL,
-            username: import.meta.env.VITE_TURN_USERNAME,
-            credential: import.meta.env.VITE_TURN_CREDENTIAL,
-          }]
-        : []),
-    ],
-  }), []);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function start() {
-      if (!profile?.id || !roomId) return;
-
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setError("Your browser does not support microphone access.");
-        return;
-      }
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-          video: false,
-        });
-
-        if (!mounted) {
-          stream.getTracks().forEach(track => track.stop());
-          return;
-        }
-
-        streamRef.current = stream;
-
-        const channel = supabase
-          .channel(`hexa-voice-chat-${roomId}`, {
-            config: {
-              presence: {
-                key: String(profile.id),
-              },
-            },
-          })
-          .on("presence", { event: "sync" }, () => {
-            const state = channel.presenceState();
-            const next = Object.values(state).flat().map(item => ({
-              id: String(item.id),
-              username: item.username,
-              full_name: item.full_name,
-              avatar_url: item.avatar_url,
-              muted: Boolean(item.muted),
-            }));
-            participantStateRef.current = Object.fromEntries(
-              next.map(item => [item.id, item])
-            );
-            setParticipants(next);
-          })
-          .on("presence", { event: "join" }, ({ key, newPresences }) => {
-            if (String(key) !== String(profile.id)) {
-              const presence = newPresences?.[0];
-              createPeer(String(key), true, presence);
-            }
-          })
-          .on("presence", { event: "leave" }, ({ key }) => {
-            closePeer(String(key));
-          })
-          .on("broadcast", { event: "signal" }, ({ payload }) => {
-            if (!payload || String(payload.to) !== String(profile.id)) return;
-            handleSignal(payload).catch(signalError => {
-              console.warn("HEXA voice chat signal:", signalError);
-            });
-          })
-          .subscribe(async status => {
-            if (status === "SUBSCRIBED") {
-              await channel.track({
-                id: String(profile.id),
-                username: profile.username,
-                full_name: profile.full_name,
-                avatar_url: profile.avatar_url,
-                muted: false,
-              });
-              if (mounted) setJoined(true);
-            } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-              if (mounted) {
-                setError("Voice Chat could not connect. Check your connection and try again.");
-              }
-            }
-          });
-
-        channelRef.current = channel;
-      } catch (mediaError) {
-        console.error("HEXA Voice Chat microphone:", mediaError);
-        if (mounted) {
-          setError(
-            mediaError?.name === "NotAllowedError"
-              ? "Microphone access was blocked. Allow microphone access and try again."
-              : "HEXA could not access your microphone."
-          );
-        }
-      }
-    }
-
-    start();
-
-    return () => {
-      mounted = false;
-      try { channelRef.current?.untrack?.(); } catch (_) {}
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-      for (const [id] of peersRef.current) closePeer(id);
-      for (const node of audioNodesRef.current.values()) {
-        try { node.pause(); } catch (_) {}
-        node.srcObject = null;
-        node.remove();
-      }
-      audioNodesRef.current.clear();
-      streamRef.current?.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    };
-  }, [profile?.id, roomId]);
-
-  async function sendSignal(payload) {
-    if (!channelRef.current) return;
-    await channelRef.current.send({
-      type: "broadcast",
-      event: "signal",
-      payload,
-    });
-  }
-
-  function closePeer(peerId) {
-    const peer = peersRef.current.get(String(peerId));
-    if (peer) {
-      try { peer.close(); } catch (_) {}
-      peersRef.current.delete(String(peerId));
-    }
-    const audio = audioNodesRef.current.get(String(peerId));
-    if (audio) {
-      try { audio.pause(); } catch (_) {}
-      audio.srcObject = null;
-      audio.remove();
-      audioNodesRef.current.delete(String(peerId));
-    }
-  }
-
-  function createPeer(peerId, initiator = false, presence = null) {
-    peerId = String(peerId);
-    if (!streamRef.current || peerId === String(profile.id)) return null;
-
-    const existing = peersRef.current.get(peerId);
-    if (existing) return existing;
-
-    const pc = new RTCPeerConnection(rtcConfig);
-    peersRef.current.set(peerId, pc);
-
-    streamRef.current.getTracks().forEach(track => {
-      pc.addTrack(track, streamRef.current);
-    });
-
-    pc.onicecandidate = event => {
-      if (event.candidate) {
-        sendSignal({
-          type: "ice",
-          to: peerId,
-          from: String(profile.id),
-          candidate: event.candidate,
-        }).catch(() => {});
-      }
-    };
-
-    pc.ontrack = event => {
-      const remoteStream = event.streams?.[0];
-      if (!remoteStream) return;
-
-      let audio = audioNodesRef.current.get(peerId);
-      if (!audio) {
-        audio = document.createElement("audio");
-        audio.autoplay = true;
-        audio.playsInline = true;
-        audio.setAttribute("aria-hidden", "true");
-        audio.style.position = "fixed";
-        audio.style.width = "1px";
-        audio.style.height = "1px";
-        audio.style.opacity = "0";
-        audio.style.pointerEvents = "none";
-        document.body.appendChild(audio);
-        audioNodesRef.current.set(peerId, audio);
-      }
-      audio.srcObject = remoteStream;
-      audio.play?.().catch(() => {});
-    };
-
-    pc.onconnectionstatechange = () => {
-      if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
-        closePeer(peerId);
-      }
-    };
-
-    if (initiator) {
-      pc.createOffer({ offerToReceiveAudio: true })
-        .then(offer => pc.setLocalDescription(offer))
-        .then(() => sendSignal({
-          type: "offer",
-          to: peerId,
-          from: String(profile.id),
-          description: pc.localDescription,
-        }))
-        .catch(error => console.warn("HEXA voice offer:", error));
-    }
-
-    return pc;
-  }
-
-  async function handleSignal(payload) {
-    const from = String(payload.from);
-    let pc = peersRef.current.get(from);
-    if (!pc) pc = createPeer(from, false);
-    if (!pc) return;
-
-    if (payload.type === "offer") {
-      await pc.setRemoteDescription(payload.description);
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      await sendSignal({
-        type: "answer",
-        to: from,
-        from: String(profile.id),
-        description: pc.localDescription,
-      });
-    } else if (payload.type === "answer") {
-      await pc.setRemoteDescription(payload.description);
-    } else if (payload.type === "ice" && payload.candidate) {
-      try {
-        await pc.addIceCandidate(payload.candidate);
-      } catch (error) {
-        console.debug("HEXA voice ICE candidate:", error);
-      }
-    }
-  }
-
-  async function toggleMute() {
-    const nextMuted = !muted;
-    streamRef.current?.getAudioTracks().forEach(track => {
-      track.enabled = !nextMuted;
-    });
-    setMuted(nextMuted);
-
-    try {
-      await channelRef.current?.track({
-        id: String(profile.id),
-        username: profile.username,
-        full_name: profile.full_name,
-        avatar_url: profile.avatar_url,
-        muted: nextMuted,
-      });
-    } catch (_) {}
-  }
-
-  function leaveRoom() {
-    onClose?.();
-  }
-
-  return (
-    <div className="hexa-voice-chat-overlay">
-      <div className="hexa-voice-chat-room">
-        <div className="hexa-voice-chat-header">
-          <div>
-            <strong>{roomName || "HEXA Voice Chat"}</strong>
-            <span>
-              {joined
-                ? `${participants.length || 1} participant${(participants.length || 1) === 1 ? "" : "s"}`
-                : "Connecting…"}
-            </span>
-          </div>
-          <button type="button" onClick={leaveRoom} aria-label="Close Voice Chat">×</button>
-        </div>
-
-        {error ? (
-          <div className="hexa-voice-chat-error">
-            <strong>Microphone unavailable</strong>
-            <span>{error}</span>
-          </div>
-        ) : (
-          <>
-            <div className="hexa-voice-participants">
-              {participants.map(person => (
-                <div className="hexa-voice-participant" key={person.id}>
-                  <Avatar
-                    src={person.avatar_url}
-                    name={person.full_name || person.username || "HEXA User"}
-                    size={58}
-                  />
-                  <strong>
-                    {person.id === String(profile.id)
-                      ? "You"
-                      : person.full_name || person.username || "HEXA User"}
-                  </strong>
-                  <span>{person.muted ? "Muted" : "Speaking"}</span>
-                </div>
-              ))}
-
-              {!participants.length && (
-                <div className="hexa-voice-empty">
-                  <div className="hexa-voice-wave">•••</div>
-                  <strong>You're in the Voice Chat</strong>
-                  <span>Invite people from this conversation to join.</span>
-                </div>
-              )}
-            </div>
-
-            <div className="hexa-voice-chat-controls">
-              <button
-                type="button"
-                className={muted ? "active" : ""}
-                onClick={toggleMute}
-                aria-label={muted ? "Unmute microphone" : "Mute microphone"}
-                title={muted ? "Unmute" : "Mute"}
-              >
-                {muted ? "🔇" : "🎙️"}
-              </button>
-              <button
-                type="button"
-                className="leave"
-                onClick={leaveRoom}
-                aria-label="Leave Voice Chat"
-                title="Leave Voice Chat"
-              >
-                📞
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
 async function loadHexaConversations(profile) {
   if (!profile?.id) return [];
 
@@ -5410,7 +4996,7 @@ function CallsPage({ profile }) {
     <section className="workspace-page">
       <div className="page-heading">
         <div className="page-heading-icon">☎</div>
-        <div><h1>Calls</h1><p>Private HEXA-to-HEXA voice and video calls. External calling is billed server-side at ₦0.30/second.</p></div>
+        <div><h1>Calls</h1><p>Private HEXA-to-HEXA voice and video calls. External calling can be billed server-side at ₦0.50/second.</p></div>
       </div>
 
       <div className="settings-card">
@@ -5443,15 +5029,10 @@ function CallsPage({ profile }) {
 function WebRTCCall({ profile, call, type, peer, onEnd }) {
   const localVideo = useRef(null);
   const remoteVideo = useRef(null);
-  const remoteAudio = useRef(null);
   const pcRef = useRef(null);
   const channelRef = useRef(null);
-  const localStreamRef = useRef(null);
-  const pendingIceRef = useRef([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
-  const [muted, setMuted] = useState(false);
-  const [cameraOff, setCameraOff] = useState(false);
   const endedRef = useRef(false);
 
   useEffect(() => {
@@ -5461,39 +5042,31 @@ function WebRTCCall({ profile, call, type, peer, onEnd }) {
 
     const insertSignal = async (signalType, payload) => {
       const { error: signalError } = await supabase.from("call_signals").insert({
-        call_id: call.id, sender_id: profile.id, receiver_id: peer.id, type: signalType, payload,
+        call_id: call.id,
+        sender_id: profile.id,
+        receiver_id: peer.id,
+        type: signalType,
+        payload,
       });
       if (signalError) console.warn("HEXA call signal:", signalError.message);
     };
 
-    const flushPendingIce = async () => {
-      if (!pc?.remoteDescription) return;
-      const pending = pendingIceRef.current.splice(0);
-      for (const candidate of pending) {
-        try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); }
-        catch (iceError) { console.warn("HEXA pending ICE:", iceError); }
-      }
-    };
-
-    const handleSignal = async signal => {
-      if (stopped || !pc || String(signal.receiver_id) !== String(profile.id)) return;
+    const handleSignal = async (signal) => {
+      if (stopped || String(signal.receiver_id) !== String(profile.id)) return;
       try {
-        if (signal.type === "offer" && !pc.currentRemoteDescription) {
-          await pc.setRemoteDescription(new RTCSessionDescription(signal.payload));
-          await flushPendingIce();
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          await insertSignal("answer", answer);
-        } else if (signal.type === "answer" && String(profile.id) === String(call.caller_id) && !pc.currentRemoteDescription) {
-          await pc.setRemoteDescription(new RTCSessionDescription(signal.payload));
-          await flushPendingIce();
-        } else if (signal.type === "ice" && signal.payload) {
-          if (pc.remoteDescription) {
-            try { await pc.addIceCandidate(new RTCIceCandidate(signal.payload)); }
-            catch (iceError) { console.warn("HEXA ICE candidate:", iceError); }
-          } else {
-            pendingIceRef.current.push(signal.payload);
+        if (signal.type === "offer") {
+          if (!pc.currentRemoteDescription) {
+            await pc.setRemoteDescription(new RTCSessionDescription(signal.payload));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            await insertSignal("answer", answer);
           }
+        } else if (signal.type === "answer" && String(profile.id) === String(call.caller_id)) {
+          if (!pc.currentRemoteDescription) {
+            await pc.setRemoteDescription(new RTCSessionDescription(signal.payload));
+          }
+        } else if (signal.type === "ice" && signal.payload) {
+          try { await pc.addIceCandidate(new RTCIceCandidate(signal.payload)); } catch {}
         }
       } catch (e) {
         console.error("HEXA WebRTC signal:", e);
@@ -5503,43 +5076,48 @@ function WebRTCCall({ profile, call, type, peer, onEnd }) {
 
     const start = async () => {
       try {
-        if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera and microphone access is not available in this browser.");
-        const iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera/microphone access is not available in this browser.");
+        const cfg = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
         if (import.meta.env.VITE_TURN_URL && import.meta.env.VITE_TURN_USERNAME && import.meta.env.VITE_TURN_CREDENTIAL) {
-          iceServers.push({ urls: import.meta.env.VITE_TURN_URL, username: import.meta.env.VITE_TURN_USERNAME, credential: import.meta.env.VITE_TURN_CREDENTIAL });
+          cfg.iceServers.push({ urls: import.meta.env.VITE_TURN_URL, username: import.meta.env.VITE_TURN_USERNAME, credential: import.meta.env.VITE_TURN_CREDENTIAL });
         }
-        pc = new RTCPeerConnection({ iceServers });
+
+        pc = new RTCPeerConnection(cfg);
         pcRef.current = pc;
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === "video" });
-        localStreamRef.current = stream;
-        stream.getAudioTracks().forEach(track => { track.enabled = !muted; });
-        stream.getVideoTracks().forEach(track => { track.enabled = !cameraOff; });
-        if (localVideo.current && type === "video") localVideo.current.srcObject = stream;
-        stream.getTracks().forEach(track => pc.addTrack(track, stream));
-        pc.ontrack = event => {
-          const remoteStream = event.streams?.[0];
-          if (!remoteStream) return;
-          if (type === "video" && remoteVideo.current) remoteVideo.current.srcObject = remoteStream;
-          if (remoteAudio.current) { remoteAudio.current.srcObject = remoteStream; remoteAudio.current.play().catch(() => {}); }
+        if (localVideo.current) localVideo.current.srcObject = stream;
+        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+        pc.ontrack = (event) => {
+          if (remoteVideo.current && event.streams[0]) remoteVideo.current.srcObject = event.streams[0];
         };
-        pc.onicecandidate = event => { if (event.candidate) insertSignal("ice", event.candidate.toJSON()); };
+        pc.onicecandidate = (event) => {
+          if (event.candidate) insertSignal("ice", event.candidate.toJSON());
+        };
         pc.onconnectionstatechange = () => {
-          setConnected(pc.connectionState === "connected");
-          if (["failed", "closed"].includes(pc.connectionState) && !stopped) setError("Call connection lost. Check your internet connection or TURN server.");
+          const state = pc.connectionState;
+          setConnected(state === "connected");
+          if (["failed", "closed"].includes(state) && !stopped) setError("Call connection lost.");
         };
+
         const channel = supabase.channel(`call-${call.id}-${profile.id}`)
-          .on("postgres_changes", { event: "INSERT", schema: "public", table: "call_signals", filter: `call_id=eq.${call.id}` }, payload => handleSignal(payload.new))
-          .on("postgres_changes", { event: "UPDATE", schema: "public", table: "calls", filter: `id=eq.${call.id}` }, payload => {
-            if (["ended", "declined", "rejected", "missed"].includes(payload.new?.status) && !endedRef.current) { endedRef.current = true; onEnd?.(); }
+          .on("postgres_changes", { event: "INSERT", schema: "public", table: "call_signals", filter: `call_id=eq.${call.id}` }, (payload) => handleSignal(payload.new))
+          .on("postgres_changes", { event: "UPDATE", schema: "public", table: "calls", filter: `id=eq.${call.id}` }, (payload) => {
+            const status = payload.new?.status;
+            if (["ended", "declined", "rejected", "missed"].includes(status) && !endedRef.current) {
+              endedRef.current = true;
+              onEnd?.();
+            }
           });
         channelRef.current = channel;
-        await channel.subscribe((status, err) => { if (["CHANNEL_ERROR", "TIMED_OUT"].includes(status)) console.warn("HEXA call channel:", status, err); });
+        await channel.subscribe();
+
         const { data: existingSignals } = await supabase.from("call_signals").select("*").eq("call_id", call.id).order("created_at", { ascending: true });
         for (const signal of existingSignals || []) await handleSignal(signal);
+
         if (String(profile.id) === String(call.caller_id)) {
-          const hasOffer = (existingSignals || []).some(signal => signal.type === "offer" && String(signal.sender_id) === String(profile.id));
+          const hasOffer = (existingSignals || []).some((s) => s.type === "offer" && String(s.sender_id) === String(profile.id));
           if (!hasOffer && !stopped) {
-            const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: type === "video" });
+            const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             await insertSignal("offer", offer);
           }
@@ -5551,39 +5129,56 @@ function WebRTCCall({ profile, call, type, peer, onEnd }) {
     };
 
     start();
+
     return () => {
       stopped = true;
-      localStreamRef.current?.getTracks().forEach(track => track.stop());
-      localStreamRef.current = null;
+      pc?.getSenders().forEach((sender) => sender.track?.stop());
       pc?.close();
-      pcRef.current = null;
-      pendingIceRef.current = [];
       if (channelRef.current) supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
     };
   }, [call?.id, call?.caller_id, peer?.id, profile?.id, type]);
-
-  useEffect(() => { localStreamRef.current?.getAudioTracks().forEach(track => { track.enabled = !muted; }); }, [muted]);
-  useEffect(() => { localStreamRef.current?.getVideoTracks().forEach(track => { track.enabled = type === "video" && !cameraOff; }); }, [cameraOff, type]);
 
   async function end() {
     if (endedRef.current) return;
     endedRef.current = true;
-    const { error: billingError } = await supabase.rpc("finalize_hexa_call", { p_call_id: call.id, p_ended_reason: "user" });
-    if (billingError) { setError(billingError.message || "Unable to finalize the call."); endedRef.current = false; return; }
-    localStreamRef.current?.getTracks().forEach(track => track.stop());
+    const { error: billingError } = await supabase.rpc("finalize_hexa_call", {
+      p_call_id: call.id,
+      p_ended_reason: "user",
+    });
+    if (billingError) {
+      setError(billingError.message || "Unable to finalize the call.");
+      endedRef.current = false;
+      return;
+    }
+    pcRef.current?.getSenders().forEach((sender) => sender.track?.stop());
     pcRef.current?.close();
     onEnd?.();
   }
 
   const displayName = peer?.name || peer?.full_name || peer?.username || "HEXA User";
-  return <div className="story-viewer" style={{ zIndex: 800 }}><div className="call-shell hexa-call-shell">
-    <div className="call-header"><div><strong>{type === "video" ? "HEXA Video Call" : "HEXA Voice Call"}</strong><span>{connected ? "Connected" : call?.status === "ringing" ? "Ringing…" : "Connecting…"}</span></div><div className="call-header-peer"><Avatar src={peer?.avatar_url} name={displayName} size={36}/><span>{displayName}</span></div></div>
-    <audio ref={remoteAudio} autoPlay playsInline />
-    {type === "video" ? <div className="call-video-grid"><video ref={remoteVideo} autoPlay playsInline className="call-remote-video"/><video ref={localVideo} autoPlay muted playsInline className="call-local-video"/></div> : <div className="call-audio-stage"><div className="call-avatar"><Avatar src={peer?.avatar_url} name={displayName} size={96}/></div><h2>{displayName}</h2><p>{error || (connected ? "Connected. Speak normally." : "Calling…")}</p><div className={connected ? "call-live-indicator" : "call-connecting-indicator"}><span/> {connected ? "Live audio" : "Connecting audio"}</div></div>}
-    {error && <p className="call-error">{error}</p>}
-    <div className="call-controls hexa-call-controls"><button className={muted ? "call-control-button active" : "call-control-button"} onClick={() => setMuted(v => !v)} title={muted ? "Unmute microphone" : "Mute microphone"}>{muted ? "🔇" : "🎙️"}</button>{type === "video" && <button className={cameraOff ? "call-control-button active" : "call-control-button"} onClick={() => setCameraOff(v => !v)}>{cameraOff ? "🚫" : "📹"}</button>}<button className="danger-button call-end-button" onClick={end}>End call</button></div>
-  </div></div>;
+  return (
+    <div className="story-viewer" style={{ zIndex: 800 }}>
+      <div className="call-shell">
+        <div className="call-header">
+          <strong>{type === "video" ? "HEXA Video Call" : "HEXA Voice Call"}</strong>
+          <span>{connected ? "Connected" : call?.status === "ringing" ? "Ringing…" : "Connecting…"}</span>
+        </div>
+        {type === "video" ? (
+          <div className="call-video-grid">
+            <video ref={remoteVideo} autoPlay playsInline className="call-remote-video" />
+            <video ref={localVideo} autoPlay muted playsInline className="call-local-video" />
+          </div>
+        ) : (
+          <div className="call-audio-stage">
+            <div className="call-avatar"><Avatar src={peer?.avatar_url} name={displayName} size={82} /></div>
+            <p>{error || (connected ? "Connected" : "Calling…")}</p>
+          </div>
+        )}
+        {error && <p className="call-error">{error}</p>}
+        <div className="call-controls"><button className="danger-button" onClick={end}>End call</button></div>
+      </div>
+    </div>
+  );
 }
 
 function WebRTCCallLauncher({ profile, target, onClose }) {
@@ -5653,11 +5248,7 @@ function IncomingCallWatcher({ profile }) {
           .select("id,username,full_name,avatar_url")
           .eq("id", call.caller_id)
           .maybeSingle();
-        if (active) {
-          const resolvedPeer = peer || { id: call.caller_id, full_name: "HEXA User" };
-          setIncoming({ call, peer: resolvedPeer });
-          showHexaSystemNotification(call.type === "video" ? "Incoming HEXA video call" : "Incoming HEXA voice call", `${resolvedPeer.full_name || resolvedPeer.username || "A HEXA user"} is calling you.`, { tag: `hexa-call-${call.id}` });
-        }
+        if (active) setIncoming({ call, peer: peer || { id: call.caller_id, full_name: "HEXA User" } });
       }
     })();
 
@@ -5666,11 +5257,7 @@ function IncomingCallWatcher({ profile }) {
         const call = payload.new;
         if (!active || call.status !== "ringing") return;
         const { data: peer } = await supabase.from("profiles").select("id,username,full_name,avatar_url").eq("id", call.caller_id).maybeSingle();
-        if (active) {
-          const resolvedPeer = peer || { id: call.caller_id, full_name: "HEXA User" };
-          setIncoming({ call, peer: resolvedPeer });
-          showHexaSystemNotification(call.type === "video" ? "Incoming HEXA video call" : "Incoming HEXA voice call", `${resolvedPeer.full_name || resolvedPeer.username || "A HEXA user"} is calling you.`, { tag: `hexa-call-${call.id}` });
-        }
+        if (active) setIncoming({ call, peer: peer || { id: call.caller_id, full_name: "HEXA User" } });
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "calls", filter: `callee_id=eq.${profile.id}` }, (payload) => {
         if (["ended", "declined", "rejected", "missed"].includes(payload.new?.status)) {
@@ -5863,7 +5450,7 @@ function WalletPage({ profile }) {
       <div className="wallet-balance-card">
         <span>Available HEXA Credits</span>
         <strong>{loading ? "Loading…" : displayCredits}</strong>
-        <small>1 HEXA Credit = ₦1.00 · External call rate: 30 kobo/second</small>
+        <small>1 HEXA Credit = ₦1.00 · External call rate: 50 kobo/second</small>
       </div>
       <div className="settings-card wallet-fund-card">
         <div><strong>Buy HEXA Credits</strong><p>Secure account verification + server-side payment verification.</p></div>
@@ -5920,7 +5507,7 @@ function UniversalSearch({ search, profile, onMessage }) {
    HEXA SETTINGS
    ============================================================ */
 
-function SettingsPage({ profile, onSignOut, onProfileSaved }) {
+function SettingsPage({ profile, onSignOut }) {
   const [theme, setTheme] = useState(getSavedHexaTheme());
   const [showThemes, setShowThemes] = useState(true);
 
@@ -6184,85 +5771,88 @@ class HexaErrorBoundary extends React.Component {
 }
 
 function AuthenticatedHEXA({ session, onSignOut }) {
-  const [profile, setProfile] = useState(null);
-  const [profileLoading, setProfileLoading] = useState(true);
-  const [activePage, setActivePage] = useState("nexus");
-  const [search, setSearch] = useState("");
-  const [notifications, setNotifications] = useState([]);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [chatTarget, setChatTarget] = useState(null);
-  const [callTarget, setCallTarget] = useState(null);
-  const [notificationPermission, setNotificationPermission] = useState(typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported");
 
+  const [profile,setProfile]=useState(null),[profileLoading,setProfileLoading]=useState(true),[activePage,setActivePage]=useState("nexus"),[search,setSearch]=useState(""),[notifications,setNotifications]=useState([]),[showNotifications,setShowNotifications]=useState(false),[chatTarget,setChatTarget]=useState(null),[callTarget,setCallTarget]=useState(null);
+  useEffect(()=>{let cancelled=false;(async()=>{const result=await ensureHexaProfile(session?.user);if(!cancelled){setProfile(result);setProfileLoading(false)}})();return()=>{cancelled=true}},[session?.user?.id]);
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const result = await ensureHexaProfile(session?.user);
-        if (!cancelled) { setProfile(result); setProfileLoading(false); }
-      } catch (error) {
-        console.error("HEXA profile load:", error);
-        if (!cancelled) setProfileLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [session?.user?.id]);
+    if (!profile?.id || typeof window === "undefined") return;
 
-  useEffect(() => { registerHexaServiceWorker(); }, []);
+    // Ask once for browser notifications. The user can deny this and HEXA
+    // will continue using the in-app notification center normally.
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
 
-  async function enableSystemNotifications() {
-    const permission = await requestHexaSystemNotifications();
-    setNotificationPermission(permission);
-    if (permission === "granted") await showHexaSystemNotification("HEXA notifications enabled", "New messages and incoming calls can now appear outside the HEXA window.", { tag: "hexa-enabled" });
-  }
+    const channel = supabase
+      .channel(`hexa-notifications-${profile.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+        },
+        async (payload) => {
+          const message = payload.new;
+          if (!message || message.sender_id === profile.id) return;
 
-  useEffect(() => {
-    if (!profile?.id) return undefined;
-    const channel = supabase.channel(`hexa-notifications-${profile.id}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async payload => {
-        const message = payload.new || {};
-        if (!message.sender_id || String(message.sender_id) === String(profile.id)) return;
-        const body = String(message.content || "New message").trim() || "New message";
-        const notification = { id: `${message.id || Date.now()}-${Date.now()}`, title: "New HEXA message", body, created_at: new Date().toISOString() };
-        setNotifications(current => [notification, ...current].slice(0, 50));
-        if (document.visibilityState !== "visible") await showHexaSystemNotification(notification.title, notification.body, { tag: `hexa-message-${message.id || Date.now()}` });
-      })
-      .subscribe((status, error) => { if (["CHANNEL_ERROR", "TIMED_OUT"].includes(status)) console.warn("HEXA notification channel:", status, error); });
-    return () => supabase.removeChannel(channel);
+          const body = message.content ||
+            (message.message_type === "voice" ? "🎙 Voice message" : "New HEXA message");
+          const notification = {
+            id: `${message.id || Date.now()}-${Date.now()}`,
+            title: "New HEXA message",
+            body,
+            created_at: new Date().toISOString(),
+          };
+
+          setNotifications((items) => [notification, ...items].slice(0, 50));
+
+          // System-level notification when HEXA is not the foreground page.
+          if (
+            "Notification" in window &&
+            Notification.permission === "granted" &&
+            document.visibilityState !== "visible"
+          ) {
+            try {
+              const n = new Notification(notification.title, {
+                body: notification.body,
+                icon: "/favicon.ico",
+                tag: `hexa-message-${message.conversation_id || message.id}`,
+              });
+              n.onclick = () => {
+                window.focus();
+                n.close();
+              };
+            } catch (error) {
+              console.warn("HEXA system notification:", error);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [profile?.id]);
-
-  if (profileLoading) return <div className="hexa-loading-screen"><div className="loading-logo">H</div><div className="loading-spinner"/><strong>Opening HEXA…</strong><span>Preparing your workspace</span></div>;
-
-  let page;
-  switch (activePage) {
-    case "nexus": page = <NexusHome profile={profile} setActivePage={setActivePage}/>; break;
-    case "chat": page = <ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(conversation,type) => setCallTarget({conversation,type})} onOpenChatWithUser={() => setSearch("")}/>; break;
-    case "groups": page = <GroupsPage profile={profile} onOpenChat={conversation => { setChatTarget(conversation); setActivePage("chat"); }}/>; break;
-    case "communities": page = <CommunitiesPage profile={profile}/>; break;
-    case "channels": page = <ChannelsPage profile={profile}/>; break;
-    case "status": page = <StatusPage profile={profile}/>; break;
-    case "calls": page = <CallsPage profile={profile}/>; break;
-    case "wallet": page = <WalletPage profile={profile}/>; break;
-    case "kora": page = <KoraPage profile={profile}/>; break;
-    case "settings": page = <SettingsPage profile={profile} onSignOut={onSignOut}/>; break;
-    case "projects": page = <WorkspacePlaceholder title="Projects" description="Organize collaborative work." icon="◆"/>; break;
-    case "developer": page = <WorkspacePlaceholder title="Developer Hub" description="Build and connect with HEXA." icon="</>"/>; break;
-    default: page = <NexusHome profile={profile} setActivePage={setActivePage}/>;
+  if(profileLoading)return <div className="hexa-loading-screen"><div className="loading-logo">H</div><div className="loading-spinner"/><strong>Opening HEXA…</strong><span>Preparing your workspace</span></div>;
+  let page; switch(activePage){
+    case "nexus":page=<NexusHome profile={profile} setActivePage={setActivePage}/>;break;
+    case "chat":page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type)=>setCallTarget({conversation:c,type})} onOpenChatWithUser={()=>setSearch("")}/>;break;
+    case "groups":page=<GroupsPage profile={profile} onOpenChat={c=>{setChatTarget(c);setActivePage("chat")}}/>;break;
+    case "communities":page=<CommunitiesPage profile={profile}/>;break;
+    case "channels":page=<ChannelsPage profile={profile}/>;break;
+    case "status":page=<StatusPage profile={profile}/>;break;
+    case "calls":page=<CallsPage profile={profile}/>;break;
+    case "wallet":page=<WalletPage profile={profile}/>;break;
+    case "kora":page=<KoraPage profile={profile}/>;break;
+    case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut}/>;break;
+    case "projects":page=<WorkspacePlaceholder title="Projects" description="Organize collaborative work." icon="◆"/>;break;
+    default:page=<NexusHome profile={profile} setActivePage={setActivePage}/>;
   }
-
-  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main">
-    <Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={() => setShowNotifications(v => !v)} notificationCount={notifications.length} onSettings={() => setActivePage("settings")}/>
-    <main className={`hexa-content ${activePage === "chat" ? "hexa-chat-content" : ""}`}>
-      <UniversalSearch search={search} profile={profile} onMessage={async person => { setSearch(""); try { const chat = await hexaGetOrCreateDirectConversation(person.id); setChatTarget({ ...chat, name: person.full_name || person.username || "HEXA User", kind: "direct", type: "direct", realConversationId: chat.id, otherUserId: person.id, avatar_url: person.avatar_url || null }); setActivePage("chat"); } catch (error) { safeAlert(error?.message || "Unable to open chat."); } }}/>
-      {showNotifications && <div className="notifications-panel" role="dialog" aria-label="HEXA notifications">
-        <div className="notifications-header"><div><strong>Notifications</strong><span>Messages and calls from HEXA</span></div><div className="notifications-header-actions">{notificationPermission !== "granted" && notificationPermission !== "unsupported" && <button type="button" onClick={enableSystemNotifications}>Enable desktop alerts</button>}<button type="button" onClick={() => setNotifications([])}>Clear</button></div></div>
-        {notifications.length ? notifications.map(notification => <button type="button" className="notification-item hexa-notification-button" key={notification.id} onClick={() => { setShowNotifications(false); setActivePage("chat"); }}><span className="hexa-notification-dot">●</span><div><strong>{notification.title}</strong><p>{notification.body}</p><small>{new Date(notification.created_at).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})}</small></div></button>) : <div className="notification-empty"><strong>You&apos;re all caught up.</strong><span>{notificationPermission === "granted" ? "Desktop alerts are enabled." : "Enable desktop alerts to receive important HEXA updates outside the app."}</span></div>}
-      </div>}
-      {page}
-      {callTarget && <WebRTCCallLauncher profile={profile} target={callTarget} onClose={() => setCallTarget(null)}/>}      
-    </main>
-  </div></div>;
+  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div></div>;
 }
+
 
 /* ============================================================
    AUTH BOOTSTRAP
@@ -6278,7 +5868,6 @@ export default function App() {
 
   useEffect(() => {
     mountedRef.current = true;
-    registerHexaServiceWorker();
 
     let subscription;
 
@@ -8163,58 +7752,208 @@ function WorkspacePlaceholder({ title, description, icon, children }) { return <
 
 
 /* ============================================================
-   SYSTEM NOTIFICATIONS
+   HEXA — FRIENDLY DESKTOP / TABLET SCALING
    ============================================================ */
-.notifications-panel { max-height: min(560px, calc(100dvh - 100px)); overflow-y: auto; }
-.notifications-header-actions { display:flex; align-items:center; gap:6px; }
-.notifications-header-actions button { border:1px solid var(--hexa-border); border-radius:8px; padding:6px 8px; background:var(--hexa-panel-2); color:var(--hexa-text); font-size:10px; }
-.hexa-notification-button { width:100%; margin:0; text-align:left; cursor:pointer; }
-.notification-empty { display:grid; gap:5px; padding:24px 12px; color:var(--hexa-muted); text-align:center; font-size:11px; }
-.notification-empty strong { color:var(--hexa-text); }
+
+.hexa-sidebar {
+  width: 240px !important;
+  min-width: 240px !important;
+  max-width: 240px !important;
+  padding: 8px !important;
+}
+
+.hexa-sidebar .sidebar-section-label,
+.hexa-sidebar .sidebar-item > span:not(.sidebar-icon),
+.hexa-sidebar .sidebar-user-info,
+.hexa-sidebar .sidebar-brand > div:last-of-type {
+  display: block !important;
+}
+
+.hexa-sidebar .sidebar-brand {
+  justify-content: flex-start !important;
+  padding: 0 12px !important;
+}
+
+.hexa-sidebar .sidebar-item {
+  width: 100% !important;
+  height: 44px !important;
+  min-height: 44px !important;
+  margin: 2px 0 !important;
+  padding: 0 11px !important;
+  display: flex !important;
+  place-items: initial !important;
+  border-radius: 10px !important;
+}
+
+.hexa-sidebar .sidebar-icon {
+  width: 24px !important;
+  min-width: 24px !important;
+  font-size: 17px !important;
+}
+
+.hexa-main {
+  min-width: 0 !important;
+}
+
+.hexa-topbar {
+  height: 64px !important;
+  min-height: 64px !important;
+  padding: 0 18px !important;
+}
+
+.hexa-content:not(.hexa-chat-content) {
+  overflow-y: auto !important;
+}
+
+.workspace-page {
+  width: min(1180px, calc(100% - 36px)) !important;
+  max-width: 1180px !important;
+  padding: 28px 0 40px !important;
+}
+
+.page-heading h1 {
+  font-size: 25px !important;
+}
+
+.page-heading p {
+  font-size: 12px !important;
+}
+
+.chat-layout {
+  grid-template-columns: 360px minmax(0, 1fr) !important;
+}
+
+.chat-list-panel {
+  width: 360px !important;
+  min-width: 360px !important;
+  max-width: 360px !important;
+}
+
+.messages-area {
+  padding-left: clamp(22px, 6vw, 96px) !important;
+  padding-right: clamp(22px, 6vw, 96px) !important;
+}
+
+.message-stack {
+  max-width: min(680px, 78%) !important;
+}
+
+.message-bubble {
+  max-width: 100% !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+}
+
+.chat-composer {
+  min-height: 68px !important;
+  height: 68px !important;
+  padding: 10px 14px !important;
+}
+
+.chat-composer > input {
+  height: 44px !important;
+  min-height: 44px !important;
+  font-size: 13px !important;
+}
+
+.notifications-panel {
+  top: 72px !important;
+  right: 18px !important;
+  width: min(390px, calc(100vw - 36px)) !important;
+}
 
 /* ============================================================
-   CALL CONTROLS
+   TABLET
    ============================================================ */
-.hexa-call-shell { position:relative; }
-.call-header-peer { display:flex; align-items:center; gap:8px; color:var(--hexa-text); font-size:11px; }
-.call-audio-stage { flex:1; min-height:0; display:grid; place-content:center; justify-items:center; gap:9px; padding:30px; text-align:center; background:radial-gradient(circle at center, rgba(124,92,255,.17), transparent 55%); }
-.call-audio-stage h2 { margin:0; font-size:20px; }
-.call-audio-stage p { margin:0; max-width:360px; color:var(--hexa-muted); font-size:11px; }
-.call-live-indicator, .call-connecting-indicator { display:flex; align-items:center; gap:7px; color:var(--hexa-muted); font-size:10px; }
-.call-live-indicator span, .call-connecting-indicator span { width:8px; height:8px; border-radius:50%; background:var(--hexa-success); }
-.call-connecting-indicator span { background:var(--hexa-accent); animation:hexa-pulse 1.2s ease-in-out infinite; }
-@keyframes hexa-pulse { 50% { opacity:.35; transform:scale(.7); } }
-.hexa-call-controls { gap:10px; padding:12px 16px; }
-.call-control-button { min-width:44px; height:44px; padding:0 12px; border:1px solid var(--hexa-border); border-radius:22px; background:var(--hexa-panel-2); color:var(--hexa-text); }
-.call-control-button.active { background:rgba(255,77,103,.13); color:#ff7185; }
-.call-end-button { min-width:110px; }
+
+@media (max-width: 1000px) {
+  .hexa-sidebar {
+    width: 210px !important;
+    min-width: 210px !important;
+    max-width: 210px !important;
+  }
+
+  .chat-layout {
+    grid-template-columns: 320px minmax(0, 1fr) !important;
+  }
+
+  .chat-list-panel {
+    width: 320px !important;
+    min-width: 320px !important;
+    max-width: 320px !important;
+  }
+
+  .workspace-page {
+    width: min(100% - 28px, 1000px) !important;
+  }
+}
 
 /* ============================================================
-   LIVE VOICE CHAT
+   PHONE
    ============================================================ */
-.hexa-voice-chat-overlay { position:fixed; inset:0; z-index:820; display:grid; place-items:center; padding:14px; background:rgba(0,0,0,.72); backdrop-filter:blur(8px); }
-.hexa-voice-chat-shell { width:min(760px,96vw); height:min(680px,92dvh); display:flex; flex-direction:column; overflow:hidden; border:1px solid var(--hexa-border-strong); border-radius:20px; background:var(--hexa-panel); box-shadow:var(--hexa-shadow); }
-.hexa-voice-chat-header { min-height:68px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:0 16px; border-bottom:1px solid var(--hexa-border); }
-.hexa-voice-chat-header strong, .hexa-voice-chat-header span { display:block; }
-.hexa-voice-chat-header strong { font-size:15px; }
-.hexa-voice-chat-header span { margin-top:3px; color:var(--hexa-muted); font-size:10px; }
-.hexa-voice-chat-header > button { width:36px; height:36px; border:0; border-radius:50%; background:transparent; color:var(--hexa-text); font-size:21px; }
-.hexa-voice-chat-stage { flex:1; min-height:0; overflow:auto; padding:24px; }
-.voice-chat-state { min-height:80px; display:grid; place-content:center; gap:5px; text-align:center; color:var(--hexa-muted); font-size:11px; }
-.voice-chat-state strong { color:var(--hexa-text); }
-.voice-chat-error { color:#ff7185; }
-.voice-participant-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(145px,1fr)); gap:12px; margin-top:12px; }
-.voice-participant { min-height:145px; display:grid; justify-items:center; align-content:center; gap:6px; padding:14px; border:1px solid var(--hexa-border); border-radius:15px; background:var(--hexa-panel-2); text-align:center; }
-.voice-participant strong { font-size:12px; }
-.voice-participant span { color:var(--hexa-muted); font-size:9px; }
-.hexa-voice-chat-controls { min-height:70px; display:flex; align-items:center; justify-content:center; gap:10px; padding:12px 14px; border-top:1px solid var(--hexa-border); background:var(--hexa-panel-2); }
-.hexa-voice-chat-controls > span { color:var(--hexa-muted); font-size:10px; }
-@media (max-width:760px) {
-  .hexa-voice-chat-overlay { padding:0; }
-  .hexa-voice-chat-shell { width:100%; height:100%; border-radius:0; }
-  .hexa-voice-chat-controls { flex-wrap:wrap; }
-  .notifications-header { align-items:flex-start; gap:8px; }
-  .notifications-header-actions { flex-wrap:wrap; justify-content:flex-end; }
+
+@media (max-width: 760px) {
+  .hexa-sidebar {
+    width: min(320px, 88vw) !important;
+    min-width: 0 !important;
+    max-width: min(320px, 88vw) !important;
+    display: flex !important;
+    position: fixed !important;
+    inset: 0 auto 0 0 !important;
+    z-index: 900 !important;
+    transform: translateX(-105%) !important;
+    transition: transform .2s ease !important;
+    padding: 8px !important;
+  }
+
+  .hexa-sidebar.mobile-open {
+    transform: translateX(0) !important;
+  }
+
+  .hexa-sidebar .sidebar-section-label,
+  .hexa-sidebar .sidebar-item > span:not(.sidebar-icon),
+  .hexa-sidebar .sidebar-user-info,
+  .hexa-sidebar .sidebar-brand > div:last-of-type {
+    display: block !important;
+  }
+
+  .hexa-sidebar .sidebar-item {
+    width: 100% !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    display: flex !important;
+    place-items: initial !important;
+    padding: 0 11px !important;
+  }
+
+  .chat-layout {
+    grid-template-columns: 100% !important;
+  }
+
+  .chat-list-panel {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .workspace-page {
+    width: calc(100% - 20px) !important;
+    padding: 18px 0 30px !important;
+  }
+
+  .messages-area {
+    padding: 10px 9px !important;
+  }
+
+  .message-stack {
+    max-width: 88% !important;
+  }
+
+  .chat-composer {
+    height: auto !important;
+    min-height: 60px !important;
+    padding: 7px !important;
+  }
 }
 
 `;
