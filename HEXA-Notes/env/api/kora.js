@@ -2112,7 +2112,37 @@ function ChatPage({
         return !mine?.deleted_for_me;
       });
 
-      setMessages(visible);
+      let callRows = [];
+      try {
+        const { data: callsData } = await supabase
+          .from("calls")
+          .select("id,conversation_id,caller_id,callee_id,type,status,started_at,ended_at,created_at,metadata")
+          .eq("conversation_id", conversationId)
+          .order("created_at", { ascending: true });
+        callRows = (callsData || []).map((call) => ({
+          id: `call-${call.id}`,
+          conversation_id: call.conversation_id,
+          sender_id: call.caller_id,
+          receiver_id: call.callee_id,
+          content: call.status || "call",
+          message_type: "call",
+          created_at: call.created_at,
+          call_id: call.id,
+          call_status: call.status,
+          call_type: call.type,
+          call_mode: call.metadata?.mode || (call.type === "video" ? "video-call" : "voice-call"),
+          call_duration: call.metadata?.duration_seconds || 0,
+          metadata: call.metadata || {}
+        }));
+      } catch (callError) {
+        console.warn("HEXA call history in chat unavailable:", callError?.message || callError);
+      }
+
+      setMessages(
+        [...visible, ...callRows].sort(
+          (a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)
+        )
+      );
 
       const myActions = (data || [])
         .flatMap((row) => row.message_user_actions || [])
@@ -2242,6 +2272,79 @@ function ChatPage({
                   ? row
                   : item
               )
+            );
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "calls"
+          },
+          payload => {
+            const call = payload.new;
+            const conversationId = selected?.realConversationId || selected?.id;
+            if (!conversationId || !isHexaUuid(conversationId)) return;
+            if (String(call?.conversation_id) !== String(conversationId)) return;
+            const callMessage = {
+              id: `call-${call.id}`,
+              conversation_id: call.conversation_id,
+              sender_id: call.caller_id,
+              receiver_id: call.callee_id,
+              content: call.status || "call",
+              message_type: "call",
+              created_at: call.created_at,
+              call_id: call.id,
+              call_status: call.status,
+              call_type: call.type,
+              call_mode: call.metadata?.mode || (call.type === "video" ? "video-call" : "voice-call"),
+              call_duration: call.metadata?.duration_seconds || 0,
+              metadata: call.metadata || {}
+            };
+            setMessages(current => {
+              const exists = current.some(item => String(item.id) === String(callMessage.id));
+              return exists
+                ? current.map(item => String(item.id) === String(callMessage.id) ? callMessage : item)
+                : [...current, callMessage].sort((a,b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+            });
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "calls"
+          },
+          payload => {
+            const call = payload.new;
+            const conversationId = selected?.realConversationId || selected?.id;
+            if (!conversationId || !isHexaUuid(conversationId)) return;
+            if (String(call?.conversation_id) !== String(conversationId)) return;
+
+            const callMessage = {
+              id: `call-${call.id}`,
+              conversation_id: call.conversation_id,
+              sender_id: call.caller_id,
+              receiver_id: call.callee_id,
+              content: call.status || "call",
+              message_type: "call",
+              created_at: call.created_at,
+              call_id: call.id,
+              call_status: call.status,
+              call_type: call.type,
+              call_mode: call.metadata?.mode || (call.type === "video" ? "video-call" : "voice-call"),
+              call_duration: call.metadata?.duration_seconds || 0,
+              metadata: call.metadata || {}
+            };
+
+            setMessages(current =>
+              current.some(item => String(item.id) === String(callMessage.id))
+                ? current
+                : [...current, callMessage].sort(
+                    (a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)
+                  )
             );
           }
         )
@@ -2642,7 +2745,7 @@ function ChatPage({
      SEND MESSAGE
      ============================================================ */
 
-  async function sendMessage(event) {
+  async function handleSendMessage(event) {
     event?.preventDefault();
     const text = message.trim();
     if (!text && !attachment) return;
@@ -3161,6 +3264,63 @@ function ChatPage({
     const reactions =
       item.message_reactions ||
       [];
+
+    if (item.message_type === "call") {
+      const callMode = item.call_mode || (item.call_type === "video" ? "video-call" : "voice-call");
+      const isVideo = callMode === "video-call" || callMode === "video-chat";
+      const isChat = callMode === "voice-chat" || callMode === "video-chat";
+      const title = isVideo
+        ? (isChat ? "Video Chat" : "Video Call")
+        : (isChat ? "Voice Chat" : "Voice Call");
+      const icon = isVideo ? "📹" : "☎";
+      const statusLabel = item.call_status === "missed"
+        ? (mine ? "Missed" : "Missed call")
+        : item.call_status === "declined"
+          ? "Declined"
+          : item.call_status === "cancelled"
+            ? "Cancelled"
+            : item.call_status === "ended"
+              ? "Call ended"
+              : item.call_status === "accepted"
+                ? "Call connected"
+                : "Calling…";
+      const duration = Number(item.call_duration || 0);
+      const durationText = duration > 0
+        ? `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, "0")}`
+        : "";
+      const callbackMode = callMode;
+      return (
+        <div
+          key={item.id}
+          className={`hexa-message-row ${mine ? "mine" : "incoming"} call-message-row`}
+          id={`msg-${item.id}`}
+        >
+          {!mine && <Avatar src={selected.avatar_url} name={selected.name} size={30} />}
+          <div className={`message-bubble call-message-bubble ${mine ? "mine" : ""}`}>
+            <div className="call-message-main">
+              <div className="call-message-icon">{icon}</div>
+              <div className="call-message-copy">
+                <strong>{title}</strong>
+                <span>{statusLabel}{durationText ? ` · ${durationText}` : ""}</span>
+              </div>
+            </div>
+            <div className="message-meta">
+              <span>{item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : ""}</span>
+            </div>
+            <button
+              type="button"
+              className="call-back-button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onStartCall?.(selected, item.call_type || (isVideo ? "video" : "voice"), callbackMode);
+              }}
+            >
+              ↻ Call back
+            </button>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div
@@ -4021,7 +4181,7 @@ function ChatPage({
                     event.preventDefault();
                     saveEditedMessage();
                   }
-                : sendMessage
+                 : handleSendMessage
             }
           >
 
@@ -4076,20 +4236,10 @@ function ChatPage({
               }
               placeholder="Type a message"
               onKeyDown={event => {
-                if (
-                  event.key ===
-                    "Enter" &&
-                  !event.shiftKey
-                ) {
+                if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
-
-                  if (editing) {
-                    saveEditedMessage();
-                  } else {
-                    sendMessage(
-                      event
-                    );
-                  }
+                  if (editing) saveEditedMessage();
+                  else handleSendMessage(event);
                 }
               }}
             />
@@ -5457,6 +5607,13 @@ function WebRTCCallLauncher({ profile, target, onClose }) {
       if (callError) {
         setError(callError.message);
         return;
+      }
+
+      if (data?.id && target?.mode) {
+        const currentMetadata = data?.metadata && typeof data.metadata === "object" ? data.metadata : {};
+        await supabase.from("calls").update({
+          metadata: { ...currentMetadata, mode: target.mode }
+        }).eq("id", data.id);
       }
 
       const { data: peer } = await supabase.from("profiles")
@@ -7828,6 +7985,8 @@ function WorkspacePlaceholder({ title, description, icon, children }) { return <
 .chat-filter-row{display:flex;gap:6px;align-items:center;padding:8px 12px 4px;overflow-x:auto}.chat-filter-row button{border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-muted);border-radius:999px;padding:7px 10px;font-size:11px;white-space:nowrap}.chat-filter-row button.selected{background:var(--hexa-accent);border-color:transparent;color:#fff}.chat-filter-row .request-pill{margin-left:auto}.chat-filter-row .request-pill.has-requests{color:#fff;background:rgba(48,209,88,.18);border-color:rgba(48,209,88,.35)}.message-requests-modal{position:fixed;inset:0;z-index:850;background:rgba(0,0,0,.62);display:grid;place-items:center;padding:18px}.message-requests-card{width:min(640px,100%);max-height:min(720px,90vh);overflow:auto;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:20px;box-shadow:var(--hexa-shadow)}.message-requests-header{display:flex;align-items:center;justify-content:space-between;padding:18px;border-bottom:1px solid var(--hexa-border)}.message-requests-header div{display:grid;gap:4px}.message-requests-header span{font-size:12px;color:var(--hexa-muted)}.message-requests-header>button{border:0;background:transparent;color:var(--hexa-text);font-size:24px}.request-list{display:grid}.request-item{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--hexa-border)}.request-copy{min-width:0;flex:1;display:grid;gap:3px}.request-copy span,.request-copy small{color:var(--hexa-muted);font-size:11px}.request-actions{display:flex;gap:7px}.request-actions button{padding:8px 11px}.request-empty{min-height:220px;display:grid;place-items:center;align-content:center;gap:7px;padding:30px;text-align:center;color:var(--hexa-muted)}.request-empty div{font-size:42px}.request-empty strong{color:var(--hexa-text);font-size:16px}.request-empty span{font-size:12px;max-width:310px}
 
 /* HEXA master feature UI */
+.call-message-bubble{min-width:245px;padding:11px 12px}.call-message-main{display:flex;align-items:center;gap:12px}.call-message-icon{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;background:var(--hexa-panel-3);font-size:21px}.call-message-copy{display:grid;gap:3px}.call-message-copy strong{font-size:13px}.call-message-copy span{font-size:11px;color:var(--hexa-muted)}.call-back-button{margin-top:9px;width:100%;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:10px;padding:8px 10px;font-weight:700;cursor:pointer}.call-back-button:hover{background:var(--hexa-accent);color:#fff;border-color:transparent}.call-message-row .message-meta{margin-top:7px}.call-message-row .message-bubble{box-shadow:0 8px 24px rgba(0,0,0,.10)}
+
 .hexa-audio-message{display:flex;align-items:center;gap:7px}.hexa-audio-message audio{max-width:210px;height:34px}.hexa-audio-message select{background:var(--hexa-panel-2);color:var(--hexa-text);border:1px solid var(--hexa-border);border-radius:8px;padding:4px}.message-context-menu{position:fixed;z-index:1000;min-width:190px;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:14px;padding:6px;box-shadow:var(--hexa-shadow);display:grid;gap:2px}.message-context-menu button{border:0;background:none;color:var(--hexa-text);padding:10px;text-align:left;border-radius:9px}.message-context-menu button:hover{background:rgba(255,255,255,.06)}.message-context-menu .danger-text{color:var(--hexa-danger)}.emoji-panel,.sticker-panel,.feature-popover,.chat-settings-popover{position:absolute;z-index:40;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:16px;box-shadow:var(--hexa-shadow);padding:12px}.emoji-panel{left:12px;bottom:76px;width:min(410px,calc(100% - 24px))}.emoji-tones,.emoji-grid,.sticker-grid{display:flex;flex-wrap:wrap;gap:5px}.emoji-grid{max-height:220px;overflow:auto;margin-top:8px}.emoji-panel button,.sticker-grid button{border:0;background:transparent;font-size:21px;padding:6px;border-radius:8px}.emoji-panel button:hover,.sticker-grid button:hover{background:rgba(255,255,255,.06)}.sticker-panel{left:12px;bottom:76px;width:300px}.sticker-grid{margin-top:10px}.sticker-grid button{font-size:30px}.feature-popover{right:12px;bottom:76px;width:min(360px,calc(100% - 24px));display:grid;gap:8px}.feature-popover h3{margin:0}.chat-settings-popover{right:12px;top:64px;width:270px;display:grid;gap:10px;z-index:60}.chat-settings-popover label{display:grid;gap:6px;color:var(--hexa-muted);font-size:12px}.chat-settings-popover select,.chat-settings-popover button{padding:9px;border-radius:9px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text)}.chat-search-results{padding:10px;border-top:1px solid var(--hexa-border);display:grid;gap:5px}.chat-search-results button{border:0;background:transparent;color:var(--hexa-muted);text-align:left;padding:6px}.poll-message{display:grid;gap:7px;min-width:220px}.poll-message button{display:flex;justify-content:space-between;gap:10px;padding:9px;border-radius:9px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);text-align:left}.poll-message button span{color:var(--hexa-muted);font-size:10px}.shared-contact{display:flex;gap:10px;align-items:center;min-width:190px}.shared-contact div{display:grid}.shared-contact small{color:var(--hexa-muted)}.location-card{color:inherit;text-decoration:none;display:block;padding:4px}.file-message{display:flex;gap:8px;align-items:center}.forwarded-label{font-size:10px;color:var(--hexa-muted);margin-bottom:5px}.sticker-message{font-size:70px;line-height:1}.view-once-bubble{min-width:100px}.universal-search-result{display:flex;align-items:center;gap:10px;width:100%}.universal-search-result-copy{flex:1}.universal-search-result>b{text-transform:uppercase;font-size:9px;color:var(--hexa-accent-2)}
 
 
