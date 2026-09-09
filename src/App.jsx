@@ -417,7 +417,6 @@ const NAV_ITEMS = [
   { id: "status", label: "Status", icon: "◌" },
   { id: "calls", label: "Calls", icon: "☎" },
   { id: "wallet", label: "Wallet", icon: "₦" },
-  { id: "subscription", label: "Subscription", icon: "★" },
   { id: "projects", label: "Projects", icon: "◆" },
   { id: "kora", label: "Kora", icon: "✦" },
   { id: "developer", label: "Developer Hub", icon: "</>" },
@@ -573,6 +572,43 @@ function readJsonStorage(key, fallback) {
 }
 function writeJsonStorage(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+
+/* ============================================================
+   SYSTEM / DESKTOP NOTIFICATIONS
+   ============================================================ */
+
+async function registerHexaServiceWorker() {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator)) return null;
+  try { return await navigator.serviceWorker.register("/hexa-sw.js", { scope: "/" }); }
+  catch (error) { console.warn("HEXA service worker registration:", error); return null; }
+}
+
+async function requestHexaSystemNotifications() {
+  if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
+  if (Notification.permission === "default") {
+    try { return await Notification.requestPermission(); } catch { return "denied"; }
+  }
+  return Notification.permission;
+}
+
+async function showHexaSystemNotification(title, body, data = {}) {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+  const options = {
+    body: String(body || "You have a new HEXA notification."),
+    icon: "/favicon.ico", badge: "/favicon.ico",
+    tag: data.tag || "hexa-notification", renotify: true,
+    data: { url: data.url || `${window.location.origin}/`, ...data },
+  };
+  try {
+    const registration = await registerHexaServiceWorker();
+    if (registration?.showNotification) { await registration.showNotification(title, options); return; }
+  } catch (error) { console.warn("HEXA service-worker notification:", error); }
+  try {
+    const notification = new Notification(title, options);
+    notification.onclick = () => { try { window.focus(); } catch {} notification.close(); };
+  } catch (error) { console.warn("HEXA browser notification:", error); }
 }
 
 function readLocalQueue() {
@@ -1306,6 +1342,16 @@ function Sidebar({
                 @{profile?.username || "hexauser"}
               </span>
             </div>
+const savedPassword = localStorage.getItem(
+  `hexa-password-${user.id}`
+);
+
+if (!savedPassword) 
+  setShowHexaPasswordSetup(true);
+ else 
+  setShowHexaPasswordLock(true)
+
+
           </div>
         </div>
       </aside>
@@ -1577,6 +1623,7 @@ function ChatPage({
 
   const [contactOpen, setContactOpen] = useState(false);
   const [locationOpen, setLocationOpen] = useState(false);
+  const [voiceChatOpen, setVoiceChatOpen] = useState(false);
 
   const [recording, setRecording] = useState(false);
   const [attachment, setAttachment] = useState(null);
@@ -1890,7 +1937,7 @@ function ChatPage({
         throw error;
       }
 
-      let visible = (data || []).filter((row) => {
+      const visible = (data || []).filter((row) => {
         const actions = Array.isArray(row.message_user_actions)
           ? row.message_user_actions
           : [];
@@ -1899,15 +1946,6 @@ function ChatPage({
         );
         return !mine?.deleted_for_me;
       });
-
-      const pollMessages = visible.filter(m => m.message_type === "poll" && m.metadata?.poll_id);
-      if (pollMessages.length) {
-        const pollIds = pollMessages.map(m => m.metadata.poll_id).filter(Boolean);
-        const { data: optionRows } = await supabase.from("poll_options").select("id,poll_id,option_text,position").in("poll_id", pollIds).order("position", { ascending: true });
-        const rowsByPoll = {};
-        (optionRows || []).forEach(row => { (rowsByPoll[row.poll_id] ||= []).push(row); });
-        visible = visible.map(m => m.message_type === "poll" ? { ...m, metadata: { ...(m.metadata || {}), option_rows: rowsByPoll[m.metadata?.poll_id] || [] } } : m);
-      }
 
       setMessages(visible);
 
@@ -2545,80 +2583,6 @@ function ChatPage({
     }
   }
 
-  async function createRealPoll() {
-    const question = pollQuestion.trim();
-    const options = pollOptions.map((v) => v.trim()).filter(Boolean);
-    if (!question || options.length < 2) {
-      safeAlert("A poll needs a question and at least two options.");
-      return;
-    }
-    const conversationId = selected?.realConversationId || selected?.id;
-    if (!conversationId || String(conversationId).startsWith("local-")) return;
-    try {
-      const clientMessageId = `hexa-poll-${crypto?.randomUUID?.() || Date.now()}`;
-      const metadata = { question, options, allow_multiple: false, poll_version: 1 };
-      const { data: messageRow, error: messageError } = await supabase.from("messages").insert({
-        conversation_id: conversationId,
-        sender_id: profile.id,
-        content: question,
-        message_type: "poll",
-        client_message_id: clientMessageId,
-        metadata,
-        status: "sent",
-      }).select("*").single();
-      if (messageError) throw messageError;
-      const { data: poll, error: pollError } = await supabase.from("message_polls").insert({
-        message_id: messageRow.id,
-        question,
-        allow_multiple: false,
-      }).select("*").single();
-      if (pollError) throw pollError;
-      const { data: optionRows, error: optionError } = await supabase.from("poll_options").insert(
-        options.map((label, position) => ({ poll_id: poll.id, option_text: label, position }))
-      ).select("*");
-      if (optionError) throw optionError;
-      const enriched = { ...messageRow, metadata: { ...metadata, poll_id: poll.id, option_rows: optionRows || [] } };
-      setMessages((current) => [...current, enriched]);
-      updateConversationPreview(selected, enriched);
-      setPollOpen(false); setPollQuestion(""); setPollOptions(["", ""]); setAttachmentOpen(false);
-    } catch (error) {
-      console.error("HEXA poll create:", error);
-      safeAlert(error?.message || "Unable to create the poll.");
-    }
-  }
-
-  async function voteRealPoll(item, optionId) {
-    const pollId = item?.metadata?.poll_id;
-    if (!pollId || !optionId) return;
-    const { error } = await supabase.rpc("hexa_vote_poll", { p_poll_id: pollId, p_option_id: optionId });
-    if (error) safeAlert(error.message);
-    else setMessages((current) => current.map(m => m.id === item.id ? { ...m, metadata: { ...m.metadata, last_vote_option_id: optionId } } : m));
-  }
-
-  async function editRealPoll(item) {
-    if (String(item?.sender_id) !== String(profile.id)) return;
-    const currentOptions = item?.metadata?.options || [];
-    const nextQuestion = window.prompt("Edit poll question", item?.metadata?.question || item?.content || "");
-    if (nextQuestion === null) return;
-    const nextOptions = [];
-    for (let i = 0; i < currentOptions.length; i++) {
-      const value = window.prompt(`Edit option ${i + 1}`, currentOptions[i]);
-      if (value !== null && value.trim()) nextOptions.push(value.trim());
-    }
-    if (nextOptions.length < 2 || !nextQuestion.trim()) {
-      safeAlert("A poll needs a question and at least two options.");
-      return;
-    }
-    const nextMetadata = { ...(item.metadata || {}), question: nextQuestion.trim(), options: nextOptions, poll_version: Number(item.metadata?.poll_version || 1) + 1 };
-    const { error } = await supabase.rpc("hexa_edit_poll", {
-      p_message_id: item.id,
-      p_question: nextQuestion.trim(),
-      p_options: nextOptions,
-    });
-    if (error) { safeAlert(error.message); return; }
-    setMessages((current) => current.map(m => m.id === item.id ? { ...m, content: nextQuestion.trim(), metadata: nextMetadata } : m));
-  }
-
   /* ============================================================
      MESSAGE ACTIONS
      ============================================================ */
@@ -3154,24 +3118,17 @@ function ChatPage({
             if (item.deleted_at || item.metadata?.deleted_for_everyone) {
               return <div className="message-content deleted-message">This message was deleted</div>;
             }
-            if (item.message_type === "image" && mediaUrl) return <img src={mediaUrl} alt="Shared" className="message-media" />;
-            if (item.message_type === "video" && mediaUrl) return <video src={mediaUrl} controls className="message-media" />;
-            if (["audio", "voice"].includes(item.message_type) && mediaUrl) return <FeatureAudio url={mediaUrl} voice={item.message_type === "voice"} />;
-            if (item.message_type === "file" && mediaUrl) return <a className="message-file" href={mediaUrl} target="_blank" rel="noreferrer">📎 {item.content || attachmentRow?.file_name || "Download file"}</a>;
-            if (item.message_type === "poll") {
-              const poll = item.metadata || {};
-              const rows = poll.option_rows || [];
-              return <div className="poll-message">
-                <strong>📊 {poll.question || item.content}</strong>
-                {(poll.options || []).map((label, index) => {
-                  const row = rows[index];
-                  const optionId = row?.id;
-                  return <button key={`${item.id}-${index}`} type="button" onClick={() => voteRealPoll(item, optionId || String(index))}>
-                    <span>{label}</span><small>{poll.last_vote_option_id === optionId ? "✓ voted" : "Vote"}</small>
-                  </button>;
-                })}
-                {mine && <button type="button" className="poll-edit-button" onClick={() => editRealPoll(item)}>✎ Edit poll</button>}
-              </div>;
+            if (item.message_type === "image" && mediaUrl) {
+              return <img src={mediaUrl} alt="Shared" className="message-media" />;
+            }
+            if (item.message_type === "video" && mediaUrl) {
+              return <video src={mediaUrl} controls className="message-media" />;
+            }
+            if (["audio", "voice"].includes(item.message_type) && mediaUrl) {
+              return <FeatureAudio url={mediaUrl} voice={item.message_type === "voice"} />;
+            }
+            if (item.message_type === "file" && mediaUrl) {
+              return <a className="message-file" href={mediaUrl} target="_blank" rel="noreferrer">📎 {item.content || attachmentRow?.file_name || "Download file"}</a>;
             }
             return <div className="message-content">{item.content}</div>;
           })()}
@@ -3256,250 +3213,205 @@ function ChatPage({
       }}
     >
 
+      {/* ======================================================
+          CHAT LIST
+          ====================================================== */}
 
-{/* ============================================================
-    HEXA CHAT LIST
-   ============================================================ */}
+      <aside className="chat-list-panel">
 
-<aside className="chat-list-panel hexa-chat-list">
+        <div className="chat-list-header">
 
-  <div className="hexa-chat-list-header">
+          <div>
+            <h2>
+              Chat
+            </h2>
 
-    <div className="hexa-chat-title-row">
-      <h2>Chats</h2>
-
-      <div className="hexa-chat-header-actions">
-        <button
-          type="button"
-          title="New chat"
-          onClick={() => setNewChatOpen(true)}
-        >
-          ＋
-        </button>
-
-        <button
-          type="button"
-          title="More options"
-          onClick={() =>
-            setChatSettingsOpen(value => !value)
-          }
-        >
-          ⋮
-        </button>
-      </div>
-    </div>
-
-    <div className="hexa-chat-search-box">
-      <span>⌕</span>
-
-      <input
-        value={chatSearch}
-        onChange={event =>
-          setChatSearch(event.target.value)
-        }
-        placeholder="Search chats"
-        aria-label="Search chats"
-      />
-
-      {chatSearch && (
-        <button
-          type="button"
-          onClick={() => setChatSearch("")}
-          title="Clear search"
-        >
-          ×
-        </button>
-      )}
-    </div>
-
-    <div className="hexa-chat-filter-row">
-      <button type="button" className="active">
-        All
-      </button>
-
-      <button type="button">
-        Unread
-      </button>
-
-      <button type="button">
-        Groups
-      </button>
-
-      <button type="button">
-        Favorites
-      </button>
-    </div>
-
-  </div>
-
-
-  <div className="conversation-list hexa-conversation-list">
-
-    {loadingConversations && !conversations.length && (
-      <div className="hexa-chat-loading">
-        <div className="hexa-spinner-small" />
-        <span>Loading chats...</span>
-      </div>
-    )}
-
-
-    {filteredConversations.map(conversation => {
-
-      const selectedChat =
-        String(selected?.id) === String(conversation.id);
-
-      const unread =
-        Number(conversation.unread || 0);
-
-      const preview =
-        conversation.lastMessage ||
-        conversation.description ||
-        "No messages yet";
-
-      const mutedChat =
-        muted.includes(String(conversation.id));
-
-      return (
-        <button
-          key={conversation.id}
-          type="button"
-          className={`hexa-chat-row ${
-            selectedChat ? "active" : ""
-          }`}
-          onClick={() => {
-
-            setSelected(conversation);
-
-            setMobileConversationOpen(true);
-
-            setConversations(current =>
-              current.map(item =>
-                String(item.id) ===
-                String(conversation.id)
-                  ? {
-                      ...item,
-                      unread: 0
-                    }
-                  : item
-              )
-            );
-
-            loadMessages(conversation);
-          }}
-        >
-
-          <div className="hexa-chat-avatar-wrap">
-
-            <Avatar
-              src={conversation.avatar_url}
-              name={conversation.name}
-              size={48}
-              online={conversation.online}
-            />
-
-            {conversation.kind === "group" && (
-              <span className="hexa-chat-type-badge">
-                👥
-              </span>
-            )}
-
-            {conversation.kind === "ai" && (
-              <span className="hexa-chat-type-badge">
-                ✦
-              </span>
-            )}
-
+            <span>
+              {
+                conversations.length
+              } conversations
+            </span>
           </div>
-
-
-          <div className="hexa-chat-row-content">
-
-            <div className="hexa-chat-row-top">
-
-              <strong>
-                {conversation.name}
-              </strong>
-
-              {conversation.lastMessageAt && (
-                <time
-                  className={
-                    unread > 0
-                      ? "unread"
-                      : ""
-                  }
-                >
-                  {formatChatTime(
-                    conversation.lastMessageAt
-                  )}
-                </time>
-              )}
-
-            </div>
-
-
-            <div className="hexa-chat-row-bottom">
-
-              <span className="hexa-chat-preview">
-                {preview}
-              </span>
-
-              <div className="hexa-chat-row-meta">
-
-                {mutedChat && (
-                  <span title="Muted">
-                    🔕
-                  </span>
-                )}
-
-                {unread > 0 && (
-                  <b className="hexa-unread-count">
-                    {unread > 99
-                      ? "99+"
-                      : unread}
-                  </b>
-                )}
-
-              </div>
-
-            </div>
-
-          </div>
-
-        </button>
-      );
-    })}
-
-
-    {!filteredConversations.length &&
-      !loadingConversations && (
-        <div className="hexa-no-chats">
-
-          <div className="hexa-no-chats-icon">
-            💬
-          </div>
-
-          <strong>
-            No chats yet
-          </strong>
-
-          <span>
-            Search for a HEXA account or start
-            a new conversation.
-          </span>
 
           <button
+            className="new-chat-button"
             type="button"
-            onClick={() => setNewChatOpen(true)}
+            title="New chat"
+            onClick={() =>
+              setNewChatOpen(
+                true
+              )
+            }
           >
-            New chat
+            ＋
           </button>
 
         </div>
-      )}
 
-  </div>
+        <div className="chat-search">
 
-</aside>
+          <span>
+            ⌕
+          </span>
+
+          <input
+            value={
+              chatSearch
+            }
+            onChange={event =>
+              setChatSearch(
+                event.target
+                  .value
+              )
+            }
+            placeholder="Search chats"
+          />
+
+        </div>
+
+        <div className="conversation-list">
+
+          {loadingConversations &&
+            !conversations.length && (
+              <div className="chat-loading">
+                Loading chats…
+              </div>
+            )}
+
+          {filteredConversations.map(
+            conversation => (
+              <button
+                key={
+                  conversation.id
+                }
+                type="button"
+                className={
+                  `conversation ${
+                    selected?.id ===
+                    conversation.id
+                      ? "active"
+                      : ""
+                  }`
+                }
+                onClick={() => {
+                  setSelected(
+                    conversation
+                  );
+
+                  setMobileConversationOpen(
+                    true
+                  );
+
+                  setConversations(
+                    current =>
+                      current.map(
+                        item =>
+                          String(
+                            item.id
+                          ) ===
+                          String(
+                            conversation.id
+                          )
+                            ? {
+                                ...item,
+                                unread: 0
+                              }
+                            : item
+                      )
+                  );
+                }}
+              >
+
+                <Avatar
+                  src={
+                    conversation.avatar_url
+                  }
+                  name={
+                    conversation.name
+                  }
+                  size={48}
+                  online={
+                    conversation.online
+                  }
+                />
+
+                <div className="conversation-content">
+
+                  <div className="conversation-topline">
+
+                    <strong>
+                      {
+                        conversation.name
+                      }
+                    </strong>
+
+                    {conversation.lastMessageAt && (
+                      <time>
+                        {formatChatTime(
+                          conversation.lastMessageAt
+                        )}
+                      </time>
+                    )}
+
+                  </div>
+
+                  <div className="conversation-bottomline">
+
+                    <span>
+                      {
+                        conversation.lastMessage ||
+                        conversation.description ||
+                        "No messages yet"
+                      }
+                    </span>
+
+                    {conversation.unread >
+                      0 && (
+                      <b className="unread-badge">
+                        {conversation.unread >
+                        99
+                          ? "99+"
+                          : conversation.unread}
+                      </b>
+                    )}
+
+                  </div>
+
+                </div>
+
+                {muted.includes(
+                  String(
+                    conversation.id
+                  )
+                ) && (
+                  <small>
+                    🔕
+                  </small>
+                )}
+
+              </button>
+            )
+          )}
+
+          {!filteredConversations.length && (
+            <div className="empty-chat-list">
+              <div>
+                💬
+              </div>
+
+              <strong>
+                No chats found
+              </strong>
+
+              <span>
+                Start a new HEXA conversation.
+              </span>
+            </div>
+          )}
+
+        </div>
+
+      </aside>
 
       {/* ======================================================
           CHAT MAIN
@@ -3583,6 +3495,14 @@ function ChatPage({
                     }
                   >
                     ▣
+                  </button>
+
+                  <button
+                    type="button"
+                    title="Start live voice chat"
+                    onClick={() => setVoiceChatOpen(true)}
+                  >
+                    🎙️
                   </button>
                 </>
               )}
@@ -4139,20 +4059,6 @@ function ChatPage({
               <span>🕘 {emojiRecent.length}</span>
               <span>💖 {emojiFavorites.length}</span>
               <span>✨ {HEXA_ALL_EMOJIS.length.toLocaleString()}</span>
-            </div>
-          </div>
-        )}
-
-        {pollOpen && (
-          <div className="hexa-modal-overlay" onClick={() => setPollOpen(false)}>
-            <div className="hexa-modal poll-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header"><div><strong>Create poll</strong><span>Ask your HEXA conversation a question.</span></div><button type="button" onClick={() => setPollOpen(false)}>×</button></div>
-              <input className="modal-input" value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="Poll question" />
-              <div className="poll-option-editor">
-                {pollOptions.map((value, index) => <div className="poll-option-row" key={index}><input className="modal-input" value={value} onChange={e => setPollOptions(current => current.map((v,i) => i===index ? e.target.value : v))} placeholder={`Option ${index + 1}`} /><button type="button" onClick={() => setPollOptions(current => current.length > 2 ? current.filter((_,i) => i !== index) : current)}>×</button></div>)}
-              </div>
-              <button type="button" className="hero-secondary" onClick={() => setPollOptions(current => [...current, ""])}>＋ Add option</button>
-              <button type="button" className="hero-primary" onClick={createRealPoll}>Create poll</button>
             </div>
           </div>
         )}
@@ -4734,9 +4640,376 @@ function ChatPage({
         </div>
       )}
 
+          {voiceChatOpen && !isSystem && !isSelf && selected?.id && (
+        <VoiceChatRoom
+          profile={profile}
+          roomId={selected.id}
+          roomName={selected.name || "HEXA Voice Chat"}
+          onClose={() => setVoiceChatOpen(false)}
+        />
+      )}
+
     </section>
   );
 }
+
+function VoiceChatRoom({ profile, roomId, roomName, onClose }) {
+  const [joined, setJoined] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [participants, setParticipants] = useState([]);
+  const [error, setError] = useState("");
+
+  const channelRef = useRef(null);
+  const streamRef = useRef(null);
+  const peersRef = useRef(new Map());
+  const audioNodesRef = useRef(new Map());
+  const participantStateRef = useRef({});
+
+  const rtcConfig = useMemo(() => ({
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      ...(import.meta.env.VITE_TURN_URL
+        ? [{
+            urls: import.meta.env.VITE_TURN_URL,
+            username: import.meta.env.VITE_TURN_USERNAME,
+            credential: import.meta.env.VITE_TURN_CREDENTIAL,
+          }]
+        : []),
+    ],
+  }), []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function start() {
+      if (!profile?.id || !roomId) return;
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setError("Your browser does not support microphone access.");
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+          video: false,
+        });
+
+        if (!mounted) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+
+        const channel = supabase
+          .channel(`hexa-voice-chat-${roomId}`, {
+            config: {
+              presence: {
+                key: String(profile.id),
+              },
+            },
+          })
+          .on("presence", { event: "sync" }, () => {
+            const state = channel.presenceState();
+            const next = Object.values(state).flat().map(item => ({
+              id: String(item.id),
+              username: item.username,
+              full_name: item.full_name,
+              avatar_url: item.avatar_url,
+              muted: Boolean(item.muted),
+            }));
+            participantStateRef.current = Object.fromEntries(
+              next.map(item => [item.id, item])
+            );
+            setParticipants(next);
+          })
+          .on("presence", { event: "join" }, ({ key, newPresences }) => {
+            if (String(key) !== String(profile.id)) {
+              const presence = newPresences?.[0];
+              createPeer(String(key), true, presence);
+            }
+          })
+          .on("presence", { event: "leave" }, ({ key }) => {
+            closePeer(String(key));
+          })
+          .on("broadcast", { event: "signal" }, ({ payload }) => {
+            if (!payload || String(payload.to) !== String(profile.id)) return;
+            handleSignal(payload).catch(signalError => {
+              console.warn("HEXA voice chat signal:", signalError);
+            });
+          })
+          .subscribe(async status => {
+            if (status === "SUBSCRIBED") {
+              await channel.track({
+                id: String(profile.id),
+                username: profile.username,
+                full_name: profile.full_name,
+                avatar_url: profile.avatar_url,
+                muted: false,
+              });
+              if (mounted) setJoined(true);
+            } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+              if (mounted) {
+                setError("Voice Chat could not connect. Check your connection and try again.");
+              }
+            }
+          });
+
+        channelRef.current = channel;
+      } catch (mediaError) {
+        console.error("HEXA Voice Chat microphone:", mediaError);
+        if (mounted) {
+          setError(
+            mediaError?.name === "NotAllowedError"
+              ? "Microphone access was blocked. Allow microphone access and try again."
+              : "HEXA could not access your microphone."
+          );
+        }
+      }
+    }
+
+    start();
+
+    return () => {
+      mounted = false;
+      try { channelRef.current?.untrack?.(); } catch (_) {}
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+      for (const [id] of peersRef.current) closePeer(id);
+      for (const node of audioNodesRef.current.values()) {
+        try { node.pause(); } catch (_) {}
+        node.srcObject = null;
+        node.remove();
+      }
+      audioNodesRef.current.clear();
+      streamRef.current?.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    };
+  }, [profile?.id, roomId]);
+
+  async function sendSignal(payload) {
+    if (!channelRef.current) return;
+    await channelRef.current.send({
+      type: "broadcast",
+      event: "signal",
+      payload,
+    });
+  }
+
+  function closePeer(peerId) {
+    const peer = peersRef.current.get(String(peerId));
+    if (peer) {
+      try { peer.close(); } catch (_) {}
+      peersRef.current.delete(String(peerId));
+    }
+    const audio = audioNodesRef.current.get(String(peerId));
+    if (audio) {
+      try { audio.pause(); } catch (_) {}
+      audio.srcObject = null;
+      audio.remove();
+      audioNodesRef.current.delete(String(peerId));
+    }
+  }
+
+  function createPeer(peerId, initiator = false, presence = null) {
+    peerId = String(peerId);
+    if (!streamRef.current || peerId === String(profile.id)) return null;
+
+    const existing = peersRef.current.get(peerId);
+    if (existing) return existing;
+
+    const pc = new RTCPeerConnection(rtcConfig);
+    peersRef.current.set(peerId, pc);
+
+    streamRef.current.getTracks().forEach(track => {
+      pc.addTrack(track, streamRef.current);
+    });
+
+    pc.onicecandidate = event => {
+      if (event.candidate) {
+        sendSignal({
+          type: "ice",
+          to: peerId,
+          from: String(profile.id),
+          candidate: event.candidate,
+        }).catch(() => {});
+      }
+    };
+
+    pc.ontrack = event => {
+      const remoteStream = event.streams?.[0];
+      if (!remoteStream) return;
+
+      let audio = audioNodesRef.current.get(peerId);
+      if (!audio) {
+        audio = document.createElement("audio");
+        audio.autoplay = true;
+        audio.playsInline = true;
+        audio.setAttribute("aria-hidden", "true");
+        audio.style.position = "fixed";
+        audio.style.width = "1px";
+        audio.style.height = "1px";
+        audio.style.opacity = "0";
+        audio.style.pointerEvents = "none";
+        document.body.appendChild(audio);
+        audioNodesRef.current.set(peerId, audio);
+      }
+      audio.srcObject = remoteStream;
+      audio.play?.().catch(() => {});
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
+        closePeer(peerId);
+      }
+    };
+
+    if (initiator) {
+      pc.createOffer({ offerToReceiveAudio: true })
+        .then(offer => pc.setLocalDescription(offer))
+        .then(() => sendSignal({
+          type: "offer",
+          to: peerId,
+          from: String(profile.id),
+          description: pc.localDescription,
+        }))
+        .catch(error => console.warn("HEXA voice offer:", error));
+    }
+
+    return pc;
+  }
+
+  async function handleSignal(payload) {
+    const from = String(payload.from);
+    let pc = peersRef.current.get(from);
+    if (!pc) pc = createPeer(from, false);
+    if (!pc) return;
+
+    if (payload.type === "offer") {
+      await pc.setRemoteDescription(payload.description);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      await sendSignal({
+        type: "answer",
+        to: from,
+        from: String(profile.id),
+        description: pc.localDescription,
+      });
+    } else if (payload.type === "answer") {
+      await pc.setRemoteDescription(payload.description);
+    } else if (payload.type === "ice" && payload.candidate) {
+      try {
+        await pc.addIceCandidate(payload.candidate);
+      } catch (error) {
+        console.debug("HEXA voice ICE candidate:", error);
+      }
+    }
+  }
+
+  async function toggleMute() {
+    const nextMuted = !muted;
+    streamRef.current?.getAudioTracks().forEach(track => {
+      track.enabled = !nextMuted;
+    });
+    setMuted(nextMuted);
+
+    try {
+      await channelRef.current?.track({
+        id: String(profile.id),
+        username: profile.username,
+        full_name: profile.full_name,
+        avatar_url: profile.avatar_url,
+        muted: nextMuted,
+      });
+    } catch (_) {}
+  }
+
+  function leaveRoom() {
+    onClose?.();
+  }
+
+  return (
+    <div className="hexa-voice-chat-overlay">
+      <div className="hexa-voice-chat-room">
+        <div className="hexa-voice-chat-header">
+          <div>
+            <strong>{roomName || "HEXA Voice Chat"}</strong>
+            <span>
+              {joined
+                ? `${participants.length || 1} participant${(participants.length || 1) === 1 ? "" : "s"}`
+                : "Connecting…"}
+            </span>
+          </div>
+          <button type="button" onClick={leaveRoom} aria-label="Close Voice Chat">×</button>
+        </div>
+
+        {error ? (
+          <div className="hexa-voice-chat-error">
+            <strong>Microphone unavailable</strong>
+            <span>{error}</span>
+          </div>
+        ) : (
+          <>
+            <div className="hexa-voice-participants">
+              {participants.map(person => (
+                <div className="hexa-voice-participant" key={person.id}>
+                  <Avatar
+                    src={person.avatar_url}
+                    name={person.full_name || person.username || "HEXA User"}
+                    size={58}
+                  />
+                  <strong>
+                    {person.id === String(profile.id)
+                      ? "You"
+                      : person.full_name || person.username || "HEXA User"}
+                  </strong>
+                  <span>{person.muted ? "Muted" : "Speaking"}</span>
+                </div>
+              ))}
+
+              {!participants.length && (
+                <div className="hexa-voice-empty">
+                  <div className="hexa-voice-wave">•••</div>
+                  <strong>You're in the Voice Chat</strong>
+                  <span>Invite people from this conversation to join.</span>
+                </div>
+              )}
+            </div>
+
+            <div className="hexa-voice-chat-controls">
+              <button
+                type="button"
+                className={muted ? "active" : ""}
+                onClick={toggleMute}
+                aria-label={muted ? "Unmute microphone" : "Mute microphone"}
+                title={muted ? "Unmute" : "Mute"}
+              >
+                {muted ? "🔇" : "🎙️"}
+              </button>
+              <button
+                type="button"
+                className="leave"
+                onClick={leaveRoom}
+                aria-label="Leave Voice Chat"
+                title="Leave Voice Chat"
+              >
+                📞
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 async function loadHexaConversations(profile) {
   if (!profile?.id) return [];
 
@@ -5137,7 +5410,7 @@ function CallsPage({ profile }) {
     <section className="workspace-page">
       <div className="page-heading">
         <div className="page-heading-icon">☎</div>
-        <div><h1>Calls</h1><p>Private HEXA-to-HEXA voice and video calls. Calls are billed server-side at ₦0.30/second (30 kobo/sec).</p></div>
+        <div><h1>Calls</h1><p>Private HEXA-to-HEXA voice and video calls. External calling is billed server-side at ₦0.30/second.</p></div>
       </div>
 
       <div className="settings-card">
@@ -5170,10 +5443,15 @@ function CallsPage({ profile }) {
 function WebRTCCall({ profile, call, type, peer, onEnd }) {
   const localVideo = useRef(null);
   const remoteVideo = useRef(null);
+  const remoteAudio = useRef(null);
   const pcRef = useRef(null);
   const channelRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const pendingIceRef = useRef([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
+  const [muted, setMuted] = useState(false);
+  const [cameraOff, setCameraOff] = useState(false);
   const endedRef = useRef(false);
 
   useEffect(() => {
@@ -5183,31 +5461,39 @@ function WebRTCCall({ profile, call, type, peer, onEnd }) {
 
     const insertSignal = async (signalType, payload) => {
       const { error: signalError } = await supabase.from("call_signals").insert({
-        call_id: call.id,
-        sender_id: profile.id,
-        receiver_id: peer.id,
-        type: signalType,
-        payload,
+        call_id: call.id, sender_id: profile.id, receiver_id: peer.id, type: signalType, payload,
       });
       if (signalError) console.warn("HEXA call signal:", signalError.message);
     };
 
-    const handleSignal = async (signal) => {
-      if (stopped || String(signal.receiver_id) !== String(profile.id)) return;
+    const flushPendingIce = async () => {
+      if (!pc?.remoteDescription) return;
+      const pending = pendingIceRef.current.splice(0);
+      for (const candidate of pending) {
+        try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); }
+        catch (iceError) { console.warn("HEXA pending ICE:", iceError); }
+      }
+    };
+
+    const handleSignal = async signal => {
+      if (stopped || !pc || String(signal.receiver_id) !== String(profile.id)) return;
       try {
-        if (signal.type === "offer") {
-          if (!pc.currentRemoteDescription) {
-            await pc.setRemoteDescription(new RTCSessionDescription(signal.payload));
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            await insertSignal("answer", answer);
-          }
-        } else if (signal.type === "answer" && String(profile.id) === String(call.caller_id)) {
-          if (!pc.currentRemoteDescription) {
-            await pc.setRemoteDescription(new RTCSessionDescription(signal.payload));
-          }
+        if (signal.type === "offer" && !pc.currentRemoteDescription) {
+          await pc.setRemoteDescription(new RTCSessionDescription(signal.payload));
+          await flushPendingIce();
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          await insertSignal("answer", answer);
+        } else if (signal.type === "answer" && String(profile.id) === String(call.caller_id) && !pc.currentRemoteDescription) {
+          await pc.setRemoteDescription(new RTCSessionDescription(signal.payload));
+          await flushPendingIce();
         } else if (signal.type === "ice" && signal.payload) {
-          try { await pc.addIceCandidate(new RTCIceCandidate(signal.payload)); } catch {}
+          if (pc.remoteDescription) {
+            try { await pc.addIceCandidate(new RTCIceCandidate(signal.payload)); }
+            catch (iceError) { console.warn("HEXA ICE candidate:", iceError); }
+          } else {
+            pendingIceRef.current.push(signal.payload);
+          }
         }
       } catch (e) {
         console.error("HEXA WebRTC signal:", e);
@@ -5217,48 +5503,43 @@ function WebRTCCall({ profile, call, type, peer, onEnd }) {
 
     const start = async () => {
       try {
-        if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera/microphone access is not available in this browser.");
-        const cfg = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera and microphone access is not available in this browser.");
+        const iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
         if (import.meta.env.VITE_TURN_URL && import.meta.env.VITE_TURN_USERNAME && import.meta.env.VITE_TURN_CREDENTIAL) {
-          cfg.iceServers.push({ urls: import.meta.env.VITE_TURN_URL, username: import.meta.env.VITE_TURN_USERNAME, credential: import.meta.env.VITE_TURN_CREDENTIAL });
+          iceServers.push({ urls: import.meta.env.VITE_TURN_URL, username: import.meta.env.VITE_TURN_USERNAME, credential: import.meta.env.VITE_TURN_CREDENTIAL });
         }
-
-        pc = new RTCPeerConnection(cfg);
+        pc = new RTCPeerConnection({ iceServers });
         pcRef.current = pc;
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === "video" });
-        if (localVideo.current) localVideo.current.srcObject = stream;
-        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-        pc.ontrack = (event) => {
-          if (remoteVideo.current && event.streams[0]) remoteVideo.current.srcObject = event.streams[0];
+        localStreamRef.current = stream;
+        stream.getAudioTracks().forEach(track => { track.enabled = !muted; });
+        stream.getVideoTracks().forEach(track => { track.enabled = !cameraOff; });
+        if (localVideo.current && type === "video") localVideo.current.srcObject = stream;
+        stream.getTracks().forEach(track => pc.addTrack(track, stream));
+        pc.ontrack = event => {
+          const remoteStream = event.streams?.[0];
+          if (!remoteStream) return;
+          if (type === "video" && remoteVideo.current) remoteVideo.current.srcObject = remoteStream;
+          if (remoteAudio.current) { remoteAudio.current.srcObject = remoteStream; remoteAudio.current.play().catch(() => {}); }
         };
-        pc.onicecandidate = (event) => {
-          if (event.candidate) insertSignal("ice", event.candidate.toJSON());
-        };
+        pc.onicecandidate = event => { if (event.candidate) insertSignal("ice", event.candidate.toJSON()); };
         pc.onconnectionstatechange = () => {
-          const state = pc.connectionState;
-          setConnected(state === "connected");
-          if (["failed", "closed"].includes(state) && !stopped) setError("Call connection lost.");
+          setConnected(pc.connectionState === "connected");
+          if (["failed", "closed"].includes(pc.connectionState) && !stopped) setError("Call connection lost. Check your internet connection or TURN server.");
         };
-
         const channel = supabase.channel(`call-${call.id}-${profile.id}`)
-          .on("postgres_changes", { event: "INSERT", schema: "public", table: "call_signals", filter: `call_id=eq.${call.id}` }, (payload) => handleSignal(payload.new))
-          .on("postgres_changes", { event: "UPDATE", schema: "public", table: "calls", filter: `id=eq.${call.id}` }, (payload) => {
-            const status = payload.new?.status;
-            if (["ended", "declined", "rejected", "missed"].includes(status) && !endedRef.current) {
-              endedRef.current = true;
-              onEnd?.();
-            }
+          .on("postgres_changes", { event: "INSERT", schema: "public", table: "call_signals", filter: `call_id=eq.${call.id}` }, payload => handleSignal(payload.new))
+          .on("postgres_changes", { event: "UPDATE", schema: "public", table: "calls", filter: `id=eq.${call.id}` }, payload => {
+            if (["ended", "declined", "rejected", "missed"].includes(payload.new?.status) && !endedRef.current) { endedRef.current = true; onEnd?.(); }
           });
         channelRef.current = channel;
-        await channel.subscribe();
-
+        await channel.subscribe((status, err) => { if (["CHANNEL_ERROR", "TIMED_OUT"].includes(status)) console.warn("HEXA call channel:", status, err); });
         const { data: existingSignals } = await supabase.from("call_signals").select("*").eq("call_id", call.id).order("created_at", { ascending: true });
         for (const signal of existingSignals || []) await handleSignal(signal);
-
         if (String(profile.id) === String(call.caller_id)) {
-          const hasOffer = (existingSignals || []).some((s) => s.type === "offer" && String(s.sender_id) === String(profile.id));
+          const hasOffer = (existingSignals || []).some(signal => signal.type === "offer" && String(signal.sender_id) === String(profile.id));
           if (!hasOffer && !stopped) {
-            const offer = await pc.createOffer();
+            const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: type === "video" });
             await pc.setLocalDescription(offer);
             await insertSignal("offer", offer);
           }
@@ -5270,56 +5551,39 @@ function WebRTCCall({ profile, call, type, peer, onEnd }) {
     };
 
     start();
-
     return () => {
       stopped = true;
-      pc?.getSenders().forEach((sender) => sender.track?.stop());
+      localStreamRef.current?.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
       pc?.close();
+      pcRef.current = null;
+      pendingIceRef.current = [];
       if (channelRef.current) supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
     };
   }, [call?.id, call?.caller_id, peer?.id, profile?.id, type]);
+
+  useEffect(() => { localStreamRef.current?.getAudioTracks().forEach(track => { track.enabled = !muted; }); }, [muted]);
+  useEffect(() => { localStreamRef.current?.getVideoTracks().forEach(track => { track.enabled = type === "video" && !cameraOff; }); }, [cameraOff, type]);
 
   async function end() {
     if (endedRef.current) return;
     endedRef.current = true;
-    const { error: billingError } = await supabase.rpc("finalize_hexa_call", {
-      p_call_id: call.id,
-      p_ended_reason: "user",
-    });
-    if (billingError) {
-      setError(billingError.message || "Unable to finalize the call.");
-      endedRef.current = false;
-      return;
-    }
-    pcRef.current?.getSenders().forEach((sender) => sender.track?.stop());
+    const { error: billingError } = await supabase.rpc("finalize_hexa_call", { p_call_id: call.id, p_ended_reason: "user" });
+    if (billingError) { setError(billingError.message || "Unable to finalize the call."); endedRef.current = false; return; }
+    localStreamRef.current?.getTracks().forEach(track => track.stop());
     pcRef.current?.close();
     onEnd?.();
   }
 
   const displayName = peer?.name || peer?.full_name || peer?.username || "HEXA User";
-  return (
-    <div className="story-viewer" style={{ zIndex: 800 }}>
-      <div className="call-shell">
-        <div className="call-header">
-          <strong>{type === "video" ? "HEXA Video Call" : "HEXA Voice Call"}</strong>
-          <span>{connected ? "Connected" : call?.status === "ringing" ? "Ringing…" : "Connecting…"}</span>
-        </div>
-        {type === "video" ? (
-          <div className="call-video-grid">
-            <video ref={remoteVideo} autoPlay playsInline className="call-remote-video" />
-            <video ref={localVideo} autoPlay muted playsInline className="call-local-video" />
-          </div>
-        ) : (
-          <div className="call-audio-stage">
-            <div className="call-avatar"><Avatar src={peer?.avatar_url} name={displayName} size={82} /></div>
-            <p>{error || (connected ? "Connected" : "Calling…")}</p>
-          </div>
-        )}
-        {error && <p className="call-error">{error}</p>}
-        <div className="call-controls"><button className="danger-button" onClick={end}>End call</button></div>
-      </div>
-    </div>
-  );
+  return <div className="story-viewer" style={{ zIndex: 800 }}><div className="call-shell hexa-call-shell">
+    <div className="call-header"><div><strong>{type === "video" ? "HEXA Video Call" : "HEXA Voice Call"}</strong><span>{connected ? "Connected" : call?.status === "ringing" ? "Ringing…" : "Connecting…"}</span></div><div className="call-header-peer"><Avatar src={peer?.avatar_url} name={displayName} size={36}/><span>{displayName}</span></div></div>
+    <audio ref={remoteAudio} autoPlay playsInline />
+    {type === "video" ? <div className="call-video-grid"><video ref={remoteVideo} autoPlay playsInline className="call-remote-video"/><video ref={localVideo} autoPlay muted playsInline className="call-local-video"/></div> : <div className="call-audio-stage"><div className="call-avatar"><Avatar src={peer?.avatar_url} name={displayName} size={96}/></div><h2>{displayName}</h2><p>{error || (connected ? "Connected. Speak normally." : "Calling…")}</p><div className={connected ? "call-live-indicator" : "call-connecting-indicator"}><span/> {connected ? "Live audio" : "Connecting audio"}</div></div>}
+    {error && <p className="call-error">{error}</p>}
+    <div className="call-controls hexa-call-controls"><button className={muted ? "call-control-button active" : "call-control-button"} onClick={() => setMuted(v => !v)} title={muted ? "Unmute microphone" : "Mute microphone"}>{muted ? "🔇" : "🎙️"}</button>{type === "video" && <button className={cameraOff ? "call-control-button active" : "call-control-button"} onClick={() => setCameraOff(v => !v)}>{cameraOff ? "🚫" : "📹"}</button>}<button className="danger-button call-end-button" onClick={end}>End call</button></div>
+  </div></div>;
 }
 
 function WebRTCCallLauncher({ profile, target, onClose }) {
@@ -5389,7 +5653,11 @@ function IncomingCallWatcher({ profile }) {
           .select("id,username,full_name,avatar_url")
           .eq("id", call.caller_id)
           .maybeSingle();
-        if (active) setIncoming({ call, peer: peer || { id: call.caller_id, full_name: "HEXA User" } });
+        if (active) {
+          const resolvedPeer = peer || { id: call.caller_id, full_name: "HEXA User" };
+          setIncoming({ call, peer: resolvedPeer });
+          showHexaSystemNotification(call.type === "video" ? "Incoming HEXA video call" : "Incoming HEXA voice call", `${resolvedPeer.full_name || resolvedPeer.username || "A HEXA user"} is calling you.`, { tag: `hexa-call-${call.id}` });
+        }
       }
     })();
 
@@ -5398,7 +5666,11 @@ function IncomingCallWatcher({ profile }) {
         const call = payload.new;
         if (!active || call.status !== "ringing") return;
         const { data: peer } = await supabase.from("profiles").select("id,username,full_name,avatar_url").eq("id", call.caller_id).maybeSingle();
-        if (active) setIncoming({ call, peer: peer || { id: call.caller_id, full_name: "HEXA User" } });
+        if (active) {
+          const resolvedPeer = peer || { id: call.caller_id, full_name: "HEXA User" };
+          setIncoming({ call, peer: resolvedPeer });
+          showHexaSystemNotification(call.type === "video" ? "Incoming HEXA video call" : "Incoming HEXA voice call", `${resolvedPeer.full_name || resolvedPeer.username || "A HEXA user"} is calling you.`, { tag: `hexa-call-${call.id}` });
+        }
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "calls", filter: `callee_id=eq.${profile.id}` }, (payload) => {
         if (["ended", "declined", "rejected", "missed"].includes(payload.new?.status)) {
@@ -5591,7 +5863,7 @@ function WalletPage({ profile }) {
       <div className="wallet-balance-card">
         <span>Available HEXA Credits</span>
         <strong>{loading ? "Loading…" : displayCredits}</strong>
-        <small>1 HEXA Credit = ₦1.00 · External call rate: 50 kobo/second</small>
+        <small>1 HEXA Credit = ₦1.00 · External call rate: 30 kobo/second</small>
       </div>
       <div className="settings-card wallet-fund-card">
         <div><strong>Buy HEXA Credits</strong><p>Secure account verification + server-side payment verification.</p></div>
@@ -5648,639 +5920,170 @@ function UniversalSearch({ search, profile, onMessage }) {
    HEXA SETTINGS
    ============================================================ */
 
-function ProfileEditModal({ profile, onClose, onSaved }) {
-  const [fullName, setFullName] = useState(profile?.full_name || "");
-  const [username, setUsername] = useState(profile?.username || "");
-  const [about, setAbout] = useState(profile?.about || "");
-  const [phone, setPhone] = useState(profile?.phone || "");
-  const [busy, setBusy] = useState(false);
-  const [avatarFile, setAvatarFile] = useState(null);
-  const [avatarPreview, setAvatarPreview] = useState(profile?.avatar_url || "");
-  const fileRef = useRef(null);
-  async function saveProfile(e) {
-    e.preventDefault(); setBusy(true);
-    try {
-      let avatar_url = profile?.avatar_url || null;
-      if (avatarFile) {
-        const bucket = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET;
-        if (!bucket) throw new Error("Set VITE_SUPABASE_STORAGE_BUCKET to upload profile pictures.");
-        const path = `${profile.id}/profile/avatar-${Date.now()}-${avatarFile.name.replace(/[^a-zA-Z0-9._-]/g,"_")}`;
-        const { error } = await supabase.storage.from(bucket).upload(path, avatarFile, { upsert: true, contentType: avatarFile.type });
-        if (error) throw error;
-        avatar_url = supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
-      }
-      const payload = { full_name: fullName.trim(), username: username.trim().replace(/^@/, ""), about: about.trim(), phone: phone.trim(), avatar_url, updated_at: new Date().toISOString() };
-      const { data, error } = await supabase.from("profiles").update(payload).eq("id", profile.id).select("*").single();
-      if (error) throw error;
-      onSaved?.(data); onClose();
-    } catch (error) { safeAlert(error?.message || "Unable to update profile."); }
-    finally { setBusy(false); }
-  }
-  return <div className="hexa-modal-overlay" onClick={onClose}><div className="hexa-modal profile-edit-modal" onClick={e=>e.stopPropagation()}>
-    <div className="modal-header"><div><strong>Edit profile</strong><span>Change your HEXA picture and account details.</span></div><button type="button" onClick={onClose}>×</button></div>
-    <button type="button" className="profile-avatar-editor" onClick={()=>fileRef.current?.click()}><Avatar src={avatarPreview} name={fullName || username || "HEXA"} size={86}/><span>📷 Change photo</span></button>
-    <input ref={fileRef} hidden type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f){setAvatarFile(f);setAvatarPreview(URL.createObjectURL(f));}}}/>
-    <form onSubmit={saveProfile}>
-      <input className="modal-input" value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="Full name" required />
-      <input className="modal-input" value={username} onChange={e=>setUsername(e.target.value)} placeholder="Username" required />
-      <textarea className="modal-input modal-textarea" value={about} onChange={e=>setAbout(e.target.value)} placeholder="About" />
-      <input className="modal-input" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Phone number" inputMode="tel" />
-      <button className="hero-primary" disabled={busy}>{busy ? "Saving…" : "Save profile"}</button>
-    </form>
-  </div></div>;
-}
-
-const HEXA_SUBSCRIPTION_PLANS = [
-  { id: "plus", name: "HEXA Plus", price: 9.99, perks: ["More storage", "Advanced chat organization", "Premium themes"] },
-  { id: "pro", name: "HEXA Pro", price: 24.99, perks: ["Everything in Plus", "Higher media limits", "Creator tools", "Advanced communities"] },
-  { id: "ultra", name: "HEXA Ultra", price: 49.99, perks: ["Everything in Pro", "Maximum limits", "Priority features", "Advanced business tools"] },
-];
-function SubscriptionPage({ profile }) {
-  const [subscription, setSubscription] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState("");
-  const [message, setMessage] = useState("");
-  useEffect(() => { (async()=>{ const {data}=await supabase.from("hexa_subscriptions").select("*").eq("user_id",profile.id).maybeSingle(); setSubscription(data); setLoading(false); })(); }, [profile?.id]);
-  async function subscribe(plan) {
-    setBusy(plan.id); setMessage("");
-    try {
-      const endpoint = import.meta.env.VITE_HEXA_SUBSCRIPTION_CHECKOUT_URL || "/api/hexa-subscription-checkout";
-      const response = await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({plan_id:plan.id,user_id:profile.id,email:profile.email})});
-      if (!response.ok) throw new Error((await response.text()) || "Subscription checkout is unavailable.");
-      const result = await response.json();
-      if (result.url) window.location.href = result.url; else setMessage("Checkout created. Complete payment in the secure payment page.");
-    } catch (error) { setMessage(error?.message || "Unable to start checkout."); }
-    finally { setBusy(""); }
-  }
-  return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">★</div><div><h1>Subscription</h1><p>Choose a HEXA membership plan. Payment is handled by the secure checkout service.</p></div></div>
-    {subscription && <div className="subscription-current"><strong>Current plan: {subscription.plan_name || subscription.plan_id}</strong><span>{subscription.status || "active"} · {subscription.current_period_end ? new Date(subscription.current_period_end).toLocaleDateString() : ""}</span></div>}
-    {message && <div className="subscription-message">{message}</div>}
-    <div className="subscription-grid">{HEXA_SUBSCRIPTION_PLANS.map(plan=><article className="subscription-card" key={plan.id}><span className="eyebrow">HEXA MEMBERSHIP</span><h2>{plan.name}</h2><strong>${plan.price.toFixed(2)}<small>/month</small></strong><div>{plan.perks.map(p=><span key={p}>✓ {p}</span>)}</div><button className="hero-primary" disabled={busy===plan.id} onClick={()=>subscribe(plan)}>{busy===plan.id?"Opening checkout…":subscription?.plan_id===plan.id?"Manage plan":"Choose plan"}</button></article>)}</div>
-  </section>;
-}
-
-/* ============================================================
-   HEXA SETTINGS
-   WhatsApp-style settings experience
-   ============================================================ */
-
-function SettingsPage({ profile, onSignOut }) {
+function SettingsPage({ profile, onSignOut, onProfileSaved }) {
   const [theme, setTheme] = useState(getSavedHexaTheme());
-
-  const [settings, setSettings] = useState(() => {
-    try {
-      return JSON.parse(
-        localStorage.getItem("hexa-settings-v1") || "{}"
-      );
-    } catch {
-      return {};
-    }
-  });
-
-  const [openSection, setOpenSection] = useState(null);
+  const [showThemes, setShowThemes] = useState(true);
 
   useEffect(() => {
     applyHexaTheme(theme);
   }, [theme]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        "hexa-settings-v1",
-        JSON.stringify(settings)
-      );
-    } catch {
-      // Ignore local storage errors.
-    }
-  }, [settings]);
 
   function changeTheme(themeId) {
     setTheme(themeId);
     applyHexaTheme(themeId);
   }
 
-  function toggleSetting(key, fallback = false) {
-    setSettings(current => ({
-      ...current,
-      [key]:
-        typeof current[key] === "boolean"
-          ? !current[key]
-          : !fallback,
-    }));
-  }
-
-  const activeTheme =
-    HEXA_THEMES[theme] || HEXA_THEMES.midnight;
-
-  const fullName =
-    profile?.full_name ||
-    profile?.username ||
-    "HEXA User";
-
-  const username =
-    profile?.username
-      ? `@${profile.username}`
-      : "";
+  const activeTheme = HEXA_THEMES[theme] || HEXA_THEMES.midnight;
 
   return (
-    <section className="hexa-settings-page">
+    <section className="workspace-page settings-page">
 
-      {/* ======================================================
-          SETTINGS HEADER
-         ====================================================== */}
-
-      <header className="hexa-settings-header">
+      <div className="page-heading">
+        <div className="page-heading-icon">⚙</div>
 
         <div>
           <h1>Settings</h1>
           <p>
-            Manage your HEXA account, chats, privacy and
-            experience.
+            Customize your HEXA experience, appearance and account.
           </p>
         </div>
+      </div>
 
-      </header>
+      {/* PROFILE */}
 
-
-      {/* ======================================================
-          PROFILE
-         ====================================================== */}
-
-      <button
-        type="button"
-        className="hexa-settings-profile"
-        onClick={() => setOpenSection("profile")}
-      >
+      <div className="settings-card hexa-profile-settings">
         <Avatar
           src={profile?.avatar_url}
-          name={fullName}
-          size={62}
-          online
+          name={
+            profile?.full_name ||
+            profile?.username ||
+            "HEXA User"
+          }
+          size={64}
         />
 
-        <div className="hexa-settings-profile-copy">
-          <strong>{fullName}</strong>
+        <div>
+          <strong>
+            {profile?.full_name ||
+              profile?.username ||
+              "HEXA User"}
+          </strong>
 
-          {username && (
-            <span>{username}</span>
-          )}
-
-          <small>
-            {profile?.about ||
-              "Available on HEXA"}
-          </small>
+          <p>
+            {profile?.username
+              ? `@${profile.username}`
+              : profile?.email || "HEXA account"}
+          </p>
         </div>
+      </div>
 
-        <span className="hexa-settings-chevron">
-          ›
-        </span>
-      </button>
+      {/* APPEARANCE */}
 
-
-      {/* ======================================================
-          ACCOUNT
-         ====================================================== */}
-
-      <section className="hexa-settings-group">
-
-        <div className="hexa-settings-group-title">
-          Account
-        </div>
+      <div className="settings-section">
 
         <button
-          type="button"
-          className="hexa-settings-row"
-          onClick={() => setOpenSection("account")}
+          className="settings-section-heading"
+          onClick={() => setShowThemes(v => !v)}
         >
-          <span className="hexa-settings-row-icon">
-            👤
-          </span>
-
-          <div>
-            <strong>Account</strong>
-            <small>
-              Profile, phone number and email
-            </small>
-          </div>
-
-          <span>›</span>
-        </button>
-
-        <button
-          type="button"
-          className="hexa-settings-row"
-          onClick={() => setOpenSection("privacy")}
-        >
-          <span className="hexa-settings-row-icon">
-            🔐
-          </span>
-
-          <div>
-            <strong>Privacy</strong>
-            <small>
-              Last seen, online, read receipts and blocking
-            </small>
-          </div>
-
-          <span>›</span>
-        </button>
-
-        <button
-          type="button"
-          className="hexa-settings-row"
-          onClick={() => setOpenSection("security")}
-        >
-          <span className="hexa-settings-row-icon">
-            🛡️
-          </span>
-
-          <div>
-            <strong>Security</strong>
-            <small>
-              Encryption, passkeys and two-step verification
-            </small>
-          </div>
-
-          <span>›</span>
-        </button>
-
-      </section>
-
-
-      {/* ======================================================
-          CHATS
-         ====================================================== */}
-
-      <section className="hexa-settings-group">
-
-        <div className="hexa-settings-group-title">
-          Chats
-        </div>
-
-        <button
-          type="button"
-          className="hexa-settings-row"
-          onClick={() => setOpenSection("chats")}
-        >
-          <span className="hexa-settings-row-icon">
-            💬
-          </span>
-
-          <div>
-            <strong>Chat settings</strong>
-            <small>
-              Wallpaper, display, enter key and media
-            </small>
-          </div>
-
-          <span>›</span>
-        </button>
-
-        <button
-          type="button"
-          className="hexa-settings-row"
-          onClick={() => setOpenSection("theme")}
-        >
-          <span className="hexa-settings-row-icon">
-            🎨
-          </span>
-
           <div>
             <strong>Appearance</strong>
-            <small>
-              {activeTheme.name}
-            </small>
+            <span>
+              Choose how HEXA looks on your devices.
+            </span>
           </div>
 
-          <span>›</span>
+          <b>{showThemes ? "⌃" : "⌄"}</b>
         </button>
 
-        <button
-          type="button"
-          className="hexa-settings-row"
-          onClick={() => setOpenSection("storage")}
-        >
-          <span className="hexa-settings-row-icon">
-            📦
-          </span>
+        {showThemes && (
+          <div className="hexa-theme-panel">
 
-          <div>
-            <strong>Storage and data</strong>
-            <small>
-              Media, downloads and network usage
-            </small>
-          </div>
-
-          <span>›</span>
-        </button>
-
-      </section>
-
-
-      {/* ======================================================
-          NOTIFICATIONS
-         ====================================================== */}
-
-      <section className="hexa-settings-group">
-
-        <div className="hexa-settings-group-title">
-          Notifications
-        </div>
-
-        <div className="hexa-settings-row hexa-settings-toggle-row">
-
-          <span className="hexa-settings-row-icon">
-            🔔
-          </span>
-
-          <div>
-            <strong>Message notifications</strong>
-            <small>
-              Show notifications for new messages
-            </small>
-          </div>
-
-          <button
-            type="button"
-            className={`hexa-switch ${
-              settings.notifications !== false
-                ? "on"
-                : ""
-            }`}
-            onClick={() =>
-              toggleSetting(
-                "notifications",
-                true
-              )
-            }
-          >
-            <span />
-          </button>
-
-        </div>
-
-
-        <div className="hexa-settings-row hexa-settings-toggle-row">
-
-          <span className="hexa-settings-row-icon">
-            🔊
-          </span>
-
-          <div>
-            <strong>Notification sounds</strong>
-            <small>
-              Play a sound for new messages
-            </small>
-          </div>
-
-          <button
-            type="button"
-            className={`hexa-switch ${
-              settings.notificationSounds !== false
-                ? "on"
-                : ""
-            }`}
-            onClick={() =>
-              toggleSetting(
-                "notificationSounds",
-                true
-              )
-            }
-          >
-            <span />
-          </button>
-
-        </div>
-
-      </section>
-
-
-      {/* ======================================================
-          CALLS
-         ====================================================== */}
-
-      <section className="hexa-settings-group">
-
-        <div className="hexa-settings-group-title">
-          Calls
-        </div>
-
-        <button
-          type="button"
-          className="hexa-settings-row"
-          onClick={() => setOpenSection("calls")}
-        >
-          <span className="hexa-settings-row-icon">
-            ☎
-          </span>
-
-          <div>
-            <strong>Calling</strong>
-            <small>
-              Camera, microphone and call preferences
-            </small>
-          </div>
-
-          <span>›</span>
-        </button>
-
-      </section>
-
-
-      {/* ======================================================
-          LINKED DEVICES
-         ====================================================== */}
-
-      <section className="hexa-settings-group">
-
-        <div className="hexa-settings-group-title">
-          Devices
-        </div>
-
-        <button
-          type="button"
-          className="hexa-settings-row"
-          onClick={() => setOpenSection("devices")}
-        >
-          <span className="hexa-settings-row-icon">
-            💻
-          </span>
-
-          <div>
-            <strong>Linked devices</strong>
-            <small>
-              Manage devices connected to your HEXA account
-            </small>
-          </div>
-
-          <span>›</span>
-        </button>
-
-      </section>
-
-
-      {/* ======================================================
-          SUPPORT
-         ====================================================== */}
-
-      <section className="hexa-settings-group">
-
-        <div className="hexa-settings-group-title">
-          Support
-        </div>
-
-        <button
-          type="button"
-          className="hexa-settings-row"
-          onClick={() => setOpenSection("help")}
-        >
-          <span className="hexa-settings-row-icon">
-            ❓
-          </span>
-
-          <div>
-            <strong>Help and support</strong>
-            <small>
-              FAQs, contact HEXA and report a problem
-            </small>
-          </div>
-
-          <span>›</span>
-        </button>
-
-        <button
-          type="button"
-          className="hexa-settings-row"
-          onClick={() => setOpenSection("about")}
-        >
-          <span className="hexa-settings-row-icon">
-            ℹ️
-          </span>
-
-          <div>
-            <strong>About HEXA</strong>
-            <small>
-              Version, terms and privacy policy
-            </small>
-          </div>
-
-          <span>›</span>
-        </button>
-
-      </section>
-
-
-      {/* ======================================================
-          LOG OUT
-         ====================================================== */}
-
-      <section className="hexa-settings-group hexa-settings-account-group">
-
-        <button
-          type="button"
-          className="hexa-settings-logout"
-          onClick={onSignOut}
-        >
-          <span>↪</span>
-          Sign out of HEXA
-        </button>
-
-      </section>
-
-
-      {/* ======================================================
-          THEME PANEL
-         ====================================================== */}
-
-      {openSection === "theme" && (
-        <div
-          className="hexa-settings-overlay"
-          onClick={() => setOpenSection(null)}
-        >
-          <div
-            className="hexa-settings-modal"
-            onClick={event =>
-              event.stopPropagation()
-            }
-          >
-
-            <div className="hexa-settings-modal-header">
-              <button
-                type="button"
-                onClick={() =>
-                  setOpenSection(null)
-                }
-              >
-                ←
-              </button>
-
+            <div className="theme-current">
               <div>
-                <strong>Appearance</strong>
-                <small>
-                  Choose your HEXA theme
-                </small>
+                <span>Current theme</span>
+                <strong>
+                  {activeTheme.icon} {activeTheme.name}
+                </strong>
               </div>
 
-              <button
-                type="button"
-                onClick={() =>
-                  setOpenSection(null)
-                }
-              >
-                ×
-              </button>
+              <small>
+                {activeTheme.description}
+              </small>
             </div>
 
-            <div className="hexa-settings-theme-list">
+            <div className="hexa-theme-grid">
 
               {Object.values(HEXA_THEMES).map(item => (
                 <button
                   key={item.id}
                   type="button"
-                  className={`hexa-settings-theme ${
-                    theme === item.id
-                      ? "selected"
-                      : ""
-                  }`}
-                  onClick={() =>
-                    changeTheme(item.id)
+                  className={
+                    `hexa-theme-option ${
+                      theme === item.id
+                        ? "selected"
+                        : ""
+                    }`
                   }
+                  onClick={() => changeTheme(item.id)}
                 >
 
                   <div
-                    className="hexa-settings-theme-preview"
+                    className="theme-preview"
                     style={{
-                      background:
-                        item.vars["--hexa-bg"],
+                      background: item.vars["--hexa-bg"]
                     }}
                   >
                     <div
+                      className="theme-preview-sidebar"
                       style={{
                         background:
-                          item.vars["--hexa-message-in"],
+                          item.vars["--hexa-sidebar"]
                       }}
                     />
 
+                    <div className="theme-preview-content">
+
+                      <div
+                        className="theme-preview-message incoming"
+                        style={{
+                          background:
+                            item.vars["--hexa-message-in"]
+                        }}
+                      />
+
+                      <div
+                        className="theme-preview-message outgoing"
+                        style={{
+                          background:
+                            item.vars["--hexa-message-out"]
+                        }}
+                      />
+
+                    </div>
+
                     <div
+                      className="theme-preview-accent"
                       style={{
                         background:
-                          item.vars["--hexa-message-out"],
+                          item.vars["--hexa-accent"]
                       }}
                     />
                   </div>
 
-                  <div>
+                  <div className="theme-option-copy">
                     <strong>
                       {item.icon} {item.name}
                     </strong>
 
-                    <small>
+                    <span>
                       {item.description}
-                    </small>
+                    </span>
                   </div>
 
                   {theme === item.id && (
-                    <b>✓</b>
+                    <div className="theme-selected">
+                      ✓
+                    </div>
                   )}
 
                 </button>
@@ -6289,233 +6092,62 @@ function SettingsPage({ profile, onSignOut }) {
             </div>
 
           </div>
-        </div>
-      )}
-
-
-      {/* ======================================================
-          SIMPLE DETAIL PANELS
-         ====================================================== */}
-
-      {openSection &&
-        openSection !== "theme" &&
-        openSection !== "profile" && (
-          <div
-            className="hexa-settings-overlay"
-            onClick={() => setOpenSection(null)}
-          >
-            <div
-              className="hexa-settings-modal hexa-settings-detail"
-              onClick={event =>
-                event.stopPropagation()
-              }
-            >
-
-              <div className="hexa-settings-modal-header">
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setOpenSection(null)
-                  }
-                >
-                  ←
-                </button>
-
-                <div>
-                  <strong>
-                    {{
-                      account: "Account",
-                      privacy: "Privacy",
-                      security: "Security",
-                      chats: "Chat settings",
-                      storage: "Storage and data",
-                      calls: "Calling",
-                      devices: "Linked devices",
-                      help: "Help and support",
-                      about: "About HEXA",
-                    }[openSection] || "Settings"}
-                  </strong>
-
-                  <small>
-                    HEXA settings
-                  </small>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setOpenSection(null)
-                  }
-                >
-                  ×
-                </button>
-
-              </div>
-
-              <div className="hexa-detail-content">
-
-                {openSection === "account" && (
-                  <>
-                    <div className="hexa-detail-item">
-                      <strong>Profile name</strong>
-                      <span>{fullName}</span>
-                    </div>
-
-                    <div className="hexa-detail-item">
-                      <strong>Username</strong>
-                      <span>
-                        {username || "Not set"}
-                      </span>
-                    </div>
-
-                    <div className="hexa-detail-item">
-                      <strong>Email</strong>
-                      <span>
-                        {profile?.email ||
-                          "Not available"}
-                      </span>
-                    </div>
-                  </>
-                )}
-
-                {openSection === "privacy" && (
-                  <>
-                    <div className="hexa-detail-item">
-                      <strong>Last seen and online</strong>
-                      <span>Manage who can see your activity.</span>
-                    </div>
-
-                    <div className="hexa-detail-item">
-                      <strong>Read receipts</strong>
-                      <span>Control message read indicators.</span>
-                    </div>
-
-                    <div className="hexa-detail-item">
-                      <strong>Blocked contacts</strong>
-                      <span>Manage blocked HEXA accounts.</span>
-                    </div>
-                  </>
-                )}
-
-                {openSection === "security" && (
-                  <>
-                    <div className="hexa-detail-item">
-                      <strong>End-to-end encryption</strong>
-                      <span>Your supported HEXA conversations use encrypted transport.</span>
-                    </div>
-
-                    <div className="hexa-detail-item">
-                      <strong>Two-step verification</strong>
-                      <span>Protect your HEXA account with an additional security layer.</span>
-                    </div>
-
-                    <div className="hexa-detail-item">
-                      <strong>Passkeys</strong>
-                      <span>Manage supported passkey authentication.</span>
-                    </div>
-                  </>
-                )}
-
-                {openSection === "chats" && (
-                  <>
-                    <div className="hexa-detail-item">
-                      <strong>Enter key to send</strong>
-                      <span>Press Enter to send messages.</span>
-                    </div>
-
-                    <div className="hexa-detail-item">
-                      <strong>Media visibility</strong>
-                      <span>Choose how received media is handled.</span>
-                    </div>
-
-                    <div className="hexa-detail-item">
-                      <strong>Chat wallpaper</strong>
-                      <span>Customize your conversation background.</span>
-                    </div>
-                  </>
-                )}
-
-                {openSection === "storage" && (
-                  <>
-                    <div className="hexa-detail-item">
-                      <strong>Media auto-download</strong>
-                      <span>Control downloads on cellular and Wi-Fi.</span>
-                    </div>
-
-                    <div className="hexa-detail-item">
-                      <strong>Storage management</strong>
-                      <span>Review media and files stored by HEXA.</span>
-                    </div>
-                  </>
-                )}
-
-                {openSection === "calls" && (
-                  <>
-                    <div className="hexa-detail-item">
-                      <strong>Microphone</strong>
-                      <span>Manage your call microphone preference.</span>
-                    </div>
-
-                    <div className="hexa-detail-item">
-                      <strong>Camera</strong>
-                      <span>Manage your video call camera.</span>
-                    </div>
-
-                    <div className="hexa-detail-item">
-                      <strong>Call history</strong>
-                      <span>Review your HEXA voice and video calls.</span>
-                    </div>
-                  </>
-                )}
-
-                {openSection === "devices" && (
-                  <div className="hexa-detail-item">
-                    <strong>This device</strong>
-                    <span>
-                      Your current HEXA session is active on this device.
-                    </span>
-                  </div>
-                )}
-
-                {openSection === "help" && (
-                  <>
-                    <div className="hexa-detail-item">
-                      <strong>HEXA Help Center</strong>
-                      <span>Find answers to common questions.</span>
-                    </div>
-
-                    <div className="hexa-detail-item">
-                      <strong>Report a problem</strong>
-                      <span>Tell HEXA about a technical issue.</span>
-                    </div>
-                  </>
-                )}
-
-                {openSection === "about" && (
-                  <>
-                    <div className="hexa-detail-item">
-                      <strong>HEXA</strong>
-                      <span>Communication, connected.</span>
-                    </div>
-
-                    <div className="hexa-detail-item">
-                      <strong>Version</strong>
-                      <span>HEXA NEXUS</span>
-                    </div>
-                  </>
-                )}
-
-              </div>
-
-            </div>
-          </div>
         )}
+
+      </div>
+
+      {/* CHAT */}
+
+      <div className="settings-grid">
+
+        <div className="settings-card">
+          <div>
+            <strong>Chat appearance</strong>
+            <p>
+              Your selected theme automatically applies to
+              conversations, chat bubbles, menus and panels.
+            </p>
+          </div>
+
+          <span className="settings-status">
+            {activeTheme.name}
+          </span>
+        </div>
+
+        <div className="settings-card">
+          <div>
+            <strong>Theme synchronization</strong>
+            <p>
+              HEXA remembers your theme on this device.
+            </p>
+          </div>
+
+          <span className="settings-status">
+            Enabled
+          </span>
+        </div>
+
+        <div className="settings-card">
+          <div>
+            <strong>Account</strong>
+            <p>
+              Manage your HEXA session.
+            </p>
+          </div>
+
+          <button
+            className="settings-danger-button"
+            onClick={onSignOut}
+          >
+            Sign out
+          </button>
+        </div>
+
+      </div>
 
     </section>
   );
 }
-
 class HexaErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -6552,56 +6184,85 @@ class HexaErrorBoundary extends React.Component {
 }
 
 function AuthenticatedHEXA({ session, onSignOut }) {
+  const [profile, setProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [activePage, setActivePage] = useState("nexus");
+  const [search, setSearch] = useState("");
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [chatTarget, setChatTarget] = useState(null);
+  const [callTarget, setCallTarget] = useState(null);
+  const [notificationPermission, setNotificationPermission] = useState(typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported");
 
-  const [profile,setProfile]=useState(null),[profileLoading,setProfileLoading]=useState(true),[activePage,setActivePage]=useState("chat"),
-  [search,setSearch]=useState(""),[notifications,setNotifications]=useState([]),[showNotifications,setShowNotifications]=useState(false),[chatTarget,setChatTarget]=useState(null),[callTarget,setCallTarget]=useState(null);
-  useEffect(()=>{let cancelled=false;(async()=>{const result=await ensureHexaProfile(session?.user);if(!cancelled){setProfile(result);setProfileLoading(false)}})();return()=>{cancelled=true}},[session?.user?.id]);
-  useEffect(()=>{if(!profile?.id)return;(async()=>{const {data}=await supabase.from("notifications").select("id,kind,title,body,created_at,read_at,data").eq("user_id",profile.id).order("created_at",{ascending:false}).limit(50);setNotifications((data||[]).filter(n=>!n.read_at));})();},[profile?.id]);
-  useEffect(()=>{
-    if(!profile?.id)return;
-    const pushNotice=(title,body)=>{const n={id:`${Date.now()}-${Math.random()}`,title,body,created_at:new Date().toISOString()};setNotifications(x=>[n,...x].slice(0,50));if(typeof Notification!=="undefined"&&Notification.permission==="granted"){try{new Notification(`HEXA · ${title}`,{body,tag:"hexa-live"})}catch{}}};
-    if(typeof Notification!=="undefined"&&Notification.permission==="default") Notification.requestPermission().catch(()=>{});
-    const channel=supabase.channel(`hexa-notifications-${profile.id}`)
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},async p=>{if(p.new?.sender_id===profile.id)return;pushNotice("New message",p.new?.content||"New message");})
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"calls",filter:`callee_id=eq.${profile.id}`},p=>{if(p.new?.status==="ringing")pushNotice("Incoming call",`You have a ${p.new?.type||"voice"} call.`);})
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"message_reactions",filter:`user_id=eq.${profile.id}`},p=>pushNotice("Reaction","Someone reacted to a message."))
-      .subscribe();
-    return()=>supabase.removeChannel(channel)
-  },[profile?.id]);
-  if(profileLoading)return <div className="hexa-loading-screen"><div className="loading-logo">H</div><div className="loading-spinner"/><strong>Opening HEXA…</strong><span>Preparing your workspace</span></div>;
-  let page; switch(activePage){
-    case "nexus":page=<NexusHome profile={profile} setActivePage={setActivePage}/>;break;
-    case "chat":page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type)=>setCallTarget({conversation:c,type})} onOpenChatWithUser={()=>setSearch("")}/>;break;
-    case "groups":page=<GroupsPage profile={profile} onOpenChat={c=>{setChatTarget(c);setActivePage("chat")}}/>;break;
-    case "communities":page=<CommunitiesPage profile={profile}/>;break;
-    case "channels":page=<ChannelsPage profile={profile}/>;break;
-    case "status":page=<StatusPage profile={profile}/>;break;
-    case "calls":page=<CallsPage profile={profile}/>;break;
-    case "wallet":page=<WalletPage profile={profile}/>;break;
-    case "subscription":page=<SubscriptionPage profile={profile}/>;break;
-    case "kora":page=<KoraPage profile={profile}/>;break;
-    case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut} onProfileSaved={setProfile}/>;break;
-    case "projects":page=<WorkspacePlaceholder title="Projects" description="Organize collaborative work." icon="◆"/>;break;
-    case "developer":page=<WorkspacePlaceholder title="Developer Hub" description="Build and connect with HEXA." icon="</>"/>;break;
-    default:page=<NexusHome profile={profile} setActivePage={setActivePage}/>;
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await ensureHexaProfile(session?.user);
+        if (!cancelled) { setProfile(result); setProfileLoading(false); }
+      } catch (error) {
+        console.error("HEXA profile load:", error);
+        if (!cancelled) setProfileLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session?.user?.id]);
+
+  useEffect(() => { registerHexaServiceWorker(); }, []);
+
+  async function enableSystemNotifications() {
+    const permission = await requestHexaSystemNotifications();
+    setNotificationPermission(permission);
+    if (permission === "granted") await showHexaSystemNotification("HEXA notifications enabled", "New messages and incoming calls can now appear outside the HEXA window.", { tag: "hexa-enabled" });
   }
+
+  useEffect(() => {
+    if (!profile?.id) return undefined;
+    const channel = supabase.channel(`hexa-notifications-${profile.id}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async payload => {
+        const message = payload.new || {};
+        if (!message.sender_id || String(message.sender_id) === String(profile.id)) return;
+        const body = String(message.content || "New message").trim() || "New message";
+        const notification = { id: `${message.id || Date.now()}-${Date.now()}`, title: "New HEXA message", body, created_at: new Date().toISOString() };
+        setNotifications(current => [notification, ...current].slice(0, 50));
+        if (document.visibilityState !== "visible") await showHexaSystemNotification(notification.title, notification.body, { tag: `hexa-message-${message.id || Date.now()}` });
+      })
+      .subscribe((status, error) => { if (["CHANNEL_ERROR", "TIMED_OUT"].includes(status)) console.warn("HEXA notification channel:", status, error); });
+    return () => supabase.removeChannel(channel);
+  }, [profile?.id]);
+
+  if (profileLoading) return <div className="hexa-loading-screen"><div className="loading-logo">H</div><div className="loading-spinner"/><strong>Opening HEXA…</strong><span>Preparing your workspace</span></div>;
+
+  let page;
+  switch (activePage) {
+    case "nexus": page = <NexusHome profile={profile} setActivePage={setActivePage}/>; break;
+    case "chat": page = <ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(conversation,type) => setCallTarget({conversation,type})} onOpenChatWithUser={() => setSearch("")}/>; break;
+    case "groups": page = <GroupsPage profile={profile} onOpenChat={conversation => { setChatTarget(conversation); setActivePage("chat"); }}/>; break;
+    case "communities": page = <CommunitiesPage profile={profile}/>; break;
+    case "channels": page = <ChannelsPage profile={profile}/>; break;
+    case "status": page = <StatusPage profile={profile}/>; break;
+    case "calls": page = <CallsPage profile={profile}/>; break;
+    case "wallet": page = <WalletPage profile={profile}/>; break;
+    case "kora": page = <KoraPage profile={profile}/>; break;
+    case "settings": page = <SettingsPage profile={profile} onSignOut={onSignOut}/>; break;
+    case "projects": page = <WorkspacePlaceholder title="Projects" description="Organize collaborative work." icon="◆"/>; break;
+    case "developer": page = <WorkspacePlaceholder title="Developer Hub" description="Build and connect with HEXA." icon="</>"/>; break;
+    default: page = <NexusHome profile={profile} setActivePage={setActivePage}/>;
+  }
+
   return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main">
-
-  {activePage !== "chat" && (
-    <Topbar
-      profile={profile}
-      search={search}
-      setSearch={setSearch}
-      activePage={activePage}
-      onNotifications={() => setShowNotifications(v => !v)}
-      notificationCount={notifications.length}
-      onSettings={() => setActivePage("settings")}
-    />
-  )}
-
-  <main className={`hexa-content ${activePage === "chat" ? "hexa-chat-content" : ""}`}><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={async()=>{setNotifications([]);await supabase.from("notifications").update({read_at:new Date().toISOString()}).eq("user_id",profile.id).is("read_at",null);}}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div></div>;
+    <Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={() => setShowNotifications(v => !v)} notificationCount={notifications.length} onSettings={() => setActivePage("settings")}/>
+    <main className={`hexa-content ${activePage === "chat" ? "hexa-chat-content" : ""}`}>
+      <UniversalSearch search={search} profile={profile} onMessage={async person => { setSearch(""); try { const chat = await hexaGetOrCreateDirectConversation(person.id); setChatTarget({ ...chat, name: person.full_name || person.username || "HEXA User", kind: "direct", type: "direct", realConversationId: chat.id, otherUserId: person.id, avatar_url: person.avatar_url || null }); setActivePage("chat"); } catch (error) { safeAlert(error?.message || "Unable to open chat."); } }}/>
+      {showNotifications && <div className="notifications-panel" role="dialog" aria-label="HEXA notifications">
+        <div className="notifications-header"><div><strong>Notifications</strong><span>Messages and calls from HEXA</span></div><div className="notifications-header-actions">{notificationPermission !== "granted" && notificationPermission !== "unsupported" && <button type="button" onClick={enableSystemNotifications}>Enable desktop alerts</button>}<button type="button" onClick={() => setNotifications([])}>Clear</button></div></div>
+        {notifications.length ? notifications.map(notification => <button type="button" className="notification-item hexa-notification-button" key={notification.id} onClick={() => { setShowNotifications(false); setActivePage("chat"); }}><span className="hexa-notification-dot">●</span><div><strong>{notification.title}</strong><p>{notification.body}</p><small>{new Date(notification.created_at).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})}</small></div></button>) : <div className="notification-empty"><strong>You&apos;re all caught up.</strong><span>{notificationPermission === "granted" ? "Desktop alerts are enabled." : "Enable desktop alerts to receive important HEXA updates outside the app."}</span></div>}
+      </div>}
+      {page}
+      {callTarget && <WebRTCCallLauncher profile={profile} target={callTarget} onClose={() => setCallTarget(null)}/>}      
+    </main>
+  </div></div>;
 }
-
 
 /* ============================================================
    AUTH BOOTSTRAP
@@ -6617,6 +6278,7 @@ export default function App() {
 
   useEffect(() => {
     mountedRef.current = true;
+    registerHexaServiceWorker();
 
     let subscription;
 
@@ -6845,12 +6507,11 @@ export default function App() {
   );
 }
 
-const APP_STYLES = `
 /* ============================================================
-   HEXA — SIMPLE COMMUNICATION UI
-   WhatsApp-inspired layout, HEXA branding
+   CSS
    ============================================================ */
 
+const APP_STYLES = `
 :root {
   font-family:
     Inter,
@@ -6861,31 +6522,21 @@ const APP_STYLES = `
     "Segoe UI",
     sans-serif;
 
-  --bg: #0b141a;
-  --panel: #111b21;
-  --panel-2: #182229;
-  --panel-3: #202c33;
+  color-scheme: dark;
 
-  --header: #202c33;
-  --composer: #202c33;
-
-  --border: rgba(255,255,255,.08);
-
-  --text: #e9edef;
-  --muted: #8696a0;
-  --subtle: #667781;
-
-  --accent: #7c5cff;
-  --accent-light: #a78bfa;
-
-  --success: #53bdeb;
-  --danger: #f15c6d;
-
-  --incoming: #202c33;
-  --outgoing: #6b4fe8;
-
-  --sidebar-width: 430px;
-  --topbar-height: 60px;
+  --hexa-bg: #07090d;
+  --hexa-panel: #0d1118;
+  --hexa-panel-2: #111722;
+  --hexa-panel-3: #171e2b;
+  --hexa-border: rgba(255,255,255,.08);
+  --hexa-border-strong: rgba(255,255,255,.14);
+  --hexa-text: #f4f7fb;
+  --hexa-muted: #8e99aa;
+  --hexa-accent: #7c5cff;
+  --hexa-accent-2: #a78bfa;
+  --hexa-success: #30d158;
+  --hexa-danger: #ff4d67;
+  --hexa-shadow: 0 24px 70px rgba(0,0,0,.35);
 }
 
 * {
@@ -6896,23 +6547,18 @@ html,
 body,
 #root {
   width: 100%;
-  height: 100%;
   min-height: 100%;
   margin: 0;
-  padding: 0;
 }
 
 body {
-  background: var(--bg);
-  color: var(--text);
-  overflow: hidden;
-  -webkit-font-smoothing: antialiased;
+  background: var(--hexa-bg);
+  color: var(--hexa-text);
 }
 
 button,
 input,
-textarea,
-select {
+textarea {
   font: inherit;
 }
 
@@ -6922,501 +6568,761 @@ button {
 
 button:disabled {
   cursor: not-allowed;
-  opacity: .5;
-}
-
-img,
-video {
-  max-width: 100%;
+  opacity: .55;
 }
 
 /* ============================================================
-   APP SHELL
+   AUTH
+   ============================================================ */
+
+.hexa-auth-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(
+      circle at 20% 10%,
+      rgba(124,92,255,.16),
+      transparent 34%
+    ),
+    radial-gradient(
+      circle at 90% 80%,
+      rgba(77,166,255,.10),
+      transparent 35%
+    ),
+    #07090d;
+}
+
+.hexa-auth-glow {
+  position: absolute;
+  width: 360px;
+  height: 360px;
+  border-radius: 50%;
+  filter: blur(90px);
+  pointer-events: none;
+}
+
+.glow-one {
+  top: -180px;
+  left: -140px;
+  background: rgba(124,92,255,.22);
+}
+
+.glow-two {
+  bottom: -180px;
+  right: -140px;
+  background: rgba(72,149,239,.14);
+}
+
+.hexa-auth-card {
+  width: min(100%, 470px);
+  padding: 38px;
+  border: 1px solid var(--hexa-border);
+  background: rgba(13,17,24,.92);
+  backdrop-filter: blur(24px);
+  border-radius: 28px;
+  box-shadow: var(--hexa-shadow);
+  position: relative;
+  z-index: 2;
+}
+
+.hexa-brand {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-bottom: 34px;
+}
+
+.hexa-logo,
+.small-logo,
+.loading-logo {
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(
+      145deg,
+      var(--hexa-accent),
+      #4e8cff
+    );
+  box-shadow:
+    0 12px 30px rgba(124,92,255,.28);
+  color: white;
+  font-weight: 900;
+}
+
+.hexa-logo {
+  width: 50px;
+  height: 50px;
+  border-radius: 15px;
+  font-size: 22px;
+}
+
+.hexa-brand strong {
+  display: block;
+  font-size: 21px;
+  letter-spacing: .12em;
+}
+
+.hexa-brand span {
+  display: block;
+  color: var(--hexa-muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.auth-heading h1 {
+  font-size: 30px;
+  line-height: 1.1;
+  margin: 0 0 10px;
+}
+
+.auth-heading p {
+  color: var(--hexa-muted);
+  margin: 0 0 26px;
+  line-height: 1.6;
+}
+
+.auth-field {
+  display: block;
+  margin-bottom: 16px;
+}
+
+.auth-field span {
+  display: block;
+  margin-bottom: 8px;
+  color: #cbd3df;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.auth-field input,
+.message-composer input,
+.chat-search input,
+.topbar-search input {
+  width: 100%;
+  border: 1px solid var(--hexa-border);
+  background: rgba(255,255,255,.035);
+  color: var(--hexa-text);
+  outline: none;
+}
+
+.auth-field input {
+  height: 50px;
+  padding: 0 15px;
+  border-radius: 13px;
+}
+
+.auth-field input:focus,
+.message-composer input:focus,
+.chat-search input:focus,
+.topbar-search input:focus {
+  border-color: rgba(124,92,255,.65);
+  box-shadow: 0 0 0 3px rgba(124,92,255,.10);
+}
+
+.auth-field input::placeholder,
+.message-composer input::placeholder,
+.chat-search input::placeholder,
+.topbar-search input::placeholder {
+  color: #667181;
+}
+
+.password-strength {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -8px 0 16px;
+}
+
+.strength-bars {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+.strength-bars i {
+  height: 3px;
+  flex: 1;
+  border-radius: 4px;
+  background: #252d3a;
+}
+
+.strength-bars i.filled {
+  background: var(--hexa-accent);
+}
+
+.password-strength span {
+  font-size: 11px;
+  color: var(--hexa-muted);
+}
+
+.primary-auth-button,
+.google-auth-button {
+  width: 100%;
+  height: 50px;
+  border-radius: 13px;
+  border: 1px solid transparent;
+  font-weight: 800;
+}
+
+.primary-auth-button {
+  background: linear-gradient(
+    135deg,
+    var(--hexa-accent),
+    #596cff
+  );
+  color: white;
+  box-shadow: 0 12px 28px rgba(124,92,255,.22);
+}
+
+.google-auth-button {
+  background: rgba(255,255,255,.045);
+  border-color: var(--hexa-border);
+  color: white;
+}
+
+.google-icon {
+  margin-right: 8px;
+  font-weight: 900;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0;
+  color: #5f6877;
+  font-size: 12px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--hexa-border);
+}
+
+.auth-forgot-row {
+  text-align: right;
+  margin: -5px 0 17px;
+}
+
+.text-button {
+  border: 0;
+  background: transparent;
+  color: var(--hexa-accent-2);
+  padding: 0;
+  font-size: 12px;
+}
+
+.auth-switch {
+  text-align: center;
+  color: var(--hexa-muted);
+  font-size: 13px;
+  margin-top: 22px;
+}
+
+.auth-switch button {
+  border: 0;
+  background: transparent;
+  color: var(--hexa-accent-2);
+  font-weight: 800;
+  margin-left: 5px;
+}
+
+.auth-footer {
+  text-align: center;
+  color: #566070;
+  font-size: 10px;
+  margin: 25px 0 0;
+}
+
+.auth-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 13px;
+  border-radius: 12px;
+  margin-bottom: 18px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.auth-error {
+  background: rgba(255,77,103,.08);
+  border: 1px solid rgba(255,77,103,.18);
+  color: #ff9aac;
+}
+
+.auth-success {
+  background: rgba(48,209,88,.08);
+  border: 1px solid rgba(48,209,88,.18);
+  color: #91eca8;
+}
+
+/* ============================================================
+   APP
    ============================================================ */
 
 .hexa-app {
-  width: 100%;
-  height: 100dvh;
-
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
-
-  overflow: hidden;
-
-  background: var(--bg);
+  background: var(--hexa-bg);
 }
 
 .hexa-sidebar {
-  width: var(--sidebar-width);
-  min-width: var(--sidebar-width);
-
-  height: 100%;
-
+  width: 250px;
+  min-width: 250px;
+  border-right: 1px solid var(--hexa-border);
+  background: #090c11;
   display: flex;
   flex-direction: column;
-
-  background: var(--panel);
-
-  border-right: 1px solid var(--border);
-
-  overflow: hidden;
+  padding: 20px 14px;
 }
-
-.hexa-main {
-  min-width: 0;
-  min-height: 0;
-
-  flex: 1;
-
-  display: flex;
-  flex-direction: column;
-
-  background: var(--bg);
-}
-
-/* ============================================================
-   HEXA SIDEBAR HEADER
-   ============================================================ */
 
 .sidebar-brand {
-  height: var(--topbar-height);
-  min-height: var(--topbar-height);
-
   display: flex;
   align-items: center;
-
   gap: 10px;
-
-  padding: 0 18px;
-
-  background: var(--header);
-
-  border-bottom: 1px solid var(--border);
+  padding: 4px 8px 24px;
 }
 
 .small-logo {
   width: 36px;
   height: 36px;
-
-  min-width: 36px;
-
-  display: grid;
-  place-items: center;
-
-  border-radius: 10px;
-
-  background:
-    linear-gradient(
-      135deg,
-      var(--accent),
-      #4e8cff
-    );
-
-  color: #fff;
-
-  font-weight: 900;
+  border-radius: 11px;
+  font-size: 15px;
 }
 
 .sidebar-brand strong {
   display: block;
-
-  font-size: 15px;
-
-  letter-spacing: .12em;
+  font-size: 14px;
+  letter-spacing: .13em;
 }
 
 .sidebar-brand span {
-  display: block;
-
-  color: var(--muted);
-
+  color: var(--hexa-muted);
   font-size: 9px;
-
-  letter-spacing: .1em;
+  letter-spacing: .18em;
 }
 
-/* ============================================================
-   SEARCH
-   ============================================================ */
-
-.chat-search {
-  position: relative;
-
-  padding: 8px 12px;
-
-  background: var(--panel);
-
-  border-bottom: 1px solid var(--border);
-}
-
-.chat-search span {
-  position: absolute;
-
-  left: 25px;
-  top: 50%;
-
-  transform: translateY(-50%);
-
-  color: var(--subtle);
-
-  pointer-events: none;
-}
-
-.chat-search input {
-  width: 100%;
-  height: 38px;
-
+.mobile-close {
+  display: none;
+  margin-left: auto;
+  background: transparent;
   border: 0;
-
-  outline: none;
-
-  border-radius: 9px;
-
-  padding:
-    0 12px 0 38px;
-
-  background: var(--panel-3);
-
-  color: var(--text);
-
-  font-size: 12px;
+  color: var(--hexa-muted);
+  font-size: 25px;
 }
-
-.chat-search input::placeholder {
-  color: var(--subtle);
-}
-
-.chat-search input:focus {
-  box-shadow:
-    0 0 0 1px rgba(124,92,255,.5);
-}
-
-/* ============================================================
-   NAVIGATION
-   ============================================================ */
 
 .sidebar-nav {
-  padding: 8px;
-
-  overflow-y: auto;
-
   flex: 1;
-
-  min-height: 0;
 }
 
 .sidebar-section-label {
-  padding:
-    14px 10px 7px;
-
-  color: var(--subtle);
-
+  color: #535d6c;
   font-size: 9px;
-
-  font-weight: 700;
-
-  text-transform: uppercase;
-
-  letter-spacing: .12em;
+  letter-spacing: .16em;
+  font-weight: 800;
+  padding: 0 11px 9px;
 }
 
 .sidebar-item {
   width: 100%;
-
-  min-height: 42px;
-
   display: flex;
   align-items: center;
-
-  gap: 13px;
-
-  padding: 0 12px;
-
+  gap: 12px;
   border: 0;
-
-  border-radius: 8px;
-
+  border-radius: 11px;
   background: transparent;
-
-  color: var(--muted);
-
+  color: #8d98a8;
+  padding: 11px 12px;
+  margin-bottom: 3px;
   text-align: left;
-
   font-size: 13px;
+  transition: .15s ease;
 }
 
 .sidebar-item:hover {
-  background: rgba(255,255,255,.05);
-
-  color: var(--text);
+  background: rgba(255,255,255,.035);
+  color: white;
 }
 
 .sidebar-item.active {
-  background: rgba(124,92,255,.16);
-
-  color: #fff;
+  background: rgba(124,92,255,.12);
+  color: white;
+  box-shadow:
+    inset 2px 0 0 var(--hexa-accent);
 }
 
 .sidebar-icon {
-  width: 22px;
-
-  min-width: 22px;
-
-  display: grid;
-  place-items: center;
-
-  font-size: 17px;
+  width: 21px;
+  text-align: center;
+  font-size: 15px;
 }
 
-/* ============================================================
-   SIDEBAR USER
-   ============================================================ */
-
 .sidebar-bottom {
-  padding: 8px;
-
-  border-top: 1px solid var(--border);
-
-  background: var(--panel);
+  border-top: 1px solid var(--hexa-border);
+  padding-top: 15px;
 }
 
 .sidebar-user {
-  min-height: 46px;
-
   display: flex;
   align-items: center;
-
-  gap: 10px;
-
-  padding: 5px 7px;
-
-  border-radius: 8px;
-}
-
-.sidebar-user:hover {
-  background: rgba(255,255,255,.04);
+  gap: 9px;
+  padding: 7px;
 }
 
 .sidebar-user-info {
   min-width: 0;
-
   flex: 1;
 }
 
 .sidebar-user-info strong {
   display: block;
-
   font-size: 11px;
-
   overflow: hidden;
-
-  white-space: nowrap;
-
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-user-info span {
   display: block;
-
-  margin-top: 2px;
-
-  color: var(--muted);
-
+  color: var(--hexa-muted);
   font-size: 9px;
+  margin-top: 2px;
 }
 
 .signout-small {
-  width: 32px;
-  height: 32px;
-
   border: 0;
-
   background: transparent;
-
-  color: var(--muted);
-
-  border-radius: 7px;
+  color: #677181;
+  font-size: 17px;
 }
 
 .signout-small:hover {
-  background: rgba(255,255,255,.05);
-
-  color: #fff;
+  color: white;
 }
-
-/* ============================================================
-   AVATAR
-   ============================================================ */
 
 .hexa-avatar {
   position: relative;
-
-  width: 42px;
-  height: 42px;
-
-  min-width: 42px;
-
+  border-radius: 50%;
+  overflow: visible;
   display: grid;
   place-items: center;
-
-  overflow: visible;
-
-  border-radius: 50%;
-
   background:
     linear-gradient(
       145deg,
-      #34404a,
-      #1c252c
+      #242d3d,
+      #151a23
     );
-
-  border: 1px solid rgba(255,255,255,.06);
-
+  border: 1px solid var(--hexa-border);
   flex-shrink: 0;
 }
 
 .hexa-avatar img {
   width: 100%;
   height: 100%;
-
-  border-radius: 50%;
-
   object-fit: cover;
+  border-radius: 50%;
 }
 
 .hexa-avatar span {
-  font-size: 13px;
-
-  font-weight: 700;
-
-  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .hexa-online-dot {
   position: absolute;
-
-  right: -1px;
-  bottom: -1px;
-
-  width: 10px;
-  height: 10px;
-
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-
-  background: #20c997;
-
-  border: 2px solid var(--panel);
+  background: var(--hexa-success);
+  border: 2px solid #090c11;
+  bottom: -1px;
+  right: -1px;
 }
 
-/* ============================================================
-   TOPBAR
-   ============================================================ */
+.hexa-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
 
 .hexa-topbar {
-  width: 100%;
-
-  height: var(--topbar-height);
-  min-height: var(--topbar-height);
-
+  height: 68px;
+  min-height: 68px;
+  border-bottom: 1px solid var(--hexa-border);
   display: flex;
   align-items: center;
-
-  gap: 12px;
-
-  padding: 0 16px;
-
-  background: var(--header);
-
-  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  gap: 20px;
+  background: rgba(7,9,13,.75);
+  backdrop-filter: blur(16px);
 }
 
 .topbar-search {
-  flex: 1;
-
-  max-width: 600px;
-
+  max-width: 620px;
+  width: min(100%, 620px);
   position: relative;
-
   margin: auto;
 }
 
 .topbar-search > span {
   position: absolute;
-
-  left: 12px;
+  left: 14px;
   top: 50%;
-
   transform: translateY(-50%);
-
-  color: var(--subtle);
+  color: #667181;
 }
 
 .topbar-search input {
-  width: 100%;
-  height: 36px;
-
-  border: 0;
-
-  outline: none;
-
-  border-radius: 8px;
-
-  padding: 0 12px 0 36px;
-
-  background: var(--panel-3);
-
-  color: var(--text);
-
+  height: 39px;
+  border-radius: 10px;
+  padding: 0 55px 0 38px;
   font-size: 12px;
 }
 
 .topbar-search kbd {
-  display: none;
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #687383;
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--hexa-border);
+  border-radius: 5px;
+  padding: 2px 5px;
+  font-size: 9px;
 }
 
 .topbar-actions {
   display: flex;
   align-items: center;
-
-  gap: 2px;
+  gap: 8px;
 }
 
 .topbar-actions > button {
-  width: 36px;
-  height: 36px;
-
-  display: grid;
-  place-items: center;
-
   border: 0;
-
-  border-radius: 8px;
-
   background: transparent;
-
-  color: var(--muted);
-
+  color: #7d8797;
   font-size: 17px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
 }
 
 .topbar-actions > button:hover {
   background: rgba(255,255,255,.05);
+  color: white;
+}
 
-  color: #fff;
+.mobile-page-title {
+  display: none;
+}
+
+.hexa-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+
+.workspace-page {
+  max-width: 1350px;
+  margin: 0 auto;
+  padding: 30px;
 }
 
 /* ============================================================
-   CONTENT
+   NEXUS
    ============================================================ */
 
-.hexa-content {
+.hero-panel {
+  min-height: 290px;
+  border: 1px solid var(--hexa-border);
+  border-radius: 24px;
+  background:
+    radial-gradient(
+      circle at 85% 35%,
+      rgba(124,92,255,.18),
+      transparent 30%
+    ),
+    linear-gradient(
+      135deg,
+      #111621,
+      #0c1018
+    );
+  padding: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  overflow: hidden;
+}
+
+.eyebrow {
+  color: var(--hexa-accent-2);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .18em;
+  margin-bottom: 12px;
+}
+
+.hero-panel h1 {
+  margin: 0;
+  font-size: clamp(30px, 4vw, 52px);
+  letter-spacing: -.045em;
+}
+
+.hero-panel h1 span {
+  color: var(--hexa-accent-2);
+}
+
+.hero-panel p {
+  max-width: 610px;
+  color: var(--hexa-muted);
+  line-height: 1.7;
+  margin: 14px 0 24px;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.hero-primary,
+.hero-secondary {
+  border-radius: 11px;
+  padding: 11px 17px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.hero-primary {
+  border: 1px solid transparent;
+  background: linear-gradient(
+    135deg,
+    var(--hexa-accent),
+    #596cff
+  );
+  color: white;
+}
+
+.hero-secondary {
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--hexa-border);
+  color: white;
+}
+
+.hero-orbit {
+  width: 240px;
+  height: 240px;
   position: relative;
+  display: grid;
+  place-items: center;
+}
 
-  flex: 1;
+.orbit-core {
+  width: 70px;
+  height: 70px;
+  border-radius: 22px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(
+    145deg,
+    var(--hexa-accent),
+    #4c7cff
+  );
+  box-shadow: 0 0 60px rgba(124,92,255,.4);
+  font-size: 28px;
+  font-weight: 900;
+  z-index: 2;
+}
 
-  min-width: 0;
-  min-height: 0;
+.orbit-ring {
+  position: absolute;
+  border: 1px solid rgba(124,92,255,.25);
+  border-radius: 50%;
+}
 
-  overflow: auto;
+.ring-a {
+  width: 150px;
+  height: 150px;
+}
+
+.ring-b {
+  width: 230px;
+  height: 230px;
+  border-color: rgba(255,255,255,.08);
+}
+
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  margin: 32px 0 16px;
+}
+
+.section-heading h2 {
+  margin: 0;
+  font-size: 19px;
+}
+
+.section-heading p {
+  color: var(--hexa-muted);
+  font-size: 11px;
+  margin: 4px 0 0;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.feature-card {
+  text-align: left;
+  border: 1px solid var(--hexa-border);
+  border-radius: 17px;
+  background: var(--hexa-panel);
+  color: white;
+  padding: 20px;
+  transition: .18s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(124,92,255,.35);
+  background: var(--hexa-panel-2);
+}
+
+.feature-card > span {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(124,92,255,.10);
+  margin-bottom: 17px;
+}
+
+.feature-card strong {
+  display: block;
+  font-size: 14px;
+}
+
+.feature-card p {
+  color: var(--hexa-muted);
+  line-height: 1.5;
+  font-size: 11px;
+  margin: 6px 0 0;
 }
 
 /* ============================================================
@@ -7424,327 +7330,115 @@ video {
    ============================================================ */
 
 .chat-layout {
-  width: 100%;
-  height: 100%;
-
-  min-height: 0;
-
+  height: calc(100vh - 68px);
+  height: calc(100dvh - 68px);
   display: grid;
-
-  grid-template-columns:
-    var(--sidebar-width)
-    minmax(0,1fr);
+  grid-template-columns: 320px minmax(0, 1fr);
 }
 
 .chat-list-panel {
+  border-right: 1px solid var(--hexa-border);
+  background: #090c11;
   min-width: 0;
-  min-height: 0;
-
-  display: flex;
-  flex-direction: column;
-
-  overflow: hidden;
-
-  background: var(--panel);
-
-  border-right: 1px solid var(--border);
 }
 
 .chat-list-header {
-  min-height: 62px;
-
   display: flex;
   align-items: center;
   justify-content: space-between;
-
-  padding: 10px 18px;
+  padding: 22px 18px 16px;
 }
 
 .chat-list-header h2 {
   margin: 0;
-
-  font-size: 18px;
-
-  font-weight: 700;
+  font-size: 21px;
 }
 
 .chat-list-header span {
-  display: block;
-
-  margin-top: 2px;
-
-  color: var(--muted);
-
+  color: var(--hexa-muted);
   font-size: 10px;
 }
 
 .new-chat-button {
   width: 34px;
   height: 34px;
-
-  display: grid;
-  place-items: center;
-
-  border: 0;
-
-  border-radius: 50%;
-
-  background: var(--accent);
-
-  color: #fff;
-
-  font-size: 20px;
+  border: 1px solid var(--hexa-border);
+  background: rgba(124,92,255,.12);
+  color: white;
+  border-radius: 10px;
 }
 
-/* ============================================================
-   CONVERSATION ROW
-   ============================================================ */
+.chat-search {
+  margin: 0 13px 13px;
+  position: relative;
+}
+
+.chat-search span {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #697485;
+}
+
+.chat-search input {
+  height: 39px;
+  border-radius: 10px;
+  padding-left: 34px;
+  font-size: 11px;
+}
 
 .conversation-list {
-  min-height: 0;
-
-  flex: 1;
-
   overflow-y: auto;
-  overflow-x: hidden;
+  max-height: calc(100% - 100px);
 }
 
 .conversation {
-  width: 100%;
-
-  min-height: 66px;
-
+  width: calc(100% - 12px);
+  margin: 2px 6px;
+  padding: 10px 10px;
   display: flex;
-
   align-items: center;
-
-  gap: 12px;
-
-  padding: 9px 14px;
-
+  gap: 10px;
   border: 0;
-
-  border-bottom: 1px solid rgba(255,255,255,.045);
-
+  border-radius: 12px;
   background: transparent;
-
-  color: var(--text);
-
+  color: white;
   text-align: left;
-
-  transition:
-    background .12s ease;
 }
 
-.conversation:hover {
-  background: rgba(255,255,255,.035);
+.conversation:hover,
+.conversation.active {
+  background: rgba(255,255,255,.05);
 }
 
 .conversation.active {
-  background: var(--panel-3);
+  box-shadow: inset 2px 0 var(--hexa-accent);
 }
 
 .conversation-content {
   min-width: 0;
-
-  flex: 1;
 }
 
 .conversation-content strong {
   display: block;
-
-  font-size: 13px;
-
-  font-weight: 600;
-
-  overflow: hidden;
-
-  white-space: nowrap;
-
-  text-overflow: ellipsis;
+  font-size: 12px;
 }
 
 .conversation-content span {
   display: block;
-
+  color: var(--hexa-muted);
+  font-size: 9px;
   margin-top: 4px;
-
-  color: var(--muted);
-
-  font-size: 10px;
-
   overflow: hidden;
-
   white-space: nowrap;
-
   text-overflow: ellipsis;
 }
-
-.conversation-actions {
-  display: flex;
-
-  align-items: center;
-
-  gap: 4px;
-
-  flex-shrink: 0;
-}
-
-.conversation-actions button {
-  width: 32px;
-  height: 32px;
-
-  border: 0;
-
-  border-radius: 50%;
-
-  background: transparent;
-
-  color: var(--muted);
-
-  display: grid;
-
-  place-items: center;
-}
-
-.conversation-actions button:hover {
-  background: rgba(255,255,255,.06);
-
-  color: #fff;
-}
-
-.conversation-actions .conversation-call-button {
-  width: 34px !important;
-  height: 34px !important;
-
-  min-width: 34px !important;
-
-  background: rgba(124,92,255,.12) !important;
-
-  color: var(--accent-light) !important;
-
-  border-radius: 50% !important;
-}
-
-.conversation-actions .conversation-call-button:hover {
-  background: var(--accent) !important;
-
-  color: #fff !important;
-}
-
-/* ============================================================
-   ACTIVE CHAT HEADER
-   ============================================================ */
 
 .chat-main {
   min-width: 0;
-  min-height: 0;
-
   display: flex;
   flex-direction: column;
-
-  background:
-    linear-gradient(
-      rgba(11,20,26,.94),
-      rgba(11,20,26,.94)
-    );
-}
-
-.chat-header {
-  height: 60px;
-  min-height: 60px;
-
-  display: flex;
-  align-items: center;
-
-  gap: 11px;
-
-  padding: 0 16px;
-
-  background: var(--header);
-
-  border-bottom: 1px solid var(--border);
-
-  flex-shrink: 0;
-}
-
-.chat-header > div:nth-child(2) {
-  min-width: 0;
-
-  flex: 1;
-}
-
-.chat-header strong {
-  display: block;
-
-  font-size: 13px;
-
-  overflow: hidden;
-
-  text-overflow: ellipsis;
-
-  white-space: nowrap;
-}
-
-.chat-header span {
-  display: block;
-
-  margin-top: 2px;
-
-  color: var(--success);
-
-  font-size: 9px;
-}
-
-.chat-header-actions {
-  display: flex;
-
-  align-items: center;
-
-  gap: 2px;
-
-  flex-shrink: 0;
-}
-
-.chat-header-actions button {
-  width: 34px;
-  height: 34px;
-
-  display: grid;
-
-  place-items: center;
-
-  border: 0;
-
-  background: transparent;
-
-  color: var(--muted);
-
-  border-radius: 50%;
-
-  font-size: 17px;
-}
-
-.chat-header-actions button:hover {
-  background: rgba(255,255,255,.06);
-
-  color: #fff;
-}
-
-/* ============================================================
-   MESSAGE AREA
-   ============================================================ */
-
-.messages-area {
-  flex: 1;
-
-  min-width: 0;
-  min-height: 0;
-
-  overflow-y: auto;
-
-  padding: 18px 6% 20px;
-
   background:
     radial-gradient(
       circle at 50% 0,
@@ -7753,415 +7447,196 @@ video {
     );
 }
 
+.chat-header {
+  height: 67px;
+  min-height: 67px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--hexa-border);
+  padding: 0 17px;
+}
+
+.chat-header > div:nth-child(2) {
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-header strong {
+  display: block;
+  font-size: 12px;
+}
+
+.chat-header span {
+  display: block;
+  color: var(--hexa-success);
+  font-size: 9px;
+  margin-top: 3px;
+}
+
+.chat-header-actions {
+  display: flex;
+  gap: 3px;
+}
+
+.chat-header-actions button {
+  width: 35px;
+  height: 35px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #7d8797;
+}
+
+.chat-header-actions button:hover {
+  color: white;
+  background: rgba(255,255,255,.04);
+}
+
+.messages-area {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px;
+}
+
 .empty-chat {
-  width: 100%;
   height: 100%;
-
   display: grid;
-
   place-content: center;
-
   text-align: center;
 }
 
 .empty-chat-icon {
-  width: 56px;
-  height: 56px;
-
+  width: 62px;
+  height: 62px;
   display: grid;
   place-items: center;
-
-  margin: 0 auto 14px;
-
-  border-radius: 50%;
-
-  background: rgba(124,92,255,.12);
-
-  color: var(--accent-light);
-
-  font-size: 22px;
+  margin: 0 auto 16px;
+  border-radius: 19px;
+  background: rgba(124,92,255,.10);
+  color: var(--hexa-accent-2);
+  font-weight: 900;
+  font-size: 23px;
 }
 
 .empty-chat h3 {
   margin: 0;
-
-  font-size: 16px;
+  font-size: 17px;
 }
 
 .empty-chat p {
-  margin: 7px 0 0;
-
-  color: var(--muted);
-
+  color: var(--hexa-muted);
   font-size: 11px;
 }
 
-/* ============================================================
-   MESSAGES
-   ============================================================ */
-
 .message-row {
-  width: 100%;
-
   display: flex;
-
-  margin: 3px 0;
+  margin: 7px 0;
 }
 
 .message-row.own {
   justify-content: flex-end;
 }
 
-.message-stack {
-  min-width: 0;
-
-  max-width: min(75%, 650px);
-}
-
-.message-bubble-wrap {
-  min-width: 0;
-
-  position: relative;
-}
-
 .message-bubble {
-  width: fit-content;
-
-  max-width: 100%;
-
-  padding: 7px 10px 6px;
-
-  border-radius: 8px;
-
-  background: var(--incoming);
-
-  border: 1px solid rgba(255,255,255,.025);
-
-  overflow-wrap: anywhere;
-
-  box-shadow:
-    0 1px 1px rgba(0,0,0,.15);
+  max-width: min(72%, 560px);
+  padding: 9px 11px;
+  border-radius: 14px;
+  background: var(--hexa-panel-2);
+  border: 1px solid var(--hexa-border);
 }
 
 .message-row.own .message-bubble {
-  background: var(--outgoing);
+  background: rgba(124,92,255,.17);
+  border-color: rgba(124,92,255,.22);
 }
 
 .message-bubble span {
   display: block;
-
-  color: #f1f1f2;
-
   font-size: 12px;
-
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
 .message-bubble small {
   display: block;
-
-  margin-top: 3px;
-
   text-align: right;
-
-  color: rgba(255,255,255,.55);
-
+  color: #667181;
   font-size: 8px;
+  margin-top: 4px;
 }
-
-.message-media {
-  display: block;
-
-  width: auto;
-
-  max-width: min(320px, 100%);
-
-  max-height: 420px;
-
-  border-radius: 8px;
-
-  object-fit: contain;
-}
-
-/* ============================================================
-   MESSAGE TOOLS
-   ============================================================ */
-
-.message-tools {
-  display: none;
-
-  position: absolute;
-
-  right: 0;
-
-  top: -34px;
-
-  z-index: 20;
-
-  padding: 3px;
-
-  border-radius: 8px;
-
-  background: var(--panel-3);
-
-  border: 1px solid var(--border);
-
-  box-shadow:
-    0 6px 18px rgba(0,0,0,.25);
-}
-
-.message-bubble-wrap:hover .message-tools {
-  display: flex;
-}
-
-.message-tools button {
-  width: 30px;
-  height: 30px;
-
-  border: 0;
-
-  background: transparent;
-
-  color: var(--text);
-
-  border-radius: 6px;
-}
-
-.message-tools button:hover {
-  background: rgba(255,255,255,.07);
-}
-
-.reply-bar {
-  min-height: 42px;
-
-  display: flex;
-
-  align-items: center;
-
-  justify-content: space-between;
-
-  gap: 10px;
-
-  padding: 6px 14px;
-
-  background: var(--panel-2);
-
-  border-top: 1px solid var(--border);
-
-  color: var(--muted);
-
-  font-size: 11px;
-}
-
-.reply-bar button {
-  width: 28px;
-  height: 28px;
-
-  border: 0;
-
-  border-radius: 50%;
-
-  background: rgba(255,255,255,.05);
-
-  color: var(--text);
-}
-
-/* ============================================================
-   COMPOSER
-   ============================================================ */
 
 .message-composer {
-  min-height: 62px;
-
+  min-height: 65px;
   display: flex;
-
   align-items: center;
-
-  gap: 6px;
-
-  padding: 10px 14px;
-
-  background: var(--composer);
-
-  border-top: 1px solid var(--border);
-
-  flex-shrink: 0;
+  gap: 7px;
+  padding: 11px 14px;
+  border-top: 1px solid var(--hexa-border);
 }
 
 .message-composer > button {
-  width: 34px;
-  height: 34px;
-
-  min-width: 34px;
-
-  display: grid;
-
-  place-items: center;
-
   border: 0;
-
-  border-radius: 50%;
-
   background: transparent;
-
-  color: var(--muted);
-
-  font-size: 17px;
+  color: #758092;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
 }
 
 .message-composer > button:hover {
-  background: rgba(255,255,255,.06);
-
-  color: #fff;
+  color: white;
+  background: rgba(255,255,255,.04);
 }
 
 .message-composer input {
-  min-width: 0;
-
   flex: 1;
-
   height: 40px;
-
-  border: 0;
-
-  outline: none;
-
-  border-radius: 8px;
-
-  padding: 0 14px;
-
-  background: #2a3942;
-
-  color: var(--text);
-
-  font-size: 12px;
+  padding: 0 13px;
+  border-radius: 11px;
+  font-size: 11px;
 }
 
-.message-composer input::placeholder {
-  color: #8696a0;
+.composer-action {
+  font-size: 9px;
+  font-weight: 900;
 }
 
 .send-button {
-  background: var(--accent) !important;
-
-  color: #fff !important;
-}
-
-/* ============================================================
-   REACTIONS
-   ============================================================ */
-
-.reaction-picker {
-  position: absolute;
-
-  right: 0;
-
-  bottom: 32px;
-
-  display: flex;
-
-  gap: 2px;
-
-  padding: 5px;
-
-  background: var(--panel-3);
-
-  border: 1px solid var(--border);
-
-  border-radius: 14px;
-
-  box-shadow:
-    0 8px 22px rgba(0,0,0,.25);
-}
-
-.reaction-picker button {
-  width: 34px;
-  height: 34px;
-
-  border: 0;
-
-  background: transparent;
-
-  border-radius: 8px;
-
-  font-size: 19px;
-}
-
-.reaction-picker button:hover {
-  background: rgba(255,255,255,.07);
-}
-
-.reaction-summary {
-  display: inline-flex;
-
-  align-items: center;
-
-  gap: 3px;
-
-  margin-top: 3px;
-
-  padding: 3px 6px;
-
-  border-radius: 10px;
-
-  background: var(--panel-3);
-
-  font-size: 10px;
+  background: var(--hexa-accent) !important;
+  color: white !important;
 }
 
 /* ============================================================
    GENERIC PAGES
    ============================================================ */
 
-.workspace-page {
-  width: 100%;
-
-  max-width: 1200px;
-
-  margin: 0 auto;
-
-  padding: 28px;
-}
-
 .page-heading {
   display: flex;
-
   align-items: center;
-
-  gap: 13px;
-
-  margin-bottom: 22px;
+  gap: 15px;
+  margin-bottom: 28px;
 }
 
 .page-heading-icon {
-  width: 46px;
-  height: 46px;
-
-  min-width: 46px;
-
+  width: 50px;
+  height: 50px;
   display: grid;
   place-items: center;
-
-  border-radius: 13px;
-
-  background: rgba(124,92,255,.12);
-
-  color: var(--accent-light);
-
-  font-size: 20px;
+  border-radius: 15px;
+  background: rgba(124,92,255,.10);
+  border: 1px solid rgba(124,92,255,.15);
+  font-size: 21px;
 }
 
 .page-heading h1 {
   margin: 0;
-
-  font-size: 24px;
+  font-size: 27px;
 }
 
 .page-heading p {
-  margin: 4px 0 0;
-
-  color: var(--muted);
-
+  margin: 5px 0 0;
+  color: var(--hexa-muted);
   font-size: 11px;
 }
 
@@ -8170,90 +7645,35 @@ video {
 }
 
 .coming-card {
-  min-height: 250px;
-
+  min-height: 300px;
+  border: 1px solid var(--hexa-border);
+  border-radius: 20px;
   display: grid;
-
   place-content: center;
-
   text-align: center;
-
-  padding: 30px;
-
-  border: 1px solid var(--border);
-
-  border-radius: 16px;
-
-  background: var(--panel);
+  background: var(--hexa-panel);
 }
 
 .coming-card > div {
-  width: 48px;
-  height: 48px;
-
+  margin: 0 auto 15px;
+  width: 50px;
+  height: 50px;
   display: grid;
   place-items: center;
-
-  margin: 0 auto 14px;
-
-  border-radius: 50%;
-
-  background: rgba(124,92,255,.12);
-
-  color: var(--accent-light);
-
-  font-size: 20px;
+  border-radius: 15px;
+  background: rgba(124,92,255,.10);
 }
 
 .coming-card h2 {
   margin: 0;
-
-  font-size: 18px;
 }
 
 .coming-card p {
-  margin: 6px 0 0;
-
-  color: var(--muted);
-
+  color: var(--hexa-muted);
   font-size: 11px;
 }
 
-/* ============================================================
-   CARDS / GROUPS / COMMUNITIES / CHANNELS
-   ============================================================ */
-
-.entity-grid {
-  display: grid;
-
-  grid-template-columns:
-    repeat(auto-fill, minmax(230px, 1fr));
-
-  gap: 12px;
-}
-
-.entity-card {
-  min-width: 0;
-
-  padding: 16px;
-
-  border: 1px solid var(--border);
-
-  border-radius: 14px;
-
-  background: var(--panel);
-
-  display: flex;
-
-  flex-direction: column;
-
-  gap: 7px;
-}
-
-.entity-card span,
-.entity-card small {
-  color: var(--muted);
-}
+function WorkspacePlaceholder({ title, description, icon, children }) { return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">{icon}</div><div><h1>{title}</h1><p>{description}</p></div></div>{children||<div className="coming-card"><div>✦</div><h2>{title}</h2><p>This HEXA workspace is ready for connected Supabase features.</p></div>}</section>; }
 
 /* ============================================================
    STATUS
@@ -8261,93 +7681,41 @@ video {
 
 .status-row {
   display: flex;
-
-  gap: 10px;
-
+  gap: 12px;
   overflow-x: auto;
-
-  padding-bottom: 8px;
+  padding-bottom: 10px;
 }
 
 .create-status-card,
 .status-card {
-  width: 150px;
-  min-width: 150px;
-
-  height: 210px;
-
-  flex-shrink: 0;
-
-  display: flex;
-
-  flex-direction: column;
-
-  justify-content: flex-end;
-
-  padding: 13px;
-
-  border-radius: 16px;
-
-  border: 1px solid var(--border);
-
-  background: var(--panel);
-
-  color: #fff;
-
+  min-width: 170px;
+  height: 245px;
+  border-radius: 20px;
+  border: 1px solid var(--hexa-border);
+  background: var(--hexa-panel);
+  color: white;
+  padding: 16px;
   text-align: left;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
 }
 
-.status-preview {
-  flex: 1;
-
-  min-height: 0;
-
-  display: grid;
-
-  place-items: center;
-
-  margin-bottom: 10px;
-
-  border-radius: 11px;
-
-  overflow: hidden;
-
-  background:
-    linear-gradient(
-      145deg,
-      #202a36,
-      #141a21
-    );
-
-  color: var(--accent-light);
-
-  font-size: 24px;
-}
-
-.status-preview img,
-.status-preview video {
-  width: 100%;
-  height: 100%;
-
-  object-fit: cover;
+.create-status-card:hover,
+.status-card:hover {
+  border-color: rgba(124,92,255,.35);
 }
 
 .create-status-plus {
-  width: 42px;
-  height: 42px;
-
+  width: 48px;
+  height: 48px;
   display: grid;
   place-items: center;
-
   border-radius: 50%;
-
-  background: var(--accent);
-
-  color: #fff;
-
+  background: rgba(124,92,255,.14);
+  color: var(--hexa-accent-2);
+  font-size: 24px;
   margin-bottom: auto;
-
-  font-size: 21px;
 }
 
 .create-status-card strong,
@@ -8357,405 +7725,170 @@ video {
 
 .create-status-card span,
 .status-card span {
-  margin-top: 3px;
-
-  color: var(--muted);
-
+  color: var(--hexa-muted);
   font-size: 9px;
+  margin-top: 5px;
+}
+
+.status-preview {
+  flex: 1;
+  margin: -4px -4px 15px;
+  border-radius: 14px;
+  background:
+    radial-gradient(
+      circle at 30% 20%,
+      rgba(124,92,255,.28),
+      transparent 45%
+    ),
+    #171d29;
+  display: grid;
+  place-items: center;
+  font-size: 25px;
+  font-weight: 900;
+  color: #d9d0ff;
 }
 
 /* ============================================================
-   MODALS
+   MODAL
    ============================================================ */
 
-.modal-backdrop,
-.hexa-modal-backdrop {
+.modal-backdrop {
   position: fixed;
-
   inset: 0;
-
-  z-index: 900;
-
+  z-index: 100;
   display: grid;
-
   place-items: center;
-
-  padding: 16px;
-
-  background: rgba(0,0,0,.72);
+  padding: 20px;
+  background: rgba(0,0,0,.7);
+  backdrop-filter: blur(10px);
 }
 
-.status-modal,
-.entity-modal {
-  width: min(620px, calc(100vw - 28px));
-
-  max-height: 90dvh;
-
+.status-modal {
+  width: min(100%, 520px);
+  max-height: 90vh;
   overflow: auto;
-
+  background: #0e131c;
+  border: 1px solid var(--hexa-border-strong);
+  border-radius: 22px;
   padding: 20px;
-
-  border-radius: 16px;
-
-  border: 1px solid var(--border);
-
-  background: var(--panel);
-
-  box-shadow:
-    0 25px 70px rgba(0,0,0,.45);
+  box-shadow: var(--hexa-shadow);
 }
 
 .modal-header {
   display: flex;
-
-  align-items: center;
-
   justify-content: space-between;
-
-  margin-bottom: 16px;
+  align-items: center;
+  margin-bottom: 18px;
 }
 
 .modal-header h2 {
   margin: 0;
-
-  font-size: 17px;
 }
 
 .modal-header button {
-  width: 32px;
-  height: 32px;
-
   border: 0;
-
-  border-radius: 50%;
-
-  background: var(--panel-3);
-
-  color: var(--text);
-
-  font-size: 18px;
+  background: transparent;
+  color: #8b95a4;
+  font-size: 24px;
 }
 
-.modal-input,
 .status-modal textarea {
   width: 100%;
-
-  border: 1px solid var(--border);
-
-  border-radius: 9px;
-
-  outline: none;
-
-  background: var(--panel-3);
-
-  color: var(--text);
-
-  padding: 11px 12px;
-}
-
-.modal-textarea,
-.status-modal textarea {
-  min-height: 100px;
-
+  min-height: 130px;
   resize: vertical;
-}
-
-/* ============================================================
-   NOTIFICATIONS
-   ============================================================ */
-
-.notifications-panel {
-  position: absolute;
-
-  top: 8px;
-  right: 16px;
-
-  width: min(360px, calc(100vw - 32px));
-
-  z-index: 200;
-
-  padding: 8px;
-
-  border: 1px solid var(--border);
-
-  border-radius: 12px;
-
-  background: var(--panel);
-
-  box-shadow:
-    0 16px 50px rgba(0,0,0,.35);
-}
-
-.notifications-header {
-  display: flex;
-
-  justify-content: space-between;
-
-  align-items: center;
-
-  padding: 9px;
-
-  border-bottom: 1px solid var(--border);
-}
-
-.notifications-header button {
-  border: 0;
-
-  background: transparent;
-
-  color: var(--accent-light);
-}
-
-.notification-item {
-  display: flex;
-
-  gap: 10px;
-
-  padding: 11px 9px;
-
-  border-bottom: 1px solid rgba(255,255,255,.05);
-}
-
-.notification-item p {
-  margin: 3px 0;
-
-  color: var(--muted);
-
-  font-size: 11px;
-}
-
-.notification-item small {
-  color: var(--subtle);
-
-  font-size: 9px;
-}
-
-/* ============================================================
-   GIF / EMOJI / STICKERS
-   ============================================================ */
-
-.emoji-panel,
-.sticker-panel,
-.feature-popover,
-.chat-settings-popover,
-.gif-panel {
-  position: absolute;
-
-  z-index: 100;
-
-  border: 1px solid var(--border);
-
+  border: 1px solid var(--hexa-border);
+  background: #090d13;
+  color: white;
   border-radius: 13px;
+  padding: 14px;
+  outline: none;
+  margin-bottom: 13px;
+}
 
-  background: var(--panel);
+.file-drop {
+  min-height: 120px;
+  border: 1px dashed rgba(124,92,255,.4);
+  background: rgba(124,92,255,.04);
+  border-radius: 15px;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  cursor: pointer;
+  margin-bottom: 13px;
+}
 
-  box-shadow:
-    0 15px 45px rgba(0,0,0,.35);
+.file-drop span {
+  font-size: 25px;
+}
 
+.file-drop strong {
+  font-size: 12px;
+}
+
+.file-drop small {
+  color: var(--hexa-muted);
+  margin-top: 5px;
+}
+
+.file-drop input {
+  display: none;
+}
+
+.selected-file {
   padding: 10px;
-}
-
-.emoji-panel,
-.sticker-panel,
-.gif-panel,
-.feature-popover {
-  left: 10px;
-  bottom: 68px;
-}
-
-.chat-settings-popover {
-  right: 10px;
-  top: 58px;
-
-  left: auto;
-
-  width: 260px;
-}
-
-.emoji-grid,
-.emoji-tones,
-.sticker-grid {
-  display: flex;
-
-  flex-wrap: wrap;
-
-  gap: 3px;
-
-  max-height: 230px;
-
-  overflow: auto;
-}
-
-.emoji-panel button,
-.sticker-grid button {
-  width: 34px;
-  height: 34px;
-
-  border: 0;
-
-  border-radius: 8px;
-
-  background: transparent;
-
-  font-size: 19px;
-}
-
-.emoji-panel button:hover,
-.sticker-grid button:hover {
-  background: rgba(255,255,255,.07);
-}
-
-.gif-grid {
-  display: grid;
-
-  grid-template-columns:
-    repeat(4, minmax(0,1fr));
-
-  gap: 5px;
-
-  max-height: 220px;
-
-  overflow: auto;
-
-  margin-top: 8px;
-}
-
-.gif-grid img {
-  width: 100%;
-  height: 65px;
-
-  object-fit: cover;
-
-  border-radius: 6px;
-}
-
-/* ============================================================
-   POLLS
-   ============================================================ */
-
-.poll-message {
-  display: grid;
-
-  gap: 5px;
-
-  min-width: 200px;
-}
-
-.poll-message button {
-  width: 100%;
-
-  display: flex;
-
-  justify-content: space-between;
-
-  gap: 10px;
-
-  padding: 8px 10px;
-
-  border: 1px solid var(--border);
-
-  border-radius: 8px;
-
-  background: var(--panel-3);
-
-  color: var(--text);
-
-  text-align: left;
-
-  font-size: 11px;
-}
-
-/* ============================================================
-   CALL UI
-   ============================================================ */
-
-.call-shell {
-  width: min(900px, 96vw);
-
-  height: min(700px, 92dvh);
-
-  display: flex;
-
-  flex-direction: column;
-
-  overflow: hidden;
-
-  border-radius: 18px;
-
-  border: 1px solid var(--border);
-
-  background: #05080b;
-
-  box-shadow:
-    0 25px 80px rgba(0,0,0,.5);
-}
-
-.call-header {
-  min-height: 58px;
-
-  display: flex;
-
-  align-items: center;
-
-  justify-content: space-between;
-
-  padding: 12px 16px;
-
-  background: var(--header);
-
-  border-bottom: 1px solid var(--border);
-}
-
-.call-video-grid {
-  position: relative;
-
-  min-height: 0;
-
-  flex: 1;
-
-  display: grid;
-
-  place-items: center;
-
-  background: #030607;
-}
-
-.call-remote-video {
-  width: 100%;
-  height: 100%;
-
-  object-fit: contain;
-}
-
-.call-local-video {
-  position: absolute;
-
-  right: 14px;
-  bottom: 14px;
-
-  width: min(190px, 28%);
-
-  aspect-ratio: 16/10;
-
-  object-fit: cover;
-
+  border: 1px solid var(--hexa-border);
   border-radius: 10px;
-
-  border: 1px solid rgba(255,255,255,.25);
+  color: var(--hexa-muted);
+  font-size: 10px;
+  margin-bottom: 12px;
 }
 
-.call-controls {
-  min-height: 70px;
+/* ============================================================
+   SEARCH
+   ============================================================ */
 
+.global-search-panel {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(650px, calc(100% - 30px));
+  z-index: 30;
+  background: #111722;
+  border: 1px solid var(--hexa-border-strong);
+  border-radius: 17px;
+  box-shadow: var(--hexa-shadow);
+  overflow: hidden;
+}
+
+.search-panel-header {
+  padding: 13px 15px;
   display: flex;
-
-  justify-content: center;
-
+  gap: 10px;
   align-items: center;
+  border-bottom: 1px solid var(--hexa-border);
+  font-size: 12px;
+}
 
-  background: var(--header);
+.search-empty {
+  padding: 40px 20px;
+  text-align: center;
+}
 
-  border-top: 1px solid var(--border);
+.search-empty > div {
+  font-size: 30px;
+  color: var(--hexa-accent-2);
+}
+
+.search-empty h3 {
+  margin: 12px 0 6px;
+  font-size: 14px;
+}
+
+.search-empty p {
+  margin: 0;
+  color: var(--hexa-muted);
+  font-size: 10px;
 }
 
 /* ============================================================
@@ -8764,61 +7897,42 @@ video {
 
 .hexa-loading-screen,
 .hexa-error-screen {
-  width: 100%;
-  height: 100dvh;
-
+  min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
-
   place-content: center;
-
   justify-items: center;
-
   gap: 12px;
-
-  background: var(--bg);
-
-  color: #fff;
-
+  background: #07090d;
+  color: white;
   text-align: center;
-
-  padding: 24px;
+  padding: 25px;
 }
 
 .loading-logo {
-  width: 58px;
-  height: 58px;
-
-  display: grid;
-  place-items: center;
-
-  border-radius: 16px;
-
-  background:
-    linear-gradient(
-      135deg,
-      var(--accent),
-      #4e8cff
-    );
-
-  color: #fff;
-
-  font-size: 24px;
-
-  font-weight: 900;
+  width: 64px;
+  height: 64px;
+  border-radius: 19px;
+  font-size: 26px;
 }
 
 .loading-spinner {
-  width: 22px;
-  height: 22px;
-
+  width: 23px;
+  height: 23px;
   border: 2px solid rgba(255,255,255,.12);
-
-  border-top-color: var(--accent);
-
+  border-top-color: var(--hexa-accent);
   border-radius: 50%;
+  animation: hexa-spin .8s linear infinite;
+}
 
-  animation:
-    hexa-spin .8s linear infinite;
+.hexa-loading-screen span,
+.hexa-error-screen p {
+  color: var(--hexa-muted);
+  font-size: 11px;
+}
+
+.hexa-error-screen h1 {
+  margin: 0;
 }
 
 @keyframes hexa-spin {
@@ -8828,149 +7942,119 @@ video {
 }
 
 /* ============================================================
-   MOBILE MENU
+   MOBILE
    ============================================================ */
 
 .mobile-menu-button {
   display: none;
-
-  width: 38px;
-  height: 38px;
-
-  border: 0;
-
-  border-radius: 50%;
-
-  background: rgba(255,255,255,.06);
-
-  color: #fff;
 }
 
 .sidebar-overlay {
   display: none;
 }
 
-/* ============================================================
-   TABLET
-   ============================================================ */
-
-@media (max-width: 1100px) {
-
-  :root {
-    --sidebar-width: 350px;
-  }
-
-  .workspace-page {
-    padding: 22px;
-  }
-
+@media (max-width: 1000px) {
   .feature-grid {
-    grid-template-columns:
-      repeat(2, minmax(0,1fr));
+    grid-template-columns: repeat(2, 1fr);
   }
 
-  .messages-area {
-    padding-left: 4%;
-    padding-right: 4%;
+  .hero-orbit {
+    width: 180px;
+    height: 180px;
+  }
+
+  .ring-b {
+    width: 170px;
+    height: 170px;
   }
 }
 
-/* ============================================================
-   MOBILE
-   ============================================================ */
-
 @media (max-width: 760px) {
-
-  :root {
-    --sidebar-width: 100%;
-  }
-
   .hexa-sidebar {
     position: fixed;
-
-    inset:
-      0 auto 0 0;
-
-    width: min(360px, 92vw);
-
-    min-width: 0;
-
-    z-index: 900;
-
-    transform:
-      translateX(-105%);
-
-    transition:
-      transform .2s ease;
+    z-index: 90;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    transform: translateX(-105%);
+    transition: transform .2s ease;
+    box-shadow: 30px 0 80px rgba(0,0,0,.4);
   }
 
   .hexa-sidebar.mobile-open {
-    transform:
-      translateX(0);
+    transform: translateX(0);
   }
 
   .sidebar-overlay {
+    display: block;
     position: fixed;
-
     inset: 0;
-
-    z-index: 850;
-
-    background: rgba(0,0,0,.62);
+    z-index: 80;
+    background: rgba(0,0,0,.6);
   }
 
   .mobile-menu-button {
     display: grid;
-
     place-items: center;
-
-    flex-shrink: 0;
+    position: fixed;
+    z-index: 70;
+    top: 14px;
+    left: 12px;
+    width: 39px;
+    height: 39px;
+    border-radius: 11px;
+    border: 1px solid var(--hexa-border);
+    background: rgba(9,12,17,.9);
+    color: white;
   }
 
   .mobile-close {
     display: block;
-
-    margin-left: auto;
-
-    border: 0;
-
-    background: transparent;
-
-    color: var(--muted);
-
-    font-size: 22px;
   }
 
   .mobile-page-title {
     display: block;
-
-    min-width: 0;
-
-    flex: 1;
-
-    overflow: hidden;
-
-    white-space: nowrap;
-
-    text-overflow: ellipsis;
-
+    margin-left: 52px;
     font-size: 13px;
-
-    font-weight: 600;
+    letter-spacing: .12em;
   }
 
   .hexa-topbar {
-    padding: 0 10px;
-
+    padding: 0 12px;
     gap: 8px;
   }
 
   .topbar-search {
+    max-width: none;
+  }
+
+  .topbar-search kbd {
     display: none;
   }
 
   .topbar-actions {
-    margin-left: auto;
+    display: none;
+  }
+
+  .workspace-page {
+    padding: 18px 14px;
+  }
+
+  .hero-panel {
+    padding: 25px;
+    min-height: 340px;
+  }
+
+  .hero-orbit {
+    display: none;
+  }
+
+  .hero-panel h1 {
+    font-size: 34px;
+  }
+
+  .feature-grid {
+    grid-template-columns: 1fr 1fr;
   }
 
   .chat-layout {
@@ -8982,2163 +8066,155 @@ video {
   }
 
   .chat-header {
-    padding: 0 10px;
+    padding-left: 15px;
   }
 
   .messages-area {
-    padding:
-      14px 10px 16px;
-  }
-
-  .message-stack {
-    max-width: 88%;
+    padding: 14px;
   }
 
   .message-bubble {
-    max-width: 100%;
-  }
-
-  .message-composer {
-    padding:
-      8px 7px;
-  }
-
-  .message-composer > button {
-    width: 31px;
-    height: 31px;
-
-    min-width: 31px;
-  }
-
-  .composer-action {
-    display: none !important;
-  }
-
-  .workspace-page {
-    padding:
-      16px 12px;
-  }
-
-  .entity-grid {
-    grid-template-columns: 1fr;
+    max-width: 84%;
   }
 
   .page-heading {
     align-items: flex-start;
+    flex-wrap: wrap;
   }
 
   .heading-action {
     width: 100%;
-
     margin-left: 0;
-  }
-
-  .call-shell {
-    width: calc(100vw - 12px);
-
-    height: calc(100dvh - 12px);
-
-    border-radius: 13px;
-  }
-
-  .call-local-video {
-    width: 110px;
-
-    right: 8px;
-    bottom: 8px;
   }
 }
 
-/* ============================================================
-   SMALL PHONE
-   ============================================================ */
-
 @media (max-width: 520px) {
-
   .hexa-auth-page {
-    padding: 10px;
+    padding: 12px;
   }
 
   .hexa-auth-card {
-    width: 100%;
-
-    padding: 23px 17px;
-
-    border-radius: 18px;
+    padding: 26px 19px;
+    border-radius: 21px;
   }
 
   .auth-heading h1 {
-    font-size: 24px;
+    font-size: 25px;
   }
 
   .feature-grid {
     grid-template-columns: 1fr;
+  }
+
+  .hero-panel {
+    padding: 22px;
+  }
+
+  .hero-actions {
+    flex-direction: column;
+  }
+
+  .hero-primary,
+  .hero-secondary {
+    width: 100%;
   }
 
   .chat-header-actions button:nth-child(2) {
     display: none;
   }
 
-  .status-row {
-    margin-right: -12px;
-
-    padding-right: 12px;
-  }
-
-  .status-card,
-  .create-status-card {
-    width: 140px;
-    min-width: 140px;
-
-    height: 200px;
-  }
-
-  .notifications-panel {
-    right: 8px;
-
-    width:
-      calc(100vw - 16px);
-  }
-
-  .emoji-grid {
-    max-height: 190px;
-  }
-}
-
-/* ============================================================
-   VERY SMALL PHONE
-   ============================================================ */
-
-@media (max-width: 380px) {
-
-  .message-stack {
-    max-width: 92%;
+  .composer-action {
+    display: none !important;
   }
 
   .message-composer {
-    gap: 3px;
+    padding: 8px;
   }
 
-  .message-composer input {
-    font-size: 11px;
+  .message-composer > button:first-child {
+    display: none;
   }
 
-  .hexa-avatar {
-    width: 39px;
-    height: 39px;
-
-    min-width: 39px;
-  }
-}
-/* ============================================================
-   HEXA CHAT — FINAL COMMUNICATION LAYOUT
-   ============================================================ */
-
-.hexa-app {
-  width: 100vw;
-  height: 100vh;
-  min-height: 100vh;
-  overflow: hidden;
-}
-
-/* Compact HEXA application navigation */
-.hexa-sidebar {
-  width: 68px !important;
-  min-width: 68px !important;
-  max-width: 68px !important;
-  padding: 8px 6px !important;
-}
-
-/* Hide navigation words while keeping icons */
-.hexa-sidebar .sidebar-section-label,
-.hexa-sidebar .sidebar-item > span:not(.sidebar-icon),
-.hexa-sidebar .sidebar-user-info,
-.hexa-sidebar .sidebar-brand > div:last-of-type {
-  display: none !important;
-}
-
-.hexa-sidebar .sidebar-brand {
-  justify-content: center !important;
-}
-
-.hexa-sidebar .sidebar-item {
-  width: 50px !important;
-  height: 50px !important;
-  min-height: 50px !important;
-  margin: 2px auto !important;
-  padding: 0 !important;
-  display: grid !important;
-  place-items: center !important;
-  border-radius: 12px !important;
-}
-
-.hexa-sidebar .sidebar-icon {
-  font-size: 20px !important;
-  line-height: 1 !important;
-}
-
-/* Main area */
-.hexa-main {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.hexa-chat-content {
-  height: 100% !important;
-  min-height: 0 !important;
-  padding: 0 !important;
-  overflow: hidden !important;
-}
-
-/* ============================================================
-   CHAT MASTER / DETAIL
-   ============================================================ */
-
-.chat-layout {
-  width: 100% !important;
-  height: 100% !important;
-  min-height: 0 !important;
-
-  display: grid !important;
-  grid-template-columns: 330px minmax(0, 1fr) !important;
-
-  overflow: hidden !important;
-}
-
-/* ============================================================
-   CHAT LIST
-   ============================================================ */
-
-.chat-list-panel {
-  width: 330px !important;
-  min-width: 330px !important;
-  max-width: 330px !important;
-  height: 100% !important;
-
-  display: flex !important;
-  flex-direction: column !important;
-
-  overflow: hidden !important;
-
-  border-right: 1px solid var(--hexa-border) !important;
-  background: var(--hexa-panel) !important;
-}
-
-.chat-list-header {
-  height: 60px !important;
-  min-height: 60px !important;
-
-  display: flex !important;
-  align-items: center !important;
-  justify-content: space-between !important;
-
-  padding: 0 14px !important;
-}
-
-.chat-list-header h2 {
-  margin: 0 !important;
-  font-size: 18px !important;
-  line-height: 22px !important;
-}
-
-.chat-list-header span {
-  font-size: 10px !important;
-  color: var(--hexa-muted) !important;
-}
-
-.new-chat-button {
-  width: 36px !important;
-  height: 36px !important;
-  min-width: 36px !important;
-  border-radius: 50% !important;
-}
-
-/* Chat search */
-.chat-search {
-  margin: 0 !important;
-  padding: 8px 12px !important;
-  height: 54px !important;
-  min-height: 54px !important;
-}
-
-.chat-search input {
-  height: 38px !important;
-  min-height: 38px !important;
-  border-radius: 9px !important;
-  font-size: 13px !important;
-}
-
-/* Conversation list */
-.conversation-list {
-  flex: 1 !important;
-  min-height: 0 !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-}
-
-/* Individual conversation */
-.conversation {
-  width: 100% !important;
-  height: 68px !important;
-  min-height: 68px !important;
-
-  padding: 8px 12px !important;
-  display: flex !important;
-  align-items: center !important;
-  gap: 10px !important;
-
-  border: 0 !important;
-  border-bottom: 1px solid rgba(255,255,255,.045) !important;
-  border-radius: 0 !important;
-
-  text-align: left !important;
-}
-
-.conversation.active {
-  background: rgba(105,71,255,.12) !important;
-}
-
-.conversation .hexa-avatar {
-  width: 46px !important;
-  height: 46px !important;
-  min-width: 46px !important;
-}
-
-.conversation-content {
-  min-width: 0 !important;
-  flex: 1 !important;
-}
-
-.conversation-topline {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: space-between !important;
-  gap: 8px !important;
-}
-
-.conversation-topline strong {
-  min-width: 0 !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
-
-  font-size: 14px !important;
-  font-weight: 600 !important;
-}
-
-.conversation-topline time {
-  flex-shrink: 0 !important;
-  font-size: 10px !important;
-  color: var(--hexa-muted) !important;
-}
-
-.conversation-bottomline {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: space-between !important;
-  gap: 7px !important;
-  margin-top: 3px !important;
-}
-
-.conversation-bottomline span {
-  min-width: 0 !important;
-
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
-
-  font-size: 12px !important;
-  color: var(--hexa-muted) !important;
-}
-
-.unread-badge {
-  width: 19px !important;
-  height: 19px !important;
-  min-width: 19px !important;
-
-  display: grid !important;
-  place-items: center !important;
-
-  border-radius: 50% !important;
-  font-size: 9px !important;
-}
-
-/* ============================================================
-   CHAT WINDOW
-   ============================================================ */
-
-.chat-main {
-  min-width: 0 !important;
-  min-height: 0 !important;
-
-  height: 100% !important;
-
-  display: flex !important;
-  flex-direction: column !important;
-
-  overflow: hidden !important;
-
-  background: var(--hexa-chat-bg) !important;
-}
-
-/* Header */
-.chat-header {
-  flex-shrink: 0 !important;
-
-  height: 60px !important;
-  min-height: 60px !important;
-
-  padding: 0 15px !important;
-
-  display: flex !important;
-  align-items: center !important;
-  gap: 10px !important;
-
-  background: var(--hexa-panel) !important;
-  border-bottom: 1px solid var(--hexa-border) !important;
-}
-
-.chat-header .hexa-avatar {
-  width: 40px !important;
-  height: 40px !important;
-  min-width: 40px !important;
-}
-
-.chat-header-copy {
-  min-width: 0 !important;
-  flex: 1 !important;
-}
-
-.chat-header-copy strong {
-  display: block !important;
-  font-size: 15px !important;
-  line-height: 18px !important;
-}
-
-.chat-header-copy span {
-  display: block !important;
-  margin-top: 2px !important;
-  font-size: 10px !important;
-  color: var(--hexa-muted) !important;
-}
-
-.chat-header-actions {
-  display: flex !important;
-  align-items: center !important;
-  gap: 3px !important;
-}
-
-.chat-header-actions button {
-  width: 38px !important;
-  height: 38px !important;
-  min-width: 38px !important;
-  border-radius: 50% !important;
-}
-
-/* ============================================================
-   MESSAGES
-   ============================================================ */
-
-.messages-area {
-  flex: 1 !important;
-  min-height: 0 !important;
-
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-
-  padding: 15px clamp(14px, 5vw, 80px) !important;
-
-  display: flex !important;
-  flex-direction: column !important;
-}
-
-/* Message bubble sizing */
-.message-bubble {
-  max-width: min(62%, 620px) !important;
-
-  padding: 6px 9px !important;
-
-  border-radius: 8px !important;
-
-  font-size: 14px !important;
-  line-height: 19px !important;
-
-  box-shadow: none !important;
-}
-
-.message-row {
-  margin: 2px 0 !important;
-}
-
-/* ============================================================
-   COMPOSER
-   ============================================================ */
-
-.chat-composer {
-  flex-shrink: 0 !important;
-
-  min-height: 62px !important;
-  height: 62px !important;
-
-  padding: 8px 12px !important;
-
-  display: flex !important;
-  align-items: center !important;
-  gap: 7px !important;
-
-  background: var(--hexa-panel) !important;
-  border-top: 1px solid var(--hexa-border) !important;
-}
-
-.chat-composer > input {
-  flex: 1 !important;
-  min-width: 0 !important;
-
-  height: 42px !important;
-  min-height: 42px !important;
-
-  padding: 0 16px !important;
-
-  border-radius: 21px !important;
-
-  font-size: 14px !important;
-}
-
-.composer-left,
-.composer-right {
-  display: flex !important;
-  align-items: center !important;
-  gap: 3px !important;
-}
-
-.composer-left button,
-.composer-right button {
-  width: 42px !important;
-  height: 42px !important;
-  min-width: 42px !important;
-  border-radius: 50% !important;
-}
-
-/* ============================================================
-   DESKTOP
-   ============================================================ */
-
-@media (min-width: 1400px) {
-  .chat-layout {
-    grid-template-columns: 350px minmax(0, 1fr) !important;
-  }
-
-  .chat-list-panel {
-    width: 350px !important;
-    min-width: 350px !important;
-    max-width: 350px !important;
-  }
-
-  .messages-area {
-    padding-left: 7% !important;
-    padding-right: 7% !important;
+  .status-row {
+    margin-right: -14px;
   }
 }
 
-/* ============================================================
-   LAPTOP
-   ============================================================ */
 
-@media (max-width: 1100px) {
-  .chat-layout {
-    grid-template-columns: 310px minmax(0, 1fr) !important;
-  }
+.call-shell{width:min(920px,96vw);height:min(760px,92vh);display:flex;flex-direction:column;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:22px;overflow:hidden;box-shadow:var(--hexa-shadow)}.call-header{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid var(--hexa-border)}.call-header span{color:var(--hexa-muted);font-size:11px}.call-video-grid{position:relative;flex:1;background:#050507;display:grid;place-items:center}.call-remote-video{width:100%;height:100%;object-fit:contain;background:#050507}.call-local-video{position:absolute;right:18px;bottom:18px;width:min(230px,30%);aspect-ratio:16/10;object-fit:cover;border-radius:14px;border:2px solid rgba(255,255,255,.25);background:#111}.call-audio-stage{flex:1;display:grid;place-items:center;text-align:center}.call-avatar{margin-bottom:12px}.call-controls{padding:16px;display:flex;justify-content:center;border-top:1px solid var(--hexa-border)}.danger-button{padding:12px 24px;border-radius:999px;background:var(--hexa-danger);color:#fff;font-weight:800}.call-error{margin:0;padding:0 18px 10px;color:var(--hexa-danger);font-size:11px;text-align:center}
 
-  .chat-list-panel {
-    width: 310px !important;
-    min-width: 310px !important;
-    max-width: 310px !important;
-  }
+/* =========================================================
+   HEXA EMOJI PICKER
+   ========================================================= */
+.hexa-emoji-picker{width:min(440px,calc(100vw - 20px));max-height:min(640px,74vh);display:flex;flex-direction:column;overflow:hidden;padding:12px;border:1px solid var(--hexa-border-strong);border-radius:20px;background:var(--hexa-panel);box-shadow:var(--hexa-shadow);backdrop-filter:blur(22px)}
+.emoji-picker-header{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 10px}.emoji-picker-title{display:flex;align-items:center;gap:8px}.emoji-picker-title span{padding:3px 8px;border-radius:999px;background:var(--hexa-panel-3);color:var(--hexa-muted);font-size:10px}.emoji-close{width:30px;height:30px;border-radius:50%;background:var(--hexa-panel-3);color:var(--hexa-text);font-size:20px}.emoji-search-row{position:relative;margin-bottom:8px}.emoji-search{width:100%;height:40px;padding:0 38px 0 13px;border:1px solid var(--hexa-border);border-radius:12px;background:var(--hexa-panel-2);color:var(--hexa-text);outline:none}.emoji-clear-search{position:absolute;right:5px;top:5px;width:30px;height:30px;border-radius:50%;background:transparent;color:var(--hexa-muted);font-size:18px}.emoji-category-tabs{display:flex;gap:4px;overflow-x:auto;padding-bottom:7px}.emoji-category-tabs button{flex:0 0 36px;width:36px;height:36px;border-radius:10px;background:transparent;color:var(--hexa-text);font-size:19px}.emoji-category-tabs button:hover,.emoji-category-tabs button.active{background:var(--hexa-accent);color:#fff}.emoji-tone-row{display:flex;align-items:center;gap:4px;padding:7px 3px;border-top:1px solid var(--hexa-border);border-bottom:1px solid var(--hexa-border);overflow-x:auto}.emoji-tone-row span{margin-right:5px;color:var(--hexa-muted);font-size:10px;white-space:nowrap}.emoji-tone-row button{min-width:34px;height:30px;border-radius:9px;background:transparent;font-size:17px}.emoji-tone-row button.selected,.emoji-tone-row button:hover{background:var(--hexa-panel-3)}.emoji-picker-label{padding:9px 3px 6px;color:var(--hexa-muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}.hexa-emoji-grid{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:2px;flex:1;min-height:0;overflow-y:auto;padding:2px}.emoji-item{position:relative;aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:10px;background:transparent;color:var(--hexa-text);font-size:27px;transition:transform .1s ease,background .1s ease}.emoji-item:hover{transform:scale(1.12);background:var(--hexa-panel-3);z-index:2}.emoji-item:active{transform:scale(.92)}.emoji-item small{position:absolute;right:1px;bottom:1px;color:var(--hexa-accent-2);font-size:8px}.emoji-empty{min-height:160px;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;color:var(--hexa-muted)}.emoji-empty span{font-size:34px;margin-bottom:7px}.emoji-empty strong{color:var(--hexa-text)}.emoji-empty p{font-size:11px;margin:5px 0}.emoji-picker-footer{display:flex;justify-content:space-between;gap:8px;padding:8px 3px 1px;border-top:1px solid var(--hexa-border);color:var(--hexa-muted);font-size:9px}
+@media(max-width:700px){.hexa-emoji-picker{width:calc(100vw - 16px);max-height:68vh}.hexa-emoji-grid{grid-template-columns:repeat(7,minmax(0,1fr))}.emoji-item{font-size:24px}}
 
-  .message-bubble {
-    max-width: 68% !important;
-  }
+/* HEXA feature extensions */
+.notifications-panel{position:absolute;right:22px;top:72px;width:min(390px,calc(100vw - 28px));background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:18px;box-shadow:var(--hexa-shadow);z-index:100;padding:10px}.notifications-header{display:flex;justify-content:space-between;align-items:center;padding:12px 10px;border-bottom:1px solid var(--hexa-border)}.notifications-header button{background:none;border:0;color:var(--hexa-accent-2)}.notification-item{display:flex;gap:12px;padding:14px 10px;border-bottom:1px solid var(--hexa-border)}.notification-item>span{color:var(--hexa-accent)}.notification-item p{margin:4px 0;color:var(--hexa-muted)}.notification-item small{color:var(--hexa-muted)}.notification-empty{padding:28px;text-align:center;color:var(--hexa-muted)}.notification-button{position:relative}.notification-button b{position:absolute;right:0;top:-5px;min-width:17px;height:17px;padding:0 4px;border-radius:99px;background:var(--hexa-danger);font-size:9px;display:grid;place-items:center;color:#fff}.entity-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}.entity-card{padding:20px;border:1px solid var(--hexa-border);background:var(--hexa-panel);border-radius:18px;display:flex;flex-direction:column;gap:9px}.entity-card span,.entity-card small{color:var(--hexa-muted)}.entity-modal,.status-modal{width:min(620px,calc(100vw - 28px));max-height:90vh;overflow:auto;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:22px;padding:22px;box-shadow:var(--hexa-shadow)}.modal-input{width:100%;margin:8px 0;padding:13px 14px;border-radius:12px;border:1px solid var(--hexa-border);background:rgba(255,255,255,.035);color:var(--hexa-text);outline:none}.modal-textarea{min-height:90px;resize:vertical}.media-picker{width:100%;display:flex;align-items:center;gap:14px;text-align:left;padding:12px;border:1px dashed var(--hexa-border-strong);border-radius:14px;background:transparent;color:var(--hexa-text);margin:8px 0 14px}.media-picker img{width:52px;height:52px;border-radius:12px;object-fit:cover}.media-picker span{width:52px;height:52px;border-radius:12px;display:grid;place-items:center;background:var(--hexa-panel-3);font-size:25px}.media-picker small{display:block;color:var(--hexa-muted);margin-top:3px}.member-picker{display:grid;gap:7px;max-height:180px;overflow:auto;margin-bottom:16px}.member-option{display:flex;align-items:center;gap:9px;padding:7px;border-radius:10px}.member-option:hover{background:rgba(255,255,255,.04)}.status-composer-tabs{display:flex;gap:8px;margin-bottom:10px}.status-composer-tabs button{flex:1;padding:11px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:11px}.status-media-preview img,.status-media-preview video{width:100%;max-height:300px;object-fit:contain;border-radius:14px;margin:8px 0}.privacy-row{display:flex;align-items:center;justify-content:space-between;margin:12px 0;color:var(--hexa-muted)}.privacy-row select{background:var(--hexa-panel-2);color:var(--hexa-text);border:1px solid var(--hexa-border);padding:9px;border-radius:10px}.status-card.unseen .status-preview{box-shadow:0 0 0 3px var(--hexa-accent)}.status-card.seen{opacity:.8}.status-preview img,.status-preview video{width:100%;height:100%;object-fit:cover;border-radius:inherit}.story-viewer{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:500;display:grid;place-items:center;padding:20px}.story-content{width:min(520px,100%);height:min(88vh,820px);position:relative;background:#000;border-radius:20px;overflow:hidden;display:flex;align-items:center;justify-content:center}.story-content img,.story-content video{width:100%;height:100%;object-fit:contain}.story-text{font-size:34px;font-weight:800;text-align:center;padding:30px}.story-caption{position:absolute;left:18px;right:18px;bottom:58px;padding:10px;border-radius:10px;background:rgba(0,0,0,.45)}.story-actions{position:absolute;bottom:10px;right:12px;display:flex;gap:6px}.story-actions button,.story-close{border:0;background:rgba(255,255,255,.12);color:#fff;border-radius:50%;width:38px;height:38px}.story-close{position:absolute;right:22px;top:20px;z-index:2;font-size:25px}.story-progress{position:absolute;top:12px;left:20px;right:20px;height:3px;background:rgba(255,255,255,.35);z-index:2}.search-results{display:grid;gap:6px;padding:8px}.search-person{display:flex;align-items:center;gap:12px;padding:10px;border:0;background:transparent;color:var(--hexa-text);text-align:left;border-radius:12px}.search-person:hover{background:rgba(255,255,255,.05)}.search-person div{flex:1}.search-person span{display:block;color:var(--hexa-muted);font-size:12px}.search-person b{font-size:12px;color:var(--hexa-accent-2)}.settings-grid{display:grid;gap:12px;max-width:760px}.settings-card{display:flex;align-items:center;gap:16px;justify-content:space-between;padding:18px;border:1px solid var(--hexa-border);background:var(--hexa-panel);border-radius:18px}.settings-card>div:first-child{flex:1}.settings-card p{color:var(--hexa-muted);margin:5px 0 0}.settings-card button{border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);padding:10px 14px;border-radius:10px}.settings-card.danger button{color:#fff;background:var(--hexa-danger);border-color:transparent}
+.reply-bar{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:8px 14px;background:var(--hexa-panel-2);border-top:1px solid var(--hexa-border);font-size:12px;color:var(--hexa-muted)}.reply-bar button{border:0;background:none;color:var(--hexa-text)}.message-bubble-wrap{position:relative;max-width:86%}.message-tools{display:none;position:absolute;right:0;top:-34px;background:var(--hexa-panel);border:1px solid var(--hexa-border);border-radius:10px;padding:3px;z-index:4}.message-bubble-wrap:hover .message-tools{display:flex}.message-tools button{border:0;background:none;color:var(--hexa-text);padding:5px}.reaction-picker{position:absolute;bottom:32px;right:0;display:flex;background:var(--hexa-panel);border:1px solid var(--hexa-border);border-radius:14px;padding:5px;box-shadow:var(--hexa-shadow)}.reaction-summary{font-size:12px;background:var(--hexa-panel-2);border-radius:10px;padding:3px 7px;display:inline-block;margin-top:3px}.message-media{display:block;max-width:280px;max-height:340px;border-radius:12px;object-fit:contain}.gif-panel{position:absolute;left:14px;right:14px;bottom:76px;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:16px;padding:10px;z-index:30;box-shadow:var(--hexa-shadow)}.gif-search{display:flex;gap:7px}.gif-search input{flex:1}.gif-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;max-height:240px;overflow:auto;margin-top:8px}.gif-grid button{padding:0;border:0;background:none}.gif-grid img{width:100%;height:70px;object-fit:cover;border-radius:7px}.muted{color:var(--hexa-muted)}
 
-  .messages-area {
-    padding-left: 22px !important;
-    padding-right: 22px !important;
-  }
-}
+/* HEXA wallet UI */
+.wallet-credit-modal{width:min(560px,calc(100vw - 28px))}.wallet-security-field{display:grid;gap:4px;margin-top:10px}.wallet-security-field>span{font-size:11px;color:var(--hexa-muted)}.wallet-security-note{margin:12px 0;padding:12px;border:1px solid var(--hexa-border);background:rgba(124,92,255,.07);border-radius:12px;color:var(--hexa-muted);font-size:11px;line-height:1.5}.wallet-buy-button{width:100%;margin-top:8px}.hexa-modal-backdrop{position:fixed;inset:0;z-index:900;background:rgba(0,0,0,.72);display:grid;place-items:center;padding:14px}
+.wallet-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}.wallet-balance-card{padding:24px;border:1px solid var(--hexa-border);background:linear-gradient(135deg,var(--hexa-panel),var(--hexa-panel-2));border-radius:20px;display:grid;gap:8px}.wallet-balance-card span{color:var(--hexa-muted);font-size:11px}.wallet-balance-card strong{font-size:32px;letter-spacing:-.03em}.wallet-balance-card small{color:var(--hexa-muted);font-size:10px}.wallet-fund-card{align-items:center}.wallet-fund-card .modal-input{margin:0}.wallet-fund-card .hero-primary{white-space:nowrap}
 
-/* ============================================================
-   TABLET
-   ============================================================ */
-
-@media (max-width: 760px) {
-  .hexa-sidebar {
-    width: 0 !important;
-    min-width: 0 !important;
-    max-width: 0 !important;
-    display: none !important;
-  }
-
-  .chat-layout {
-    grid-template-columns: 100% !important;
-  }
-
-  .chat-list-panel {
-    width: 100% !important;
-    min-width: 100% !important;
-    max-width: 100% !important;
-  }
-
-  .chat-layout.mobile-chat-open .chat-list-panel {
-    display: none !important;
-  }
-
-  .chat-layout.mobile-chat-open .chat-main {
-    display: flex !important;
-  }
-
-  .chat-layout.mobile-chat-list .chat-main {
-    display: none !important;
-  }
-
-  .message-bubble {
-    max-width: 82% !important;
-  }
-
-  .messages-area {
-    padding: 10px 8px !important;
-  }
-
-  .chat-header {
-    height: 58px !important;
-    min-height: 58px !important;
-  }
-}
-
-/* ============================================================
-   SMALL PHONES
-   ============================================================ */
-
-@media (max-width: 420px) {
-  .conversation {
-    height: 64px !important;
-    min-height: 64px !important;
-  }
-
-  .conversation .hexa-avatar {
-    width: 44px !important;
-    height: 44px !important;
-    min-width: 44px !important;
-  }
-
-  .message-bubble {
-    max-width: 88% !important;
-  }
-
-  .chat-composer {
-    padding-left: 6px !important;
-    padding-right: 6px !important;
-  }
-}
+/* HEXA master feature UI */
+.hexa-audio-message{display:flex;align-items:center;gap:7px}.hexa-audio-message audio{max-width:210px;height:34px}.hexa-audio-message select{background:var(--hexa-panel-2);color:var(--hexa-text);border:1px solid var(--hexa-border);border-radius:8px;padding:4px}.message-context-menu{position:fixed;z-index:1000;min-width:190px;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:14px;padding:6px;box-shadow:var(--hexa-shadow);display:grid;gap:2px}.message-context-menu button{border:0;background:none;color:var(--hexa-text);padding:10px;text-align:left;border-radius:9px}.message-context-menu button:hover{background:rgba(255,255,255,.06)}.message-context-menu .danger-text{color:var(--hexa-danger)}.emoji-panel,.sticker-panel,.feature-popover,.chat-settings-popover{position:absolute;z-index:40;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:16px;box-shadow:var(--hexa-shadow);padding:12px}.emoji-panel{left:12px;bottom:76px;width:min(410px,calc(100% - 24px))}.emoji-tones,.emoji-grid,.sticker-grid{display:flex;flex-wrap:wrap;gap:5px}.emoji-grid{max-height:220px;overflow:auto;margin-top:8px}.emoji-panel button,.sticker-grid button{border:0;background:transparent;font-size:21px;padding:6px;border-radius:8px}.emoji-panel button:hover,.sticker-grid button:hover{background:rgba(255,255,255,.06)}.sticker-panel{left:12px;bottom:76px;width:300px}.sticker-grid{margin-top:10px}.sticker-grid button{font-size:30px}.feature-popover{right:12px;bottom:76px;width:min(360px,calc(100% - 24px));display:grid;gap:8px}.feature-popover h3{margin:0}.chat-settings-popover{right:12px;top:64px;width:270px;display:grid;gap:10px;z-index:60}.chat-settings-popover label{display:grid;gap:6px;color:var(--hexa-muted);font-size:12px}.chat-settings-popover select,.chat-settings-popover button{padding:9px;border-radius:9px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text)}.chat-search-results{padding:10px;border-top:1px solid var(--hexa-border);display:grid;gap:5px}.chat-search-results button{border:0;background:transparent;color:var(--hexa-muted);text-align:left;padding:6px}.poll-message{display:grid;gap:7px;min-width:220px}.poll-message button{display:flex;justify-content:space-between;gap:10px;padding:9px;border-radius:9px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);text-align:left}.poll-message button span{color:var(--hexa-muted);font-size:10px}.shared-contact{display:flex;gap:10px;align-items:center;min-width:190px}.shared-contact div{display:grid}.shared-contact small{color:var(--hexa-muted)}.location-card{color:inherit;text-decoration:none;display:block;padding:4px}.file-message{display:flex;gap:8px;align-items:center}.forwarded-label{font-size:10px;color:var(--hexa-muted);margin-bottom:5px}.sticker-message{font-size:70px;line-height:1}.view-once-bubble{min-width:100px}.universal-search-result{display:flex;align-items:center;gap:10px;width:100%}.universal-search-result-copy{flex:1}.universal-search-result>b{text-transform:uppercase;font-size:9px;color:var(--hexa-accent-2)}
 
 
 /* ============================================================
-   HEXA SETTINGS
+   SYSTEM NOTIFICATIONS
    ============================================================ */
-
-.hexa-settings-page {
-  width: 100%;
-  max-width: 920px;
-  height: 100%;
-  margin: 0 auto;
-  padding: 24px 26px 40px;
-  overflow-y: auto;
-}
-
-/* Header */
-.hexa-settings-header {
-  margin-bottom: 18px;
-}
-
-.hexa-settings-header h1 {
-  margin: 0;
-  font-size: 26px;
-  line-height: 32px;
-  font-weight: 700;
-}
-
-.hexa-settings-header p {
-  margin: 5px 0 0;
-  color: var(--hexa-muted);
-  font-size: 13px;
-  line-height: 19px;
-}
-
-/* Profile */
-.hexa-settings-profile {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 16px;
-  margin-bottom: 22px;
-  border: 1px solid var(--hexa-border);
-  border-radius: 14px;
-  background: var(--hexa-panel);
-  color: var(--hexa-text);
-  text-align: left;
-  cursor: pointer;
-}
-
-.hexa-settings-profile:hover {
-  background: var(--hexa-panel-2);
-}
-
-.hexa-settings-profile-copy {
-  flex: 1;
-  min-width: 0;
-}
-
-.hexa-settings-profile-copy strong {
-  display: block;
-  font-size: 16px;
-  line-height: 21px;
-}
-
-.hexa-settings-profile-copy span,
-.hexa-settings-profile-copy small {
-  display: block;
-  color: var(--hexa-muted);
-}
-
-.hexa-settings-profile-copy span {
-  margin-top: 2px;
-  font-size: 12px;
-}
-
-.hexa-settings-profile-copy small {
-  margin-top: 3px;
-  font-size: 11px;
-}
-
-.hexa-settings-chevron {
-  color: var(--hexa-muted);
-  font-size: 25px;
-  line-height: 1;
-}
-
-/* Group */
-.hexa-settings-group {
-  margin-bottom: 20px;
-}
-
-.hexa-settings-group-title {
-  padding: 0 10px 7px;
-  color: var(--hexa-accent-2);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .08em;
-}
-
-/* Row */
-.hexa-settings-row {
-  width: 100%;
-  min-height: 70px;
-  padding: 10px 12px;
-
-  display: flex;
-  align-items: center;
-  gap: 13px;
-
-  border: 0;
-  border-bottom: 1px solid var(--hexa-border);
-
-  background: var(--hexa-panel);
-  color: var(--hexa-text);
-
-  text-align: left;
-  cursor: pointer;
-}
-
-.hexa-settings-group
-.hexa-settings-row:first-of-type {
-  border-radius: 12px 12px 0 0;
-}
-
-.hexa-settings-group
-.hexa-settings-row:last-child {
-  border-radius: 0 0 12px 12px;
-}
-
-.hexa-settings-row:hover {
-  background: var(--hexa-panel-2);
-}
-
-.hexa-settings-row-icon {
-  width: 38px;
-  height: 38px;
-  min-width: 38px;
-
-  display: grid;
-  place-items: center;
-
-  border-radius: 10px;
-
-  background: var(--hexa-panel-2);
-
-  font-size: 18px;
-}
-
-.hexa-settings-row > div {
-  min-width: 0;
-  flex: 1;
-}
-
-.hexa-settings-row strong {
-  display: block;
-  font-size: 13px;
-  line-height: 18px;
-  font-weight: 600;
-}
-
-.hexa-settings-row small {
-  display: block;
-  margin-top: 2px;
-  color: var(--hexa-muted);
-  font-size: 11px;
-  line-height: 16px;
-}
-
-.hexa-settings-row > span:last-child {
-  color: var(--hexa-muted);
-  font-size: 20px;
-}
-
-/* Toggle */
-.hexa-settings-toggle-row {
-  cursor: default;
-}
-
-.hexa-settings-toggle-row > div {
-  cursor: default;
-}
-
-.hexa-switch {
-  width: 38px;
-  height: 22px;
-  min-width: 38px;
-
-  padding: 2px;
-
-  border: 0;
-  border-radius: 12px;
-
-  background: var(--hexa-panel-3);
-
-  cursor: pointer;
-}
-
-.hexa-switch span {
-  display: block;
-
-  width: 18px;
-  height: 18px;
-
-  border-radius: 50%;
-
-  background: white;
-
-  transition: transform .18s ease;
-}
-
-.hexa-switch.on {
-  background: var(--hexa-accent);
-}
-
-.hexa-switch.on span {
-  transform: translateX(16px);
-}
-
-/* Logout */
-.hexa-settings-account-group {
-  padding-bottom: 20px;
-}
-
-.hexa-settings-logout {
-  width: 100%;
-  min-height: 50px;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  gap: 8px;
-
-  border: 1px solid rgba(229,57,88,.25);
-  border-radius: 12px;
-
-  background: rgba(229,57,88,.05);
-
-  color: var(--hexa-danger);
-
-  font-size: 13px;
-  font-weight: 600;
-
-  cursor: pointer;
-}
-
-.hexa-settings-logout:hover {
-  background: rgba(229,57,88,.1);
-}
+.notifications-panel { max-height: min(560px, calc(100dvh - 100px)); overflow-y: auto; }
+.notifications-header-actions { display:flex; align-items:center; gap:6px; }
+.notifications-header-actions button { border:1px solid var(--hexa-border); border-radius:8px; padding:6px 8px; background:var(--hexa-panel-2); color:var(--hexa-text); font-size:10px; }
+.hexa-notification-button { width:100%; margin:0; text-align:left; cursor:pointer; }
+.notification-empty { display:grid; gap:5px; padding:24px 12px; color:var(--hexa-muted); text-align:center; font-size:11px; }
+.notification-empty strong { color:var(--hexa-text); }
 
 /* ============================================================
-   SETTINGS MODAL
+   CALL CONTROLS
    ============================================================ */
-
-.hexa-settings-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  padding: 18px;
-
-  background: rgba(0,0,0,.55);
-
-  backdrop-filter: blur(7px);
-}
-
-.hexa-settings-modal {
-  width: min(560px, 100%);
-  max-height: min(760px, 90vh);
-
-  display: flex;
-  flex-direction: column;
-
-  overflow: hidden;
-
-  border: 1px solid var(--hexa-border-strong);
-  border-radius: 16px;
-
-  background: var(--hexa-panel);
-
-  box-shadow: var(--hexa-shadow);
-}
-
-.hexa-settings-modal-header {
-  height: 64px;
-  min-height: 64px;
-
-  display: flex;
-  align-items: center;
-
-  gap: 12px;
-
-  padding: 0 14px;
-
-  border-bottom: 1px solid var(--hexa-border);
-}
-
-.hexa-settings-modal-header > div {
-  flex: 1;
-  min-width: 0;
-}
-
-.hexa-settings-modal-header strong {
-  display: block;
-  font-size: 15px;
-}
-
-.hexa-settings-modal-header small {
-  display: block;
-  margin-top: 2px;
-  color: var(--hexa-muted);
-  font-size: 10px;
-}
-
-.hexa-settings-modal-header button {
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
-
-  border: 0;
-  border-radius: 50%;
-
-  background: transparent;
-  color: var(--hexa-text);
-
-  font-size: 20px;
-
-  cursor: pointer;
-}
-
-.hexa-settings-modal-header button:hover {
-  background: var(--hexa-panel-2);
-}
-
-/* Theme list */
-.hexa-settings-theme-list {
-  flex: 1;
-  min-height: 0;
-
-  overflow-y: auto;
-
-  padding: 10px;
-}
-
-.hexa-settings-theme {
-  width: 100%;
-
-  display: flex;
-  align-items: center;
-
-  gap: 12px;
-
-  padding: 10px;
-
-  margin-bottom: 6px;
-
-  border: 1px solid transparent;
-  border-radius: 12px;
-
-  background: transparent;
-  color: var(--hexa-text);
-
-  text-align: left;
-
-  cursor: pointer;
-}
-
-.hexa-settings-theme:hover {
-  background: var(--hexa-panel-2);
-}
-
-.hexa-settings-theme.selected {
-  border-color: var(--hexa-accent);
-  background: color-mix(
-    in srgb,
-    var(--hexa-accent) 8%,
-    transparent
-  );
-}
-
-.hexa-settings-theme-preview {
-  width: 72px;
-  height: 50px;
-  min-width: 72px;
-
-  position: relative;
-
-  overflow: hidden;
-
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-
-  gap: 4px;
-
-  padding: 7px;
-
-  border-radius: 8px;
-}
-
-.hexa-settings-theme-preview div {
-  width: 31px;
-  height: 12px;
-
-  border-radius: 5px;
-}
-
-.hexa-settings-theme-preview div:last-child {
-  margin-bottom: 6px;
-}
-
-.hexa-settings-theme > div:nth-child(2) {
-  flex: 1;
-  min-width: 0;
-}
-
-.hexa-settings-theme strong {
-  display: block;
-  font-size: 12px;
-}
-
-.hexa-settings-theme small {
-  display: block;
-  margin-top: 3px;
-  color: var(--hexa-muted);
-  font-size: 10px;
-  line-height: 14px;
-}
-
-.hexa-settings-theme > b {
-  color: var(--hexa-accent-2);
-  font-size: 17px;
-}
-
-/* Detail */
-.hexa-detail-content {
-  overflow-y: auto;
-  padding: 8px 0;
-}
-
-.hexa-detail-item {
-  padding: 15px 18px;
-  border-bottom: 1px solid var(--hexa-border);
-}
-
-.hexa-detail-item strong {
-  display: block;
-  font-size: 13px;
-}
-
-.hexa-detail-item span {
-  display: block;
-  margin-top: 5px;
-  color: var(--hexa-muted);
-  font-size: 11px;
-  line-height: 17px;
-}
+.hexa-call-shell { position:relative; }
+.call-header-peer { display:flex; align-items:center; gap:8px; color:var(--hexa-text); font-size:11px; }
+.call-audio-stage { flex:1; min-height:0; display:grid; place-content:center; justify-items:center; gap:9px; padding:30px; text-align:center; background:radial-gradient(circle at center, rgba(124,92,255,.17), transparent 55%); }
+.call-audio-stage h2 { margin:0; font-size:20px; }
+.call-audio-stage p { margin:0; max-width:360px; color:var(--hexa-muted); font-size:11px; }
+.call-live-indicator, .call-connecting-indicator { display:flex; align-items:center; gap:7px; color:var(--hexa-muted); font-size:10px; }
+.call-live-indicator span, .call-connecting-indicator span { width:8px; height:8px; border-radius:50%; background:var(--hexa-success); }
+.call-connecting-indicator span { background:var(--hexa-accent); animation:hexa-pulse 1.2s ease-in-out infinite; }
+@keyframes hexa-pulse { 50% { opacity:.35; transform:scale(.7); } }
+.hexa-call-controls { gap:10px; padding:12px 16px; }
+.call-control-button { min-width:44px; height:44px; padding:0 12px; border:1px solid var(--hexa-border); border-radius:22px; background:var(--hexa-panel-2); color:var(--hexa-text); }
+.call-control-button.active { background:rgba(255,77,103,.13); color:#ff7185; }
+.call-end-button { min-width:110px; }
 
 /* ============================================================
-   RESPONSIVE
+   LIVE VOICE CHAT
    ============================================================ */
-
-@media (max-width: 760px) {
-  .hexa-settings-page {
-    padding: 16px 10px 28px;
-  }
-
-  .hexa-settings-header h1 {
-    font-size: 22px;
-  }
-
-  .hexa-settings-header p {
-    font-size: 12px;
-  }
-
-  .hexa-settings-profile {
-    padding: 13px;
-    border-radius: 12px;
-  }
-
-  .hexa-settings-row {
-    min-height: 66px;
-    padding: 9px 10px;
-  }
-
-  .hexa-settings-row-icon {
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
-  }
-
-  .hexa-settings-overlay {
-    padding: 0;
-  }
-
-  .hexa-settings-modal {
-    width: 100%;
-    height: 100%;
-    max-height: none;
-    border-radius: 0;
-  }
-}
-
-/* ============================================================
-   HEXA SETTINGS
-   ============================================================ */
-
-.hexa-settings-page {
-  width: 100%;
-  max-width: 920px;
-  height: 100%;
-  margin: 0 auto;
-  padding: 24px 26px 40px;
-  overflow-y: auto;
-}
-
-/* Header */
-.hexa-settings-header {
-  margin-bottom: 18px;
-}
-
-.hexa-settings-header h1 {
-  margin: 0;
-  font-size: 26px;
-  line-height: 32px;
-  font-weight: 700;
-}
-
-.hexa-settings-header p {
-  margin: 5px 0 0;
-  color: var(--hexa-muted);
-  font-size: 13px;
-  line-height: 19px;
-}
-
-/* Profile */
-.hexa-settings-profile {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 16px;
-  margin-bottom: 22px;
-  border: 1px solid var(--hexa-border);
-  border-radius: 14px;
-  background: var(--hexa-panel);
-  color: var(--hexa-text);
-  text-align: left;
-  cursor: pointer;
-}
-
-.hexa-settings-profile:hover {
-  background: var(--hexa-panel-2);
-}
-
-.hexa-settings-profile-copy {
-  flex: 1;
-  min-width: 0;
-}
-
-.hexa-settings-profile-copy strong {
-  display: block;
-  font-size: 16px;
-  line-height: 21px;
-}
-
-.hexa-settings-profile-copy span,
-.hexa-settings-profile-copy small {
-  display: block;
-  color: var(--hexa-muted);
-}
-
-.hexa-settings-profile-copy span {
-  margin-top: 2px;
-  font-size: 12px;
-}
-
-.hexa-settings-profile-copy small {
-  margin-top: 3px;
-  font-size: 11px;
-}
-
-.hexa-settings-chevron {
-  color: var(--hexa-muted);
-  font-size: 25px;
-  line-height: 1;
-}
-
-/* Group */
-.hexa-settings-group {
-  margin-bottom: 20px;
-}
-
-.hexa-settings-group-title {
-  padding: 0 10px 7px;
-  color: var(--hexa-accent-2);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .08em;
-}
-
-/* Row */
-.hexa-settings-row {
-  width: 100%;
-  min-height: 70px;
-  padding: 10px 12px;
-
-  display: flex;
-  align-items: center;
-  gap: 13px;
-
-  border: 0;
-  border-bottom: 1px solid var(--hexa-border);
-
-  background: var(--hexa-panel);
-  color: var(--hexa-text);
-
-  text-align: left;
-  cursor: pointer;
-}
-
-.hexa-settings-group
-.hexa-settings-row:first-of-type {
-  border-radius: 12px 12px 0 0;
-}
-
-.hexa-settings-group
-.hexa-settings-row:last-child {
-  border-radius: 0 0 12px 12px;
-}
-
-.hexa-settings-row:hover {
-  background: var(--hexa-panel-2);
-}
-
-.hexa-settings-row-icon {
-  width: 38px;
-  height: 38px;
-  min-width: 38px;
-
-  display: grid;
-  place-items: center;
-
-  border-radius: 10px;
-
-  background: var(--hexa-panel-2);
-
-  font-size: 18px;
-}
-
-.hexa-settings-row > div {
-  min-width: 0;
-  flex: 1;
-}
-
-.hexa-settings-row strong {
-  display: block;
-  font-size: 13px;
-  line-height: 18px;
-  font-weight: 600;
-}
-
-.hexa-settings-row small {
-  display: block;
-  margin-top: 2px;
-  color: var(--hexa-muted);
-  font-size: 11px;
-  line-height: 16px;
-}
-
-.hexa-settings-row > span:last-child {
-  color: var(--hexa-muted);
-  font-size: 20px;
-}
-
-/* Toggle */
-.hexa-settings-toggle-row {
-  cursor: default;
-}
-
-.hexa-settings-toggle-row > div {
-  cursor: default;
-}
-
-.hexa-switch {
-  width: 38px;
-  height: 22px;
-  min-width: 38px;
-
-  padding: 2px;
-
-  border: 0;
-  border-radius: 12px;
-
-  background: var(--hexa-panel-3);
-
-  cursor: pointer;
-}
-
-.hexa-switch span {
-  display: block;
-
-  width: 18px;
-  height: 18px;
-
-  border-radius: 50%;
-
-  background: white;
-
-  transition: transform .18s ease;
-}
-
-.hexa-switch.on {
-  background: var(--hexa-accent);
-}
-
-.hexa-switch.on span {
-  transform: translateX(16px);
-}
-
-/* Logout */
-.hexa-settings-account-group {
-  padding-bottom: 20px;
-}
-
-.hexa-settings-logout {
-  width: 100%;
-  min-height: 50px;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  gap: 8px;
-
-  border: 1px solid rgba(229,57,88,.25);
-  border-radius: 12px;
-
-  background: rgba(229,57,88,.05);
-
-  color: var(--hexa-danger);
-
-  font-size: 13px;
-  font-weight: 600;
-
-  cursor: pointer;
-}
-
-.hexa-settings-logout:hover {
-  background: rgba(229,57,88,.1);
-}
-
-/* ============================================================
-   SETTINGS MODAL
-   ============================================================ */
-
-.hexa-settings-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  padding: 18px;
-
-  background: rgba(0,0,0,.55);
-
-  backdrop-filter: blur(7px);
-}
-
-.hexa-settings-modal {
-  width: min(560px, 100%);
-  max-height: min(760px, 90vh);
-
-  display: flex;
-  flex-direction: column;
-
-  overflow: hidden;
-
-  border: 1px solid var(--hexa-border-strong);
-  border-radius: 16px;
-
-  background: var(--hexa-panel);
-
-  box-shadow: var(--hexa-shadow);
-}
-
-.hexa-settings-modal-header {
-  height: 64px;
-  min-height: 64px;
-
-  display: flex;
-  align-items: center;
-
-  gap: 12px;
-
-  padding: 0 14px;
-
-  border-bottom: 1px solid var(--hexa-border);
-}
-
-.hexa-settings-modal-header > div {
-  flex: 1;
-  min-width: 0;
-}
-
-.hexa-settings-modal-header strong {
-  display: block;
-  font-size: 15px;
-}
-
-.hexa-settings-modal-header small {
-  display: block;
-  margin-top: 2px;
-  color: var(--hexa-muted);
-  font-size: 10px;
-}
-
-.hexa-settings-modal-header button {
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
-
-  border: 0;
-  border-radius: 50%;
-
-  background: transparent;
-  color: var(--hexa-text);
-
-  font-size: 20px;
-
-  cursor: pointer;
-}
-
-.hexa-settings-modal-header button:hover {
-  background: var(--hexa-panel-2);
-}
-
-/* Theme list */
-.hexa-settings-theme-list {
-  flex: 1;
-  min-height: 0;
-
-  overflow-y: auto;
-
-  padding: 10px;
-}
-
-.hexa-settings-theme {
-  width: 100%;
-
-  display: flex;
-  align-items: center;
-
-  gap: 12px;
-
-  padding: 10px;
-
-  margin-bottom: 6px;
-
-  border: 1px solid transparent;
-  border-radius: 12px;
-
-  background: transparent;
-  color: var(--hexa-text);
-
-  text-align: left;
-
-  cursor: pointer;
-}
-
-.hexa-settings-theme:hover {
-  background: var(--hexa-panel-2);
-}
-
-.hexa-settings-theme.selected {
-  border-color: var(--hexa-accent);
-  background: color-mix(
-    in srgb,
-    var(--hexa-accent) 8%,
-    transparent
-  );
-}
-
-.hexa-settings-theme-preview {
-  width: 72px;
-  height: 50px;
-  min-width: 72px;
-
-  position: relative;
-
-  overflow: hidden;
-
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-
-  gap: 4px;
-
-  padding: 7px;
-
-  border-radius: 8px;
-}
-
-.hexa-settings-theme-preview div {
-  width: 31px;
-  height: 12px;
-
-  border-radius: 5px;
-}
-
-.hexa-settings-theme-preview div:last-child {
-  margin-bottom: 6px;
-}
-
-.hexa-settings-theme > div:nth-child(2) {
-  flex: 1;
-  min-width: 0;
-}
-
-.hexa-settings-theme strong {
-  display: block;
-  font-size: 12px;
-}
-
-.hexa-settings-theme small {
-  display: block;
-  margin-top: 3px;
-  color: var(--hexa-muted);
-  font-size: 10px;
-  line-height: 14px;
-}
-
-.hexa-settings-theme > b {
-  color: var(--hexa-accent-2);
-  font-size: 17px;
-}
-
-/* Detail */
-.hexa-detail-content {
-  overflow-y: auto;
-  padding: 8px 0;
-}
-
-.hexa-detail-item {
-  padding: 15px 18px;
-  border-bottom: 1px solid var(--hexa-border);
-}
-
-.hexa-detail-item strong {
-  display: block;
-  font-size: 13px;
-}
-
-.hexa-detail-item span {
-  display: block;
-  margin-top: 5px;
-  color: var(--hexa-muted);
-  font-size: 11px;
-  line-height: 17px;
-}
-
-/* ============================================================
-   RESPONSIVE
-   ============================================================ */
-
-@media (max-width: 760px) {
-  .hexa-settings-page {
-    padding: 16px 10px 28px;
-  }
-
-  .hexa-settings-header h1 {
-    font-size: 22px;
-  }
-
-  .hexa-settings-header p {
-    font-size: 12px;
-  }
-
-  .hexa-settings-profile {
-    padding: 13px;
-    border-radius: 12px;
-  }
-
-  .hexa-settings-row {
-    min-height: 66px;
-    padding: 9px 10px;
-  }
-
-  .hexa-settings-row-icon {
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
-  }
-
-  .hexa-settings-overlay {
-    padding: 0;
-  }
-
-  .hexa-settings-modal {
-    width: 100%;
-    height: 100%;
-    max-height: none;
-    border-radius: 0;
-  }
-}
-
-/* ============================================================
-   HEXA CHAT LIST
-   ============================================================ */
-
-.hexa-chat-list {
-  width: 340px !important;
-  min-width: 340px !important;
-  max-width: 340px !important;
-
-  height: 100% !important;
-
-  display: flex !important;
-  flex-direction: column !important;
-
-  background: var(--hexa-panel) !important;
-
-  border-right: 1px solid var(--hexa-border) !important;
-
-  overflow: hidden !important;
-}
-
-/* Header */
-.hexa-chat-list-header {
-  flex-shrink: 0;
-  padding: 10px 12px 7px;
-}
-
-.hexa-chat-title-row {
-  height: 40px;
-
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.hexa-chat-title-row h2 {
-  margin: 0;
-
-  font-size: 20px !important;
-  font-weight: 700;
-
-  line-height: 1;
-}
-
-.hexa-chat-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.hexa-chat-header-actions button {
-  width: 36px;
-  height: 36px;
-
-  display: grid;
-  place-items: center;
-
-  border: 0;
-  border-radius: 50%;
-
-  background: transparent;
-
-  color: var(--hexa-text);
-
-  font-size: 20px;
-
-  cursor: pointer;
-}
-
-.hexa-chat-header-actions button:hover {
-  background: var(--hexa-panel-2);
-}
-
-/* Search */
-.hexa-chat-search-box {
-  height: 38px;
-
-  margin-top: 7px;
-
-  display: flex;
-  align-items: center;
-
-  gap: 8px;
-
-  padding: 0 10px;
-
-  background: var(--hexa-panel-2);
-
-  border: 1px solid transparent;
-
-  border-radius: 9px;
-}
-
-.hexa-chat-search-box:focus-within {
-  border-color: var(--hexa-accent);
-}
-
-.hexa-chat-search-box > span {
-  color: var(--hexa-muted);
-  font-size: 17px;
-}
-
-.hexa-chat-search-box input {
-  flex: 1;
-  min-width: 0;
-
-  height: 100%;
-
-  border: 0 !important;
-  outline: 0 !important;
-
-  background: transparent !important;
-
-  color: var(--hexa-text);
-
-  font-size: 13px;
-
-  padding: 0 !important;
-}
-
-.hexa-chat-search-box > button {
-  width: 24px;
-  height: 24px;
-
-  display: grid;
-  place-items: center;
-
-  border: 0;
-  border-radius: 50%;
-
-  background: transparent;
-
-  color: var(--hexa-muted);
-
-  cursor: pointer;
-}
-
-/* Filters */
-.hexa-chat-filter-row {
-  display: flex;
-
-  gap: 6px;
-
-  padding: 9px 0 3px;
-
-  overflow-x: auto;
-
-  scrollbar-width: none;
-}
-
-.hexa-chat-filter-row::-webkit-scrollbar {
-  display: none;
-}
-
-.hexa-chat-filter-row button {
-  flex-shrink: 0;
-
-  border: 0;
-
-  border-radius: 16px;
-
-  padding: 6px 12px;
-
-  background: var(--hexa-panel-2);
-
-  color: var(--hexa-muted);
-
-  font-size: 11px;
-
-  cursor: pointer;
-}
-
-.hexa-chat-filter-row button.active {
-  background: color-mix(
-    in srgb,
-    var(--hexa-accent) 18%,
-    transparent
-  );
-
-  color: var(--hexa-accent-2);
-
-  font-weight: 600;
-}
-
-/* Conversation list */
-.hexa-conversation-list {
-  flex: 1 !important;
-
-  min-height: 0 !important;
-
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-
-  padding: 3px 0;
-}
-
-/* Rows */
-.hexa-chat-row {
-  width: 100%;
-
-  height: 70px;
-  min-height: 70px;
-
-  display: flex;
-  align-items: center;
-
-  gap: 10px;
-
-  padding: 8px 12px;
-
-  border: 0;
-  border-radius: 0;
-
-  background: transparent;
-
-  color: var(--hexa-text);
-
-  text-align: left;
-
-  cursor: pointer;
-
-  transition:
-    background .12s ease;
-}
-
-.hexa-chat-row:hover {
-  background: var(--hexa-panel-2);
-}
-
-.hexa-chat-row.active {
-  background: color-mix(
-    in srgb,
-    var(--hexa-accent) 10%,
-    transparent
-  );
-}
-
-/* Avatar */
-.hexa-chat-avatar-wrap {
-  position: relative;
-
-  width: 48px;
-  height: 48px;
-
-  min-width: 48px;
-}
-
-.hexa-chat-avatar-wrap .hexa-avatar {
-  width: 48px !important;
-  height: 48px !important;
-  min-width: 48px !important;
-}
-
-/* Group / AI badge */
-.hexa-chat-type-badge {
-  position: absolute;
-
-  right: -2px;
-  bottom: -1px;
-
-  width: 17px;
-  height: 17px;
-
-  display: grid;
-  place-items: center;
-
-  border-radius: 50%;
-
-  background: var(--hexa-panel);
-
-  border: 1px solid var(--hexa-border);
-
-  font-size: 9px;
-}
-
-/* Row content */
-.hexa-chat-row-content {
-  min-width: 0;
-  flex: 1;
-}
-
-.hexa-chat-row-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  gap: 8px;
-}
-
-.hexa-chat-row-top strong {
-  min-width: 0;
-
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-
-  font-size: 14px;
-  line-height: 18px;
-
-  font-weight: 600;
-}
-
-.hexa-chat-row-top time {
-  flex-shrink: 0;
-
-  color: var(--hexa-muted);
-
-  font-size: 10px;
-}
-
-.hexa-chat-row-top time.unread {
-  color: var(--hexa-accent-2);
-  font-weight: 600;
-}
-
-/* Preview */
-.hexa-chat-row-bottom {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  gap: 8px;
-
-  margin-top: 3px;
-}
-
-.hexa-chat-preview {
-  min-width: 0;
-
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-
-  color: var(--hexa-muted);
-
-  font-size: 12px;
-  line-height: 17px;
-}
-
-.hexa-chat-row-meta {
-  flex-shrink: 0;
-
-  display: flex;
-  align-items: center;
-
-  gap: 5px;
-
-  font-size: 10px;
-}
-
-.hexa-unread-count {
-  min-width: 19px;
-  height: 19px;
-
-  padding: 0 5px;
-
-  display: grid;
-  place-items: center;
-
-  border-radius: 10px;
-
-  background: var(--hexa-accent);
-
-  color: white;
-
-  font-size: 9px;
-  line-height: 1;
-}
-
-/* Empty state */
-.hexa-no-chats {
-  height: 100%;
-
-  display: flex;
-  flex-direction: column;
-
-  align-items: center;
-  justify-content: center;
-
-  padding: 30px;
-
-  text-align: center;
-}
-
-.hexa-no-chats-icon {
-  margin-bottom: 10px;
-
-  font-size: 30px;
-
-  opacity: .65;
-}
-
-.hexa-no-chats strong {
-  font-size: 14px;
-}
-
-.hexa-no-chats span {
-  max-width: 230px;
-
-  margin-top: 5px;
-
-  color: var(--hexa-muted);
-
-  font-size: 11px;
-
-  line-height: 17px;
-}
-
-.hexa-no-chats button {
-  margin-top: 14px;
-
-  padding: 8px 15px;
-
-  border: 0;
-  border-radius: 18px;
-
-  background: var(--hexa-accent);
-
-  color: white;
-
-  font-size: 11px;
-  font-weight: 600;
-
-  cursor: pointer;
-}
-
-/* Loading */
-.hexa-chat-loading {
-  height: 100px;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  gap: 8px;
-
-  color: var(--hexa-muted);
-
-  font-size: 11px;
-}
-
-.hexa-spinner-small {
-  width: 15px;
-  height: 15px;
-
-  border: 2px solid var(--hexa-border);
-
-  border-top-color: var(--hexa-accent);
-
-  border-radius: 50%;
-
-  animation: hexa-chat-spin .7s linear infinite;
-}
-
-@keyframes hexa-chat-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* Laptop */
-@media (max-width: 1100px) {
-  .hexa-chat-list {
-    width: 310px !important;
-    min-width: 310px !important;
-    max-width: 310px !important;
-  }
-}
-
-/* Phone */
-@media (max-width: 760px) {
-  .hexa-chat-list {
-    width: 100% !important;
-    min-width: 100% !important;
-    max-width: 100% !important;
-  }
-
-  .hexa-chat-row {
-    height: 68px;
-    min-height: 68px;
-    padding-left: 14px;
-    padding-right: 14px;
-  }
+.hexa-voice-chat-overlay { position:fixed; inset:0; z-index:820; display:grid; place-items:center; padding:14px; background:rgba(0,0,0,.72); backdrop-filter:blur(8px); }
+.hexa-voice-chat-shell { width:min(760px,96vw); height:min(680px,92dvh); display:flex; flex-direction:column; overflow:hidden; border:1px solid var(--hexa-border-strong); border-radius:20px; background:var(--hexa-panel); box-shadow:var(--hexa-shadow); }
+.hexa-voice-chat-header { min-height:68px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:0 16px; border-bottom:1px solid var(--hexa-border); }
+.hexa-voice-chat-header strong, .hexa-voice-chat-header span { display:block; }
+.hexa-voice-chat-header strong { font-size:15px; }
+.hexa-voice-chat-header span { margin-top:3px; color:var(--hexa-muted); font-size:10px; }
+.hexa-voice-chat-header > button { width:36px; height:36px; border:0; border-radius:50%; background:transparent; color:var(--hexa-text); font-size:21px; }
+.hexa-voice-chat-stage { flex:1; min-height:0; overflow:auto; padding:24px; }
+.voice-chat-state { min-height:80px; display:grid; place-content:center; gap:5px; text-align:center; color:var(--hexa-muted); font-size:11px; }
+.voice-chat-state strong { color:var(--hexa-text); }
+.voice-chat-error { color:#ff7185; }
+.voice-participant-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(145px,1fr)); gap:12px; margin-top:12px; }
+.voice-participant { min-height:145px; display:grid; justify-items:center; align-content:center; gap:6px; padding:14px; border:1px solid var(--hexa-border); border-radius:15px; background:var(--hexa-panel-2); text-align:center; }
+.voice-participant strong { font-size:12px; }
+.voice-participant span { color:var(--hexa-muted); font-size:9px; }
+.hexa-voice-chat-controls { min-height:70px; display:flex; align-items:center; justify-content:center; gap:10px; padding:12px 14px; border-top:1px solid var(--hexa-border); background:var(--hexa-panel-2); }
+.hexa-voice-chat-controls > span { color:var(--hexa-muted); font-size:10px; }
+@media (max-width:760px) {
+  .hexa-voice-chat-overlay { padding:0; }
+  .hexa-voice-chat-shell { width:100%; height:100%; border-radius:0; }
+  .hexa-voice-chat-controls { flex-wrap:wrap; }
+  .notifications-header { align-items:flex-start; gap:8px; }
+  .notifications-header-actions { flex-wrap:wrap; justify-content:flex-end; }
 }
 
 `;
