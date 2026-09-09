@@ -409,16 +409,16 @@ if (typeof window !== "undefined") {
 }
 
 const NAV_ITEMS = [
-  { id: "nexus", label: "Nexus", icon: "⌂" },
-  { id: "chat", label: "Chat", icon: "💬" },
+  { id: "nexus", label: "Home", icon: "⌂" },
+  { id: "chat", label: "Chats", icon: "💬" },
+  { id: "status", label: "Status", icon: "◌" },
+  { id: "calls", label: "Calls", icon: "☎" },
   { id: "groups", label: "Groups", icon: "👥" },
   { id: "communities", label: "Communities", icon: "◉" },
   { id: "channels", label: "Channels", icon: "▣" },
-  { id: "status", label: "Status", icon: "◌" },
-  { id: "calls", label: "Calls", icon: "☎" },
-  { id: "wallet", label: "Wallet", icon: "₦" },
   { id: "projects", label: "Projects", icon: "◆" },
   { id: "kora", label: "Kora", icon: "✦" },
+  { id: "wallet", label: "Wallet", icon: "₦" },
   { id: "settings", label: "Settings", icon: "⚙" },
 ];
 
@@ -1326,7 +1326,7 @@ function Topbar({ profile, search, setSearch, activePage, onNotifications, notif
       </div>
       <div className="topbar-actions">
         <button className="notification-button" title="Notifications" onClick={onNotifications}>
-          ♢{notificationCount > 0 && <b>{notificationCount > 99 ? "99+" : notificationCount}</b>}
+          🔔{notificationCount > 0 && <b>{notificationCount > 99 ? "99+" : notificationCount}</b>}
         </button>
         <button title="Settings" onClick={onSettings}>⚙</button>
         <Avatar src={profile?.avatar_url} name={profile?.full_name || profile?.username || "HEXA"} size={38} online />
@@ -7943,6 +7943,330 @@ function WorkspacePlaceholder({ title, description, icon, children }) { return <
     height: auto !important;
     min-height: 60px !important;
     padding: 7px !important;
+  }
+}
+
+/* ============================================================
+   HEXA UX POLISH — COMMUNICATION APP LAYOUT
+   ============================================================ */
+
+.hexa-app {
+  background: var(--hexa-bg);
+  color: var(--hexa-text);
+}
+
+.hexa-sidebar {
+  width: 232px !important;
+  min-width: 232px !important;
+  max-width: 232px !important;
+  padding: 0 !important;
+  background: var(--hexa-panel) !important;
+  border-right: 1px solid var(--hexa-border) !important;
+}
+
+.sidebar-brand {
+  height: 64px !important;
+  min-height: 64px !important;
+  padding: 0 16px !important;
+  gap: 10px !important;
+  background: var(--hexa-panel) !important;
+}
+
+.sidebar-brand strong {
+  font-size: 15px !important;
+  letter-spacing: .04em !important;
+}
+
+.sidebar-brand span {
+  font-size: 9px !important;
+  letter-spacing: .08em !important;
+}
+
+.sidebar-nav {
+  padding: 10px 10px 8px !important;
+}
+
+.sidebar-section-label {
+  padding: 10px 10px 6px !important;
+  font-size: 10px !important;
+}
+
+.sidebar-item {
+  width: 100% !important;
+  min-height: 44px !important;
+  height: 44px !important;
+  margin: 2px 0 !important;
+  padding: 0 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  border-radius: 10px !important;
+  font-size: 13px !important;
+}
+
+.sidebar-item.active {
+  background: color-mix(in srgb, var(--hexa-accent) 14%, transparent) !important;
+  color: #fff !important;
+}
+
+.sidebar-icon {
+  width: 24px !important;
+  min-width: 24px !important;
+  font-size: 18px !important;
+  text-align: center !important;
+}
+
+.sidebar-bottom {
+  padding: 10px !important;
+  background: var(--hexa-panel) !important;
+}
+
+.sidebar-user {
+  min-height: 54px !important;
+  padding: 7px 9px !important;
+  border-radius: 11px !important;
+  background: var(--hexa-panel-2) !important;
+}
+
+.hexa-main {
+  min-width: 0 !important;
+  background: var(--hexa-bg) !important;
+}
+
+.hexa-topbar {
+  height: 64px !important;
+  min-height: 64px !important;
+  padding: 0 18px !important;
+  background: var(--hexa-panel) !important;
+}
+
+.topbar-search {
+  max-width: 720px !important;
+}
+
+.topbar-search input {
+  height: 40px !important;
+  border-radius: 20px !important;
+  font-size: 13px !important;
+}
+
+.topbar-actions {
+  gap: 5px !important;
+}
+
+.topbar-actions > button {
+  width: 40px !important;
+  height: 40px !important;
+}
+
+.notification-button {
+  position: relative;
+  font-size: 17px !important;
+}
+
+.notification-button b {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #ef4444;
+  color: white;
+  font-size: 9px;
+  border: 2px solid var(--hexa-panel);
+}
+
+.hexa-content {
+  overflow: hidden !important;
+}
+
+.workspace-page {
+  width: min(1180px, calc(100% - 44px)) !important;
+  max-width: 1180px !important;
+  padding: 30px 0 44px !important;
+}
+
+.page-heading h1 {
+  font-size: clamp(24px, 2.4vw, 32px) !important;
+}
+
+.page-heading p {
+  font-size: 12px !important;
+}
+
+.entity-grid {
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)) !important;
+  gap: 16px !important;
+}
+
+.entity-card, .coming-card {
+  border-radius: 15px !important;
+}
+
+.chat-layout {
+  grid-template-columns: 360px minmax(0, 1fr) !important;
+}
+
+.chat-list-panel {
+  width: 360px !important;
+  min-width: 360px !important;
+  max-width: 360px !important;
+  background: var(--hexa-panel) !important;
+}
+
+.chat-list-header {
+  height: 70px !important;
+  min-height: 70px !important;
+  padding: 12px 16px !important;
+}
+
+.chat-list-header h2 {
+  font-size: 20px !important;
+}
+
+.chat-search {
+  padding: 9px 13px !important;
+}
+
+.chat-search input {
+  height: 40px !important;
+  border-radius: 20px !important;
+  font-size: 13px !important;
+}
+
+.conversation {
+  min-height: 76px !important;
+  height: 76px !important;
+  padding: 10px 15px !important;
+  gap: 12px !important;
+}
+
+.conversation-content strong {
+  font-size: 14px !important;
+}
+
+.conversation-content span {
+  font-size: 11px !important;
+}
+
+.chat-main {
+  background: var(--hexa-chat-bg, var(--hexa-bg)) !important;
+}
+
+.chat-header {
+  height: 64px !important;
+  min-height: 64px !important;
+  padding: 0 18px !important;
+}
+
+.messages-area {
+  padding: 22px clamp(18px, 6vw, 100px) 24px !important;
+}
+
+.message-stack {
+  max-width: min(72%, 720px) !important;
+}
+
+.message-bubble {
+  max-width: 100% !important;
+  padding: 8px 11px !important;
+  border-radius: 10px !important;
+}
+
+.message-bubble span {
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+}
+
+.chat-composer {
+  height: 72px !important;
+  min-height: 72px !important;
+  padding: 10px 16px !important;
+  gap: 8px !important;
+}
+
+.chat-composer > input {
+  height: 46px !important;
+  min-height: 46px !important;
+  border-radius: 23px !important;
+  padding: 0 17px !important;
+  font-size: 13px !important;
+}
+
+.composer-left button,
+.composer-right button {
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+}
+
+.notifications-panel {
+  top: 74px !important;
+  right: 18px !important;
+  width: min(410px, calc(100vw - 36px)) !important;
+  border-radius: 14px !important;
+}
+
+@media (max-width: 1100px) {
+  .hexa-sidebar {
+    width: 215px !important;
+    min-width: 215px !important;
+    max-width: 215px !important;
+  }
+
+  .chat-layout {
+    grid-template-columns: 320px minmax(0, 1fr) !important;
+  }
+
+  .chat-list-panel {
+    width: 320px !important;
+    min-width: 320px !important;
+    max-width: 320px !important;
+  }
+
+  .message-stack {
+    max-width: 78% !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .hexa-sidebar {
+    width: min(340px, 88vw) !important;
+    min-width: 0 !important;
+    max-width: min(340px, 88vw) !important;
+  }
+
+  .hexa-topbar {
+    height: 58px !important;
+    min-height: 58px !important;
+    padding: 0 9px !important;
+  }
+
+  .chat-layout {
+    grid-template-columns: 100% !important;
+  }
+
+  .chat-list-panel {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .workspace-page {
+    width: calc(100% - 20px) !important;
+    padding: 18px 0 28px !important;
+  }
+
+  .messages-area {
+    padding: 10px 9px 16px !important;
+  }
+
+  .message-stack {
+    max-width: 88% !important;
   }
 }
 
