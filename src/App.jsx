@@ -5943,7 +5943,8 @@ class HexaErrorBoundary extends React.Component {
 
 function AuthenticatedHEXA({ session, onSignOut }) {
 
-  const [profile,setProfile]=useState(null),[profileLoading,setProfileLoading]=useState(true),[activePage,setActivePage]=useState("nexus"),[search,setSearch]=useState(""),[notifications,setNotifications]=useState([]),[showNotifications,setShowNotifications]=useState(false),[chatTarget,setChatTarget]=useState(null),[callTarget,setCallTarget]=useState(null);
+  const [profile,setProfile]=useState(null),[profileLoading,setProfileLoading]=useState(true),[activePage,setActivePage]=useState("chat"),
+  [search,setSearch]=useState(""),[notifications,setNotifications]=useState([]),[showNotifications,setShowNotifications]=useState(false),[chatTarget,setChatTarget]=useState(null),[callTarget,setCallTarget]=useState(null);
   useEffect(()=>{let cancelled=false;(async()=>{const result=await ensureHexaProfile(session?.user);if(!cancelled){setProfile(result);setProfileLoading(false)}})();return()=>{cancelled=true}},[session?.user?.id]);
   useEffect(()=>{if(!profile?.id)return;(async()=>{const {data}=await supabase.from("notifications").select("id,kind,title,body,created_at,read_at,data").eq("user_id",profile.id).order("created_at",{ascending:false}).limit(50);setNotifications((data||[]).filter(n=>!n.read_at));})();},[profile?.id]);
   useEffect(()=>{
@@ -5974,7 +5975,21 @@ function AuthenticatedHEXA({ session, onSignOut }) {
     case "developer":page=<WorkspacePlaceholder title="Developer Hub" description="Build and connect with HEXA." icon="</>"/>;break;
     default:page=<NexusHome profile={profile} setActivePage={setActivePage}/>;
   }
-  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={async()=>{setNotifications([]);await supabase.from("notifications").update({read_at:new Date().toISOString()}).eq("user_id",profile.id).is("read_at",null);}}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div></div>;
+  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main">
+
+  {activePage !== "chat" && (
+    <Topbar
+      profile={profile}
+      search={search}
+      setSearch={setSearch}
+      activePage={activePage}
+      onNotifications={() => setShowNotifications(v => !v)}
+      notificationCount={notifications.length}
+      onSettings={() => setActivePage("settings")}
+    />
+  )}
+
+  <main className={`hexa-content ${activePage === "chat" ? "hexa-chat-content" : ""}`}><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={async()=>{setNotifications([]);await supabase.from("notifications").update({read_at:new Date().toISOString()}).eq("user_id",profile.id).is("read_at",null);}}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div></div>;
 }
 
 
@@ -8505,4 +8520,515 @@ video {
     min-width: 39px;
   }
 }
+/* ============================================================
+   HEXA CHAT — FINAL COMMUNICATION LAYOUT
+   ============================================================ */
+
+.hexa-app {
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+/* Compact HEXA application navigation */
+.hexa-sidebar {
+  width: 68px !important;
+  min-width: 68px !important;
+  max-width: 68px !important;
+  padding: 8px 6px !important;
+}
+
+/* Hide navigation words while keeping icons */
+.hexa-sidebar .sidebar-section-label,
+.hexa-sidebar .sidebar-item > span:not(.sidebar-icon),
+.hexa-sidebar .sidebar-user-info,
+.hexa-sidebar .sidebar-brand > div:last-of-type {
+  display: none !important;
+}
+
+.hexa-sidebar .sidebar-brand {
+  justify-content: center !important;
+}
+
+.hexa-sidebar .sidebar-item {
+  width: 50px !important;
+  height: 50px !important;
+  min-height: 50px !important;
+  margin: 2px auto !important;
+  padding: 0 !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 12px !important;
+}
+
+.hexa-sidebar .sidebar-icon {
+  font-size: 20px !important;
+  line-height: 1 !important;
+}
+
+/* Main area */
+.hexa-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.hexa-chat-content {
+  height: 100% !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+/* ============================================================
+   CHAT MASTER / DETAIL
+   ============================================================ */
+
+.chat-layout {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+
+  display: grid !important;
+  grid-template-columns: 330px minmax(0, 1fr) !important;
+
+  overflow: hidden !important;
+}
+
+/* ============================================================
+   CHAT LIST
+   ============================================================ */
+
+.chat-list-panel {
+  width: 330px !important;
+  min-width: 330px !important;
+  max-width: 330px !important;
+  height: 100% !important;
+
+  display: flex !important;
+  flex-direction: column !important;
+
+  overflow: hidden !important;
+
+  border-right: 1px solid var(--hexa-border) !important;
+  background: var(--hexa-panel) !important;
+}
+
+.chat-list-header {
+  height: 60px !important;
+  min-height: 60px !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+
+  padding: 0 14px !important;
+}
+
+.chat-list-header h2 {
+  margin: 0 !important;
+  font-size: 18px !important;
+  line-height: 22px !important;
+}
+
+.chat-list-header span {
+  font-size: 10px !important;
+  color: var(--hexa-muted) !important;
+}
+
+.new-chat-button {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  border-radius: 50% !important;
+}
+
+/* Chat search */
+.chat-search {
+  margin: 0 !important;
+  padding: 8px 12px !important;
+  height: 54px !important;
+  min-height: 54px !important;
+}
+
+.chat-search input {
+  height: 38px !important;
+  min-height: 38px !important;
+  border-radius: 9px !important;
+  font-size: 13px !important;
+}
+
+/* Conversation list */
+.conversation-list {
+  flex: 1 !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+/* Individual conversation */
+.conversation {
+  width: 100% !important;
+  height: 68px !important;
+  min-height: 68px !important;
+
+  padding: 8px 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+
+  border: 0 !important;
+  border-bottom: 1px solid rgba(255,255,255,.045) !important;
+  border-radius: 0 !important;
+
+  text-align: left !important;
+}
+
+.conversation.active {
+  background: rgba(105,71,255,.12) !important;
+}
+
+.conversation .hexa-avatar {
+  width: 46px !important;
+  height: 46px !important;
+  min-width: 46px !important;
+}
+
+.conversation-content {
+  min-width: 0 !important;
+  flex: 1 !important;
+}
+
+.conversation-topline {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+}
+
+.conversation-topline strong {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+
+  font-size: 14px !important;
+  font-weight: 600 !important;
+}
+
+.conversation-topline time {
+  flex-shrink: 0 !important;
+  font-size: 10px !important;
+  color: var(--hexa-muted) !important;
+}
+
+.conversation-bottomline {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 7px !important;
+  margin-top: 3px !important;
+}
+
+.conversation-bottomline span {
+  min-width: 0 !important;
+
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+
+  font-size: 12px !important;
+  color: var(--hexa-muted) !important;
+}
+
+.unread-badge {
+  width: 19px !important;
+  height: 19px !important;
+  min-width: 19px !important;
+
+  display: grid !important;
+  place-items: center !important;
+
+  border-radius: 50% !important;
+  font-size: 9px !important;
+}
+
+/* ============================================================
+   CHAT WINDOW
+   ============================================================ */
+
+.chat-main {
+  min-width: 0 !important;
+  min-height: 0 !important;
+
+  height: 100% !important;
+
+  display: flex !important;
+  flex-direction: column !important;
+
+  overflow: hidden !important;
+
+  background: var(--hexa-chat-bg) !important;
+}
+
+/* Header */
+.chat-header {
+  flex-shrink: 0 !important;
+
+  height: 60px !important;
+  min-height: 60px !important;
+
+  padding: 0 15px !important;
+
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+
+  background: var(--hexa-panel) !important;
+  border-bottom: 1px solid var(--hexa-border) !important;
+}
+
+.chat-header .hexa-avatar {
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+}
+
+.chat-header-copy {
+  min-width: 0 !important;
+  flex: 1 !important;
+}
+
+.chat-header-copy strong {
+  display: block !important;
+  font-size: 15px !important;
+  line-height: 18px !important;
+}
+
+.chat-header-copy span {
+  display: block !important;
+  margin-top: 2px !important;
+  font-size: 10px !important;
+  color: var(--hexa-muted) !important;
+}
+
+.chat-header-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+}
+
+.chat-header-actions button {
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px !important;
+  border-radius: 50% !important;
+}
+
+/* ============================================================
+   MESSAGES
+   ============================================================ */
+
+.messages-area {
+  flex: 1 !important;
+  min-height: 0 !important;
+
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+
+  padding: 15px clamp(14px, 5vw, 80px) !important;
+
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* Message bubble sizing */
+.message-bubble {
+  max-width: min(62%, 620px) !important;
+
+  padding: 6px 9px !important;
+
+  border-radius: 8px !important;
+
+  font-size: 14px !important;
+  line-height: 19px !important;
+
+  box-shadow: none !important;
+}
+
+.message-row {
+  margin: 2px 0 !important;
+}
+
+/* ============================================================
+   COMPOSER
+   ============================================================ */
+
+.chat-composer {
+  flex-shrink: 0 !important;
+
+  min-height: 62px !important;
+  height: 62px !important;
+
+  padding: 8px 12px !important;
+
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+
+  background: var(--hexa-panel) !important;
+  border-top: 1px solid var(--hexa-border) !important;
+}
+
+.chat-composer > input {
+  flex: 1 !important;
+  min-width: 0 !important;
+
+  height: 42px !important;
+  min-height: 42px !important;
+
+  padding: 0 16px !important;
+
+  border-radius: 21px !important;
+
+  font-size: 14px !important;
+}
+
+.composer-left,
+.composer-right {
+  display: flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+}
+
+.composer-left button,
+.composer-right button {
+  width: 42px !important;
+  height: 42px !important;
+  min-width: 42px !important;
+  border-radius: 50% !important;
+}
+
+/* ============================================================
+   DESKTOP
+   ============================================================ */
+
+@media (min-width: 1400px) {
+  .chat-layout {
+    grid-template-columns: 350px minmax(0, 1fr) !important;
+  }
+
+  .chat-list-panel {
+    width: 350px !important;
+    min-width: 350px !important;
+    max-width: 350px !important;
+  }
+
+  .messages-area {
+    padding-left: 7% !important;
+    padding-right: 7% !important;
+  }
+}
+
+/* ============================================================
+   LAPTOP
+   ============================================================ */
+
+@media (max-width: 1100px) {
+  .chat-layout {
+    grid-template-columns: 310px minmax(0, 1fr) !important;
+  }
+
+  .chat-list-panel {
+    width: 310px !important;
+    min-width: 310px !important;
+    max-width: 310px !important;
+  }
+
+  .message-bubble {
+    max-width: 68% !important;
+  }
+
+  .messages-area {
+    padding-left: 22px !important;
+    padding-right: 22px !important;
+  }
+}
+
+/* ============================================================
+   TABLET
+   ============================================================ */
+
+@media (max-width: 760px) {
+  .hexa-sidebar {
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    display: none !important;
+  }
+
+  .chat-layout {
+    grid-template-columns: 100% !important;
+  }
+
+  .chat-list-panel {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .chat-layout.mobile-chat-open .chat-list-panel {
+    display: none !important;
+  }
+
+  .chat-layout.mobile-chat-open .chat-main {
+    display: flex !important;
+  }
+
+  .chat-layout.mobile-chat-list .chat-main {
+    display: none !important;
+  }
+
+  .message-bubble {
+    max-width: 82% !important;
+  }
+
+  .messages-area {
+    padding: 10px 8px !important;
+  }
+
+  .chat-header {
+    height: 58px !important;
+    min-height: 58px !important;
+  }
+}
+
+/* ============================================================
+   SMALL PHONES
+   ============================================================ */
+
+@media (max-width: 420px) {
+  .conversation {
+    height: 64px !important;
+    min-height: 64px !important;
+  }
+
+  .conversation .hexa-avatar {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+  }
+
+  .message-bubble {
+    max-width: 88% !important;
+  }
+
+  .chat-composer {
+    padding-left: 6px !important;
+    padding-right: 6px !important;
+  }
+}
+
 `;
