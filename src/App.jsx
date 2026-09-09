@@ -76,7 +76,7 @@ const HEXA_CONFIG_ERROR =
   !HEXA_RUNTIME_CONFIG.supabaseUrl || !HEXA_RUNTIME_CONFIG.supabaseKey
     ? "HEXA is missing its Supabase environment variables. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your deployment settings."
     : "";
-const HEXA_CALL_RATE_KOBO_PER_SECOND = 50;
+const HEXA_CALL_RATE_KOBO_PER_SECOND = 30;
 
 
 /* ============================================================
@@ -417,6 +417,7 @@ const NAV_ITEMS = [
   { id: "status", label: "Status", icon: "◌" },
   { id: "calls", label: "Calls", icon: "☎" },
   { id: "wallet", label: "Wallet", icon: "₦" },
+  { id: "subscription", label: "Subscription", icon: "★" },
   { id: "projects", label: "Projects", icon: "◆" },
   { id: "kora", label: "Kora", icon: "✦" },
   { id: "developer", label: "Developer Hub", icon: "</>" },
@@ -1899,7 +1900,7 @@ function ChatPage({
         throw error;
       }
 
-      const visible = (data || []).filter((row) => {
+      let visible = (data || []).filter((row) => {
         const actions = Array.isArray(row.message_user_actions)
           ? row.message_user_actions
           : [];
@@ -1908,6 +1909,15 @@ function ChatPage({
         );
         return !mine?.deleted_for_me;
       });
+
+      const pollMessages = visible.filter(m => m.message_type === "poll" && m.metadata?.poll_id);
+      if (pollMessages.length) {
+        const pollIds = pollMessages.map(m => m.metadata.poll_id).filter(Boolean);
+        const { data: optionRows } = await supabase.from("poll_options").select("id,poll_id,option_text,position").in("poll_id", pollIds).order("position", { ascending: true });
+        const rowsByPoll = {};
+        (optionRows || []).forEach(row => { (rowsByPoll[row.poll_id] ||= []).push(row); });
+        visible = visible.map(m => m.message_type === "poll" ? { ...m, metadata: { ...(m.metadata || {}), option_rows: rowsByPoll[m.metadata?.poll_id] || [] } } : m);
+      }
 
       setMessages(visible);
 
@@ -2545,6 +2555,80 @@ function ChatPage({
     }
   }
 
+  async function createRealPoll() {
+    const question = pollQuestion.trim();
+    const options = pollOptions.map((v) => v.trim()).filter(Boolean);
+    if (!question || options.length < 2) {
+      safeAlert("A poll needs a question and at least two options.");
+      return;
+    }
+    const conversationId = selected?.realConversationId || selected?.id;
+    if (!conversationId || String(conversationId).startsWith("local-")) return;
+    try {
+      const clientMessageId = `hexa-poll-${crypto?.randomUUID?.() || Date.now()}`;
+      const metadata = { question, options, allow_multiple: false, poll_version: 1 };
+      const { data: messageRow, error: messageError } = await supabase.from("messages").insert({
+        conversation_id: conversationId,
+        sender_id: profile.id,
+        content: question,
+        message_type: "poll",
+        client_message_id: clientMessageId,
+        metadata,
+        status: "sent",
+      }).select("*").single();
+      if (messageError) throw messageError;
+      const { data: poll, error: pollError } = await supabase.from("message_polls").insert({
+        message_id: messageRow.id,
+        question,
+        allow_multiple: false,
+      }).select("*").single();
+      if (pollError) throw pollError;
+      const { data: optionRows, error: optionError } = await supabase.from("poll_options").insert(
+        options.map((label, position) => ({ poll_id: poll.id, option_text: label, position }))
+      ).select("*");
+      if (optionError) throw optionError;
+      const enriched = { ...messageRow, metadata: { ...metadata, poll_id: poll.id, option_rows: optionRows || [] } };
+      setMessages((current) => [...current, enriched]);
+      updateConversationPreview(selected, enriched);
+      setPollOpen(false); setPollQuestion(""); setPollOptions(["", ""]); setAttachmentOpen(false);
+    } catch (error) {
+      console.error("HEXA poll create:", error);
+      safeAlert(error?.message || "Unable to create the poll.");
+    }
+  }
+
+  async function voteRealPoll(item, optionId) {
+    const pollId = item?.metadata?.poll_id;
+    if (!pollId || !optionId) return;
+    const { error } = await supabase.rpc("hexa_vote_poll", { p_poll_id: pollId, p_option_id: optionId });
+    if (error) safeAlert(error.message);
+    else setMessages((current) => current.map(m => m.id === item.id ? { ...m, metadata: { ...m.metadata, last_vote_option_id: optionId } } : m));
+  }
+
+  async function editRealPoll(item) {
+    if (String(item?.sender_id) !== String(profile.id)) return;
+    const currentOptions = item?.metadata?.options || [];
+    const nextQuestion = window.prompt("Edit poll question", item?.metadata?.question || item?.content || "");
+    if (nextQuestion === null) return;
+    const nextOptions = [];
+    for (let i = 0; i < currentOptions.length; i++) {
+      const value = window.prompt(`Edit option ${i + 1}`, currentOptions[i]);
+      if (value !== null && value.trim()) nextOptions.push(value.trim());
+    }
+    if (nextOptions.length < 2 || !nextQuestion.trim()) {
+      safeAlert("A poll needs a question and at least two options.");
+      return;
+    }
+    const nextMetadata = { ...(item.metadata || {}), question: nextQuestion.trim(), options: nextOptions, poll_version: Number(item.metadata?.poll_version || 1) + 1 };
+    const { error } = await supabase.rpc("hexa_edit_poll", {
+      p_message_id: item.id,
+      p_question: nextQuestion.trim(),
+      p_options: nextOptions,
+    });
+    if (error) { safeAlert(error.message); return; }
+    setMessages((current) => current.map(m => m.id === item.id ? { ...m, content: nextQuestion.trim(), metadata: nextMetadata } : m));
+  }
+
   /* ============================================================
      MESSAGE ACTIONS
      ============================================================ */
@@ -3080,17 +3164,24 @@ function ChatPage({
             if (item.deleted_at || item.metadata?.deleted_for_everyone) {
               return <div className="message-content deleted-message">This message was deleted</div>;
             }
-            if (item.message_type === "image" && mediaUrl) {
-              return <img src={mediaUrl} alt="Shared" className="message-media" />;
-            }
-            if (item.message_type === "video" && mediaUrl) {
-              return <video src={mediaUrl} controls className="message-media" />;
-            }
-            if (["audio", "voice"].includes(item.message_type) && mediaUrl) {
-              return <FeatureAudio url={mediaUrl} voice={item.message_type === "voice"} />;
-            }
-            if (item.message_type === "file" && mediaUrl) {
-              return <a className="message-file" href={mediaUrl} target="_blank" rel="noreferrer">📎 {item.content || attachmentRow?.file_name || "Download file"}</a>;
+            if (item.message_type === "image" && mediaUrl) return <img src={mediaUrl} alt="Shared" className="message-media" />;
+            if (item.message_type === "video" && mediaUrl) return <video src={mediaUrl} controls className="message-media" />;
+            if (["audio", "voice"].includes(item.message_type) && mediaUrl) return <FeatureAudio url={mediaUrl} voice={item.message_type === "voice"} />;
+            if (item.message_type === "file" && mediaUrl) return <a className="message-file" href={mediaUrl} target="_blank" rel="noreferrer">📎 {item.content || attachmentRow?.file_name || "Download file"}</a>;
+            if (item.message_type === "poll") {
+              const poll = item.metadata || {};
+              const rows = poll.option_rows || [];
+              return <div className="poll-message">
+                <strong>📊 {poll.question || item.content}</strong>
+                {(poll.options || []).map((label, index) => {
+                  const row = rows[index];
+                  const optionId = row?.id;
+                  return <button key={`${item.id}-${index}`} type="button" onClick={() => voteRealPoll(item, optionId || String(index))}>
+                    <span>{label}</span><small>{poll.last_vote_option_id === optionId ? "✓ voted" : "Vote"}</small>
+                  </button>;
+                })}
+                {mine && <button type="button" className="poll-edit-button" onClick={() => editRealPoll(item)}>✎ Edit poll</button>}
+              </div>;
             }
             return <div className="message-content">{item.content}</div>;
           })()}
@@ -4013,6 +4104,20 @@ function ChatPage({
               <span>🕘 {emojiRecent.length}</span>
               <span>💖 {emojiFavorites.length}</span>
               <span>✨ {HEXA_ALL_EMOJIS.length.toLocaleString()}</span>
+            </div>
+          </div>
+        )}
+
+        {pollOpen && (
+          <div className="hexa-modal-overlay" onClick={() => setPollOpen(false)}>
+            <div className="hexa-modal poll-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header"><div><strong>Create poll</strong><span>Ask your HEXA conversation a question.</span></div><button type="button" onClick={() => setPollOpen(false)}>×</button></div>
+              <input className="modal-input" value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="Poll question" />
+              <div className="poll-option-editor">
+                {pollOptions.map((value, index) => <div className="poll-option-row" key={index}><input className="modal-input" value={value} onChange={e => setPollOptions(current => current.map((v,i) => i===index ? e.target.value : v))} placeholder={`Option ${index + 1}`} /><button type="button" onClick={() => setPollOptions(current => current.length > 2 ? current.filter((_,i) => i !== index) : current)}>×</button></div>)}
+              </div>
+              <button type="button" className="hero-secondary" onClick={() => setPollOptions(current => [...current, ""])}>＋ Add option</button>
+              <button type="button" className="hero-primary" onClick={createRealPoll}>Create poll</button>
             </div>
           </div>
         )}
@@ -4997,7 +5102,7 @@ function CallsPage({ profile }) {
     <section className="workspace-page">
       <div className="page-heading">
         <div className="page-heading-icon">☎</div>
-        <div><h1>Calls</h1><p>Private HEXA-to-HEXA voice and video calls. External calling can be billed server-side at ₦0.50/second.</p></div>
+        <div><h1>Calls</h1><p>Private HEXA-to-HEXA voice and video calls. Calls are billed server-side at ₦0.30/second (30 kobo/sec).</p></div>
       </div>
 
       <div className="settings-card">
@@ -5508,8 +5613,80 @@ function UniversalSearch({ search, profile, onMessage }) {
    HEXA SETTINGS
    ============================================================ */
 
-function SettingsPage({ profile, onSignOut }) {
+function ProfileEditModal({ profile, onClose, onSaved }) {
+  const [fullName, setFullName] = useState(profile?.full_name || "");
+  const [username, setUsername] = useState(profile?.username || "");
+  const [about, setAbout] = useState(profile?.about || "");
+  const [phone, setPhone] = useState(profile?.phone || "");
+  const [busy, setBusy] = useState(false);
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState(profile?.avatar_url || "");
+  const fileRef = useRef(null);
+  async function saveProfile(e) {
+    e.preventDefault(); setBusy(true);
+    try {
+      let avatar_url = profile?.avatar_url || null;
+      if (avatarFile) {
+        const bucket = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET;
+        if (!bucket) throw new Error("Set VITE_SUPABASE_STORAGE_BUCKET to upload profile pictures.");
+        const path = `${profile.id}/profile/avatar-${Date.now()}-${avatarFile.name.replace(/[^a-zA-Z0-9._-]/g,"_")}`;
+        const { error } = await supabase.storage.from(bucket).upload(path, avatarFile, { upsert: true, contentType: avatarFile.type });
+        if (error) throw error;
+        avatar_url = supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+      }
+      const payload = { full_name: fullName.trim(), username: username.trim().replace(/^@/, ""), about: about.trim(), phone: phone.trim(), avatar_url, updated_at: new Date().toISOString() };
+      const { data, error } = await supabase.from("profiles").update(payload).eq("id", profile.id).select("*").single();
+      if (error) throw error;
+      onSaved?.(data); onClose();
+    } catch (error) { safeAlert(error?.message || "Unable to update profile."); }
+    finally { setBusy(false); }
+  }
+  return <div className="hexa-modal-overlay" onClick={onClose}><div className="hexa-modal profile-edit-modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-header"><div><strong>Edit profile</strong><span>Change your HEXA picture and account details.</span></div><button type="button" onClick={onClose}>×</button></div>
+    <button type="button" className="profile-avatar-editor" onClick={()=>fileRef.current?.click()}><Avatar src={avatarPreview} name={fullName || username || "HEXA"} size={86}/><span>📷 Change photo</span></button>
+    <input ref={fileRef} hidden type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f){setAvatarFile(f);setAvatarPreview(URL.createObjectURL(f));}}}/>
+    <form onSubmit={saveProfile}>
+      <input className="modal-input" value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="Full name" required />
+      <input className="modal-input" value={username} onChange={e=>setUsername(e.target.value)} placeholder="Username" required />
+      <textarea className="modal-input modal-textarea" value={about} onChange={e=>setAbout(e.target.value)} placeholder="About" />
+      <input className="modal-input" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Phone number" inputMode="tel" />
+      <button className="hero-primary" disabled={busy}>{busy ? "Saving…" : "Save profile"}</button>
+    </form>
+  </div></div>;
+}
+
+const HEXA_SUBSCRIPTION_PLANS = [
+  { id: "plus", name: "HEXA Plus", price: 9.99, perks: ["More storage", "Advanced chat organization", "Premium themes"] },
+  { id: "pro", name: "HEXA Pro", price: 24.99, perks: ["Everything in Plus", "Higher media limits", "Creator tools", "Advanced communities"] },
+  { id: "ultra", name: "HEXA Ultra", price: 49.99, perks: ["Everything in Pro", "Maximum limits", "Priority features", "Advanced business tools"] },
+];
+function SubscriptionPage({ profile }) {
+  const [subscription, setSubscription] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState("");
+  const [message, setMessage] = useState("");
+  useEffect(() => { (async()=>{ const {data}=await supabase.from("hexa_subscriptions").select("*").eq("user_id",profile.id).maybeSingle(); setSubscription(data); setLoading(false); })(); }, [profile?.id]);
+  async function subscribe(plan) {
+    setBusy(plan.id); setMessage("");
+    try {
+      const endpoint = import.meta.env.VITE_HEXA_SUBSCRIPTION_CHECKOUT_URL || "/api/hexa-subscription-checkout";
+      const response = await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({plan_id:plan.id,user_id:profile.id,email:profile.email})});
+      if (!response.ok) throw new Error((await response.text()) || "Subscription checkout is unavailable.");
+      const result = await response.json();
+      if (result.url) window.location.href = result.url; else setMessage("Checkout created. Complete payment in the secure payment page.");
+    } catch (error) { setMessage(error?.message || "Unable to start checkout."); }
+    finally { setBusy(""); }
+  }
+  return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">★</div><div><h1>Subscription</h1><p>Choose a HEXA membership plan. Payment is handled by the secure checkout service.</p></div></div>
+    {subscription && <div className="subscription-current"><strong>Current plan: {subscription.plan_name || subscription.plan_id}</strong><span>{subscription.status || "active"} · {subscription.current_period_end ? new Date(subscription.current_period_end).toLocaleDateString() : ""}</span></div>}
+    {message && <div className="subscription-message">{message}</div>}
+    <div className="subscription-grid">{HEXA_SUBSCRIPTION_PLANS.map(plan=><article className="subscription-card" key={plan.id}><span className="eyebrow">HEXA MEMBERSHIP</span><h2>{plan.name}</h2><strong>${plan.price.toFixed(2)}<small>/month</small></strong><div>{plan.perks.map(p=><span key={p}>✓ {p}</span>)}</div><button className="hero-primary" disabled={busy===plan.id} onClick={()=>subscribe(plan)}>{busy===plan.id?"Opening checkout…":subscription?.plan_id===plan.id?"Manage plan":"Choose plan"}</button></article>)}</div>
+  </section>;
+}
+
+function SettingsPage({ profile, onSignOut, onProfileSaved }) {
   const [theme, setTheme] = useState(getSavedHexaTheme());
+  const [editProfile, setEditProfile] = useState(false);
   const [showThemes, setShowThemes] = useState(true);
 
   useEffect(() => {
@@ -5563,6 +5740,7 @@ function SettingsPage({ profile, onSignOut }) {
               : profile?.email || "HEXA account"}
           </p>
         </div>
+        <button className="hero-secondary" type="button" onClick={() => setEditProfile(true)}>Edit profile</button>
       </div>
 
       {/* APPEARANCE */}
@@ -5733,6 +5911,8 @@ function SettingsPage({ profile, onSignOut }) {
 
       </div>
 
+      {editProfile && <ProfileEditModal profile={profile} onClose={() => setEditProfile(false)} onSaved={onProfileSaved} />}
+
     </section>
   );
 }
@@ -5775,7 +5955,18 @@ function AuthenticatedHEXA({ session, onSignOut }) {
 
   const [profile,setProfile]=useState(null),[profileLoading,setProfileLoading]=useState(true),[activePage,setActivePage]=useState("nexus"),[search,setSearch]=useState(""),[notifications,setNotifications]=useState([]),[showNotifications,setShowNotifications]=useState(false),[chatTarget,setChatTarget]=useState(null),[callTarget,setCallTarget]=useState(null);
   useEffect(()=>{let cancelled=false;(async()=>{const result=await ensureHexaProfile(session?.user);if(!cancelled){setProfile(result);setProfileLoading(false)}})();return()=>{cancelled=true}},[session?.user?.id]);
-  useEffect(()=>{if(!profile?.id)return;const channel=supabase.channel(`hexa-notifications-${profile.id}`).on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},p=>{if(p.new?.sender_id===profile.id)return;setNotifications(x=>[{id:Date.now(),title:"New message",body:p.new?.content||"New message",created_at:new Date().toISOString()},...x].slice(0,50))}).subscribe();return()=>supabase.removeChannel(channel)},[profile?.id]);
+  useEffect(()=>{if(!profile?.id)return;(async()=>{const {data}=await supabase.from("notifications").select("id,kind,title,body,created_at,read_at,data").eq("user_id",profile.id).order("created_at",{ascending:false}).limit(50);setNotifications((data||[]).filter(n=>!n.read_at));})();},[profile?.id]);
+  useEffect(()=>{
+    if(!profile?.id)return;
+    const pushNotice=(title,body)=>{const n={id:`${Date.now()}-${Math.random()}`,title,body,created_at:new Date().toISOString()};setNotifications(x=>[n,...x].slice(0,50));if(typeof Notification!=="undefined"&&Notification.permission==="granted"){try{new Notification(`HEXA · ${title}`,{body,tag:"hexa-live"})}catch{}}};
+    if(typeof Notification!=="undefined"&&Notification.permission==="default") Notification.requestPermission().catch(()=>{});
+    const channel=supabase.channel(`hexa-notifications-${profile.id}`)
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},async p=>{if(p.new?.sender_id===profile.id)return;pushNotice("New message",p.new?.content||"New message");})
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"calls",filter:`callee_id=eq.${profile.id}`},p=>{if(p.new?.status==="ringing")pushNotice("Incoming call",`You have a ${p.new?.type||"voice"} call.`);})
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"message_reactions",filter:`user_id=eq.${profile.id}`},p=>pushNotice("Reaction","Someone reacted to a message."))
+      .subscribe();
+    return()=>supabase.removeChannel(channel)
+  },[profile?.id]);
   if(profileLoading)return <div className="hexa-loading-screen"><div className="loading-logo">H</div><div className="loading-spinner"/><strong>Opening HEXA…</strong><span>Preparing your workspace</span></div>;
   let page; switch(activePage){
     case "nexus":page=<NexusHome profile={profile} setActivePage={setActivePage}/>;break;
@@ -5786,13 +5977,14 @@ function AuthenticatedHEXA({ session, onSignOut }) {
     case "status":page=<StatusPage profile={profile}/>;break;
     case "calls":page=<CallsPage profile={profile}/>;break;
     case "wallet":page=<WalletPage profile={profile}/>;break;
+    case "subscription":page=<SubscriptionPage profile={profile}/>;break;
     case "kora":page=<KoraPage profile={profile}/>;break;
-    case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut}/>;break;
+    case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut} onProfileSaved={setProfile}/>;break;
     case "projects":page=<WorkspacePlaceholder title="Projects" description="Organize collaborative work." icon="◆"/>;break;
     case "developer":page=<WorkspacePlaceholder title="Developer Hub" description="Build and connect with HEXA." icon="</>"/>;break;
     default:page=<NexusHome profile={profile} setActivePage={setActivePage}/>;
   }
-  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div></div>;
+  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={async()=>{setNotifications([]);await supabase.from("notifications").update({read_at:new Date().toISOString()}).eq("user_id",profile.id).is("read_at",null);}}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div></div>;
 }
 
 
@@ -6042,7 +6234,7 @@ export default function App() {
    CSS
    ============================================================ */
 
-const APP_STYLES = `
+const APP_STYLES_HEAD = `
 :root {
   font-family:
     Inter,
@@ -7203,9 +7395,11 @@ button:disabled {
   color: var(--hexa-muted);
   font-size: 11px;
 }
+`;
 
 function WorkspacePlaceholder({ title, description, icon, children }) { return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">{icon}</div><div><h1>{title}</h1><p>{description}</p></div></div>{children||<div className="coming-card"><div>✦</div><h2>{title}</h2><p>This HEXA workspace is ready for connected Supabase features.</p></div>}</section>; }
 
+const APP_STYLES_TAIL = `
 /* ============================================================
    STATUS
    ============================================================ */
@@ -7693,3 +7887,5 @@ function WorkspacePlaceholder({ title, description, icon, children }) { return <
 .hexa-audio-message{display:flex;align-items:center;gap:7px}.hexa-audio-message audio{max-width:210px;height:34px}.hexa-audio-message select{background:var(--hexa-panel-2);color:var(--hexa-text);border:1px solid var(--hexa-border);border-radius:8px;padding:4px}.message-context-menu{position:fixed;z-index:1000;min-width:190px;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:14px;padding:6px;box-shadow:var(--hexa-shadow);display:grid;gap:2px}.message-context-menu button{border:0;background:none;color:var(--hexa-text);padding:10px;text-align:left;border-radius:9px}.message-context-menu button:hover{background:rgba(255,255,255,.06)}.message-context-menu .danger-text{color:var(--hexa-danger)}.emoji-panel,.sticker-panel,.feature-popover,.chat-settings-popover{position:absolute;z-index:40;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:16px;box-shadow:var(--hexa-shadow);padding:12px}.emoji-panel{left:12px;bottom:76px;width:min(410px,calc(100% - 24px))}.emoji-tones,.emoji-grid,.sticker-grid{display:flex;flex-wrap:wrap;gap:5px}.emoji-grid{max-height:220px;overflow:auto;margin-top:8px}.emoji-panel button,.sticker-grid button{border:0;background:transparent;font-size:21px;padding:6px;border-radius:8px}.emoji-panel button:hover,.sticker-grid button:hover{background:rgba(255,255,255,.06)}.sticker-panel{left:12px;bottom:76px;width:300px}.sticker-grid{margin-top:10px}.sticker-grid button{font-size:30px}.feature-popover{right:12px;bottom:76px;width:min(360px,calc(100% - 24px));display:grid;gap:8px}.feature-popover h3{margin:0}.chat-settings-popover{right:12px;top:64px;width:270px;display:grid;gap:10px;z-index:60}.chat-settings-popover label{display:grid;gap:6px;color:var(--hexa-muted);font-size:12px}.chat-settings-popover select,.chat-settings-popover button{padding:9px;border-radius:9px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text)}.chat-search-results{padding:10px;border-top:1px solid var(--hexa-border);display:grid;gap:5px}.chat-search-results button{border:0;background:transparent;color:var(--hexa-muted);text-align:left;padding:6px}.poll-message{display:grid;gap:7px;min-width:220px}.poll-message button{display:flex;justify-content:space-between;gap:10px;padding:9px;border-radius:9px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);text-align:left}.poll-message button span{color:var(--hexa-muted);font-size:10px}.shared-contact{display:flex;gap:10px;align-items:center;min-width:190px}.shared-contact div{display:grid}.shared-contact small{color:var(--hexa-muted)}.location-card{color:inherit;text-decoration:none;display:block;padding:4px}.file-message{display:flex;gap:8px;align-items:center}.forwarded-label{font-size:10px;color:var(--hexa-muted);margin-bottom:5px}.sticker-message{font-size:70px;line-height:1}.view-once-bubble{min-width:100px}.universal-search-result{display:flex;align-items:center;gap:10px;width:100%}.universal-search-result-copy{flex:1}.universal-search-result>b{text-transform:uppercase;font-size:9px;color:var(--hexa-accent-2)}
 
 `;
+
+const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL;
