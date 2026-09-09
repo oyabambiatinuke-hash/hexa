@@ -3256,205 +3256,250 @@ function ChatPage({
       }}
     >
 
-      {/* ======================================================
-          CHAT LIST
-          ====================================================== */}
 
-      <aside className="chat-list-panel">
+{/* ============================================================
+    HEXA CHAT LIST
+   ============================================================ */}
 
-        <div className="chat-list-header">
+<aside className="chat-list-panel hexa-chat-list">
 
-          <div>
-            <h2>
-              Chat
-            </h2>
+  <div className="hexa-chat-list-header">
 
-            <span>
-              {
-                conversations.length
-              } conversations
-            </span>
+    <div className="hexa-chat-title-row">
+      <h2>Chats</h2>
+
+      <div className="hexa-chat-header-actions">
+        <button
+          type="button"
+          title="New chat"
+          onClick={() => setNewChatOpen(true)}
+        >
+          ＋
+        </button>
+
+        <button
+          type="button"
+          title="More options"
+          onClick={() =>
+            setChatSettingsOpen(value => !value)
+          }
+        >
+          ⋮
+        </button>
+      </div>
+    </div>
+
+    <div className="hexa-chat-search-box">
+      <span>⌕</span>
+
+      <input
+        value={chatSearch}
+        onChange={event =>
+          setChatSearch(event.target.value)
+        }
+        placeholder="Search chats"
+        aria-label="Search chats"
+      />
+
+      {chatSearch && (
+        <button
+          type="button"
+          onClick={() => setChatSearch("")}
+          title="Clear search"
+        >
+          ×
+        </button>
+      )}
+    </div>
+
+    <div className="hexa-chat-filter-row">
+      <button type="button" className="active">
+        All
+      </button>
+
+      <button type="button">
+        Unread
+      </button>
+
+      <button type="button">
+        Groups
+      </button>
+
+      <button type="button">
+        Favorites
+      </button>
+    </div>
+
+  </div>
+
+
+  <div className="conversation-list hexa-conversation-list">
+
+    {loadingConversations && !conversations.length && (
+      <div className="hexa-chat-loading">
+        <div className="hexa-spinner-small" />
+        <span>Loading chats...</span>
+      </div>
+    )}
+
+
+    {filteredConversations.map(conversation => {
+
+      const selectedChat =
+        String(selected?.id) === String(conversation.id);
+
+      const unread =
+        Number(conversation.unread || 0);
+
+      const preview =
+        conversation.lastMessage ||
+        conversation.description ||
+        "No messages yet";
+
+      const mutedChat =
+        muted.includes(String(conversation.id));
+
+      return (
+        <button
+          key={conversation.id}
+          type="button"
+          className={`hexa-chat-row ${
+            selectedChat ? "active" : ""
+          }`}
+          onClick={() => {
+
+            setSelected(conversation);
+
+            setMobileConversationOpen(true);
+
+            setConversations(current =>
+              current.map(item =>
+                String(item.id) ===
+                String(conversation.id)
+                  ? {
+                      ...item,
+                      unread: 0
+                    }
+                  : item
+              )
+            );
+
+            loadMessages(conversation);
+          }}
+        >
+
+          <div className="hexa-chat-avatar-wrap">
+
+            <Avatar
+              src={conversation.avatar_url}
+              name={conversation.name}
+              size={48}
+              online={conversation.online}
+            />
+
+            {conversation.kind === "group" && (
+              <span className="hexa-chat-type-badge">
+                👥
+              </span>
+            )}
+
+            {conversation.kind === "ai" && (
+              <span className="hexa-chat-type-badge">
+                ✦
+              </span>
+            )}
+
           </div>
 
+
+          <div className="hexa-chat-row-content">
+
+            <div className="hexa-chat-row-top">
+
+              <strong>
+                {conversation.name}
+              </strong>
+
+              {conversation.lastMessageAt && (
+                <time
+                  className={
+                    unread > 0
+                      ? "unread"
+                      : ""
+                  }
+                >
+                  {formatChatTime(
+                    conversation.lastMessageAt
+                  )}
+                </time>
+              )}
+
+            </div>
+
+
+            <div className="hexa-chat-row-bottom">
+
+              <span className="hexa-chat-preview">
+                {preview}
+              </span>
+
+              <div className="hexa-chat-row-meta">
+
+                {mutedChat && (
+                  <span title="Muted">
+                    🔕
+                  </span>
+                )}
+
+                {unread > 0 && (
+                  <b className="hexa-unread-count">
+                    {unread > 99
+                      ? "99+"
+                      : unread}
+                  </b>
+                )}
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </button>
+      );
+    })}
+
+
+    {!filteredConversations.length &&
+      !loadingConversations && (
+        <div className="hexa-no-chats">
+
+          <div className="hexa-no-chats-icon">
+            💬
+          </div>
+
+          <strong>
+            No chats yet
+          </strong>
+
+          <span>
+            Search for a HEXA account or start
+            a new conversation.
+          </span>
+
           <button
-            className="new-chat-button"
             type="button"
-            title="New chat"
-            onClick={() =>
-              setNewChatOpen(
-                true
-              )
-            }
+            onClick={() => setNewChatOpen(true)}
           >
-            ＋
+            New chat
           </button>
 
         </div>
+      )}
 
-        <div className="chat-search">
+  </div>
 
-          <span>
-            ⌕
-          </span>
-
-          <input
-            value={
-              chatSearch
-            }
-            onChange={event =>
-              setChatSearch(
-                event.target
-                  .value
-              )
-            }
-            placeholder="Search chats"
-          />
-
-        </div>
-
-        <div className="conversation-list">
-
-          {loadingConversations &&
-            !conversations.length && (
-              <div className="chat-loading">
-                Loading chats…
-              </div>
-            )}
-
-          {filteredConversations.map(
-            conversation => (
-              <button
-                key={
-                  conversation.id
-                }
-                type="button"
-                className={
-                  `conversation ${
-                    selected?.id ===
-                    conversation.id
-                      ? "active"
-                      : ""
-                  }`
-                }
-                onClick={() => {
-                  setSelected(
-                    conversation
-                  );
-
-                  setMobileConversationOpen(
-                    true
-                  );
-
-                  setConversations(
-                    current =>
-                      current.map(
-                        item =>
-                          String(
-                            item.id
-                          ) ===
-                          String(
-                            conversation.id
-                          )
-                            ? {
-                                ...item,
-                                unread: 0
-                              }
-                            : item
-                      )
-                  );
-                }}
-              >
-
-                <Avatar
-                  src={
-                    conversation.avatar_url
-                  }
-                  name={
-                    conversation.name
-                  }
-                  size={48}
-                  online={
-                    conversation.online
-                  }
-                />
-
-                <div className="conversation-content">
-
-                  <div className="conversation-topline">
-
-                    <strong>
-                      {
-                        conversation.name
-                      }
-                    </strong>
-
-                    {conversation.lastMessageAt && (
-                      <time>
-                        {formatChatTime(
-                          conversation.lastMessageAt
-                        )}
-                      </time>
-                    )}
-
-                  </div>
-
-                  <div className="conversation-bottomline">
-
-                    <span>
-                      {
-                        conversation.lastMessage ||
-                        conversation.description ||
-                        "No messages yet"
-                      }
-                    </span>
-
-                    {conversation.unread >
-                      0 && (
-                      <b className="unread-badge">
-                        {conversation.unread >
-                        99
-                          ? "99+"
-                          : conversation.unread}
-                      </b>
-                    )}
-
-                  </div>
-
-                </div>
-
-                {muted.includes(
-                  String(
-                    conversation.id
-                  )
-                ) && (
-                  <small>
-                    🔕
-                  </small>
-                )}
-
-              </button>
-            )
-          )}
-
-          {!filteredConversations.length && (
-            <div className="empty-chat-list">
-              <div>
-                💬
-              </div>
-
-              <strong>
-                No chats found
-              </strong>
-
-              <span>
-                Start a new HEXA conversation.
-              </span>
-            </div>
-          )}
-
-        </div>
-
-      </aside>
+</aside>
 
       {/* ======================================================
           CHAT MAIN
@@ -9596,6 +9641,513 @@ video {
   }
 }
 
+
+/* ============================================================
+   HEXA SETTINGS
+   ============================================================ */
+
+.hexa-settings-page {
+  width: 100%;
+  max-width: 920px;
+  height: 100%;
+  margin: 0 auto;
+  padding: 24px 26px 40px;
+  overflow-y: auto;
+}
+
+/* Header */
+.hexa-settings-header {
+  margin-bottom: 18px;
+}
+
+.hexa-settings-header h1 {
+  margin: 0;
+  font-size: 26px;
+  line-height: 32px;
+  font-weight: 700;
+}
+
+.hexa-settings-header p {
+  margin: 5px 0 0;
+  color: var(--hexa-muted);
+  font-size: 13px;
+  line-height: 19px;
+}
+
+/* Profile */
+.hexa-settings-profile {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  margin-bottom: 22px;
+  border: 1px solid var(--hexa-border);
+  border-radius: 14px;
+  background: var(--hexa-panel);
+  color: var(--hexa-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.hexa-settings-profile:hover {
+  background: var(--hexa-panel-2);
+}
+
+.hexa-settings-profile-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.hexa-settings-profile-copy strong {
+  display: block;
+  font-size: 16px;
+  line-height: 21px;
+}
+
+.hexa-settings-profile-copy span,
+.hexa-settings-profile-copy small {
+  display: block;
+  color: var(--hexa-muted);
+}
+
+.hexa-settings-profile-copy span {
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.hexa-settings-profile-copy small {
+  margin-top: 3px;
+  font-size: 11px;
+}
+
+.hexa-settings-chevron {
+  color: var(--hexa-muted);
+  font-size: 25px;
+  line-height: 1;
+}
+
+/* Group */
+.hexa-settings-group {
+  margin-bottom: 20px;
+}
+
+.hexa-settings-group-title {
+  padding: 0 10px 7px;
+  color: var(--hexa-accent-2);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+/* Row */
+.hexa-settings-row {
+  width: 100%;
+  min-height: 70px;
+  padding: 10px 12px;
+
+  display: flex;
+  align-items: center;
+  gap: 13px;
+
+  border: 0;
+  border-bottom: 1px solid var(--hexa-border);
+
+  background: var(--hexa-panel);
+  color: var(--hexa-text);
+
+  text-align: left;
+  cursor: pointer;
+}
+
+.hexa-settings-group
+.hexa-settings-row:first-of-type {
+  border-radius: 12px 12px 0 0;
+}
+
+.hexa-settings-group
+.hexa-settings-row:last-child {
+  border-radius: 0 0 12px 12px;
+}
+
+.hexa-settings-row:hover {
+  background: var(--hexa-panel-2);
+}
+
+.hexa-settings-row-icon {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 10px;
+
+  background: var(--hexa-panel-2);
+
+  font-size: 18px;
+}
+
+.hexa-settings-row > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.hexa-settings-row strong {
+  display: block;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+.hexa-settings-row small {
+  display: block;
+  margin-top: 2px;
+  color: var(--hexa-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.hexa-settings-row > span:last-child {
+  color: var(--hexa-muted);
+  font-size: 20px;
+}
+
+/* Toggle */
+.hexa-settings-toggle-row {
+  cursor: default;
+}
+
+.hexa-settings-toggle-row > div {
+  cursor: default;
+}
+
+.hexa-switch {
+  width: 38px;
+  height: 22px;
+  min-width: 38px;
+
+  padding: 2px;
+
+  border: 0;
+  border-radius: 12px;
+
+  background: var(--hexa-panel-3);
+
+  cursor: pointer;
+}
+
+.hexa-switch span {
+  display: block;
+
+  width: 18px;
+  height: 18px;
+
+  border-radius: 50%;
+
+  background: white;
+
+  transition: transform .18s ease;
+}
+
+.hexa-switch.on {
+  background: var(--hexa-accent);
+}
+
+.hexa-switch.on span {
+  transform: translateX(16px);
+}
+
+/* Logout */
+.hexa-settings-account-group {
+  padding-bottom: 20px;
+}
+
+.hexa-settings-logout {
+  width: 100%;
+  min-height: 50px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 8px;
+
+  border: 1px solid rgba(229,57,88,.25);
+  border-radius: 12px;
+
+  background: rgba(229,57,88,.05);
+
+  color: var(--hexa-danger);
+
+  font-size: 13px;
+  font-weight: 600;
+
+  cursor: pointer;
+}
+
+.hexa-settings-logout:hover {
+  background: rgba(229,57,88,.1);
+}
+
+/* ============================================================
+   SETTINGS MODAL
+   ============================================================ */
+
+.hexa-settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 18px;
+
+  background: rgba(0,0,0,.55);
+
+  backdrop-filter: blur(7px);
+}
+
+.hexa-settings-modal {
+  width: min(560px, 100%);
+  max-height: min(760px, 90vh);
+
+  display: flex;
+  flex-direction: column;
+
+  overflow: hidden;
+
+  border: 1px solid var(--hexa-border-strong);
+  border-radius: 16px;
+
+  background: var(--hexa-panel);
+
+  box-shadow: var(--hexa-shadow);
+}
+
+.hexa-settings-modal-header {
+  height: 64px;
+  min-height: 64px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 12px;
+
+  padding: 0 14px;
+
+  border-bottom: 1px solid var(--hexa-border);
+}
+
+.hexa-settings-modal-header > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.hexa-settings-modal-header strong {
+  display: block;
+  font-size: 15px;
+}
+
+.hexa-settings-modal-header small {
+  display: block;
+  margin-top: 2px;
+  color: var(--hexa-muted);
+  font-size: 10px;
+}
+
+.hexa-settings-modal-header button {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+
+  border: 0;
+  border-radius: 50%;
+
+  background: transparent;
+  color: var(--hexa-text);
+
+  font-size: 20px;
+
+  cursor: pointer;
+}
+
+.hexa-settings-modal-header button:hover {
+  background: var(--hexa-panel-2);
+}
+
+/* Theme list */
+.hexa-settings-theme-list {
+  flex: 1;
+  min-height: 0;
+
+  overflow-y: auto;
+
+  padding: 10px;
+}
+
+.hexa-settings-theme {
+  width: 100%;
+
+  display: flex;
+  align-items: center;
+
+  gap: 12px;
+
+  padding: 10px;
+
+  margin-bottom: 6px;
+
+  border: 1px solid transparent;
+  border-radius: 12px;
+
+  background: transparent;
+  color: var(--hexa-text);
+
+  text-align: left;
+
+  cursor: pointer;
+}
+
+.hexa-settings-theme:hover {
+  background: var(--hexa-panel-2);
+}
+
+.hexa-settings-theme.selected {
+  border-color: var(--hexa-accent);
+  background: color-mix(
+    in srgb,
+    var(--hexa-accent) 8%,
+    transparent
+  );
+}
+
+.hexa-settings-theme-preview {
+  width: 72px;
+  height: 50px;
+  min-width: 72px;
+
+  position: relative;
+
+  overflow: hidden;
+
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+
+  gap: 4px;
+
+  padding: 7px;
+
+  border-radius: 8px;
+}
+
+.hexa-settings-theme-preview div {
+  width: 31px;
+  height: 12px;
+
+  border-radius: 5px;
+}
+
+.hexa-settings-theme-preview div:last-child {
+  margin-bottom: 6px;
+}
+
+.hexa-settings-theme > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
+.hexa-settings-theme strong {
+  display: block;
+  font-size: 12px;
+}
+
+.hexa-settings-theme small {
+  display: block;
+  margin-top: 3px;
+  color: var(--hexa-muted);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.hexa-settings-theme > b {
+  color: var(--hexa-accent-2);
+  font-size: 17px;
+}
+
+/* Detail */
+.hexa-detail-content {
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.hexa-detail-item {
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--hexa-border);
+}
+
+.hexa-detail-item strong {
+  display: block;
+  font-size: 13px;
+}
+
+.hexa-detail-item span {
+  display: block;
+  margin-top: 5px;
+  color: var(--hexa-muted);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+
+@media (max-width: 760px) {
+  .hexa-settings-page {
+    padding: 16px 10px 28px;
+  }
+
+  .hexa-settings-header h1 {
+    font-size: 22px;
+  }
+
+  .hexa-settings-header p {
+    font-size: 12px;
+  }
+
+  .hexa-settings-profile {
+    padding: 13px;
+    border-radius: 12px;
+  }
+
+  .hexa-settings-row {
+    min-height: 66px;
+    padding: 9px 10px;
+  }
+
+  .hexa-settings-row-icon {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+  }
+
+  .hexa-settings-overlay {
+    padding: 0;
+  }
+
+  .hexa-settings-modal {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+  }
+}
 
 /* ============================================================
    HEXA SETTINGS
