@@ -5674,172 +5674,568 @@ function SubscriptionPage({ profile }) {
   </section>;
 }
 
-function SettingsPage({ profile, onSignOut, onProfileSaved }) {
+/* ============================================================
+   HEXA SETTINGS
+   WhatsApp-style settings experience
+   ============================================================ */
+
+function SettingsPage({ profile, onSignOut }) {
   const [theme, setTheme] = useState(getSavedHexaTheme());
-  const [editProfile, setEditProfile] = useState(false);
-  const [showThemes, setShowThemes] = useState(true);
+
+  const [settings, setSettings] = useState(() => {
+    try {
+      return JSON.parse(
+        localStorage.getItem("hexa-settings-v1") || "{}"
+      );
+    } catch {
+      return {};
+    }
+  });
+
+  const [openSection, setOpenSection] = useState(null);
 
   useEffect(() => {
     applyHexaTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "hexa-settings-v1",
+        JSON.stringify(settings)
+      );
+    } catch {
+      // Ignore local storage errors.
+    }
+  }, [settings]);
 
   function changeTheme(themeId) {
     setTheme(themeId);
     applyHexaTheme(themeId);
   }
 
-  const activeTheme = HEXA_THEMES[theme] || HEXA_THEMES.midnight;
+  function toggleSetting(key, fallback = false) {
+    setSettings(current => ({
+      ...current,
+      [key]:
+        typeof current[key] === "boolean"
+          ? !current[key]
+          : !fallback,
+    }));
+  }
+
+  const activeTheme =
+    HEXA_THEMES[theme] || HEXA_THEMES.midnight;
+
+  const fullName =
+    profile?.full_name ||
+    profile?.username ||
+    "HEXA User";
+
+  const username =
+    profile?.username
+      ? `@${profile.username}`
+      : "";
 
   return (
-    <section className="workspace-page settings-page">
+    <section className="hexa-settings-page">
 
-      <div className="page-heading">
-        <div className="page-heading-icon">⚙</div>
+      {/* ======================================================
+          SETTINGS HEADER
+         ====================================================== */}
+
+      <header className="hexa-settings-header">
 
         <div>
           <h1>Settings</h1>
           <p>
-            Customize your HEXA experience, appearance and account.
+            Manage your HEXA account, chats, privacy and
+            experience.
           </p>
         </div>
-      </div>
 
-      {/* PROFILE */}
+      </header>
 
-      <div className="settings-card hexa-profile-settings">
+
+      {/* ======================================================
+          PROFILE
+         ====================================================== */}
+
+      <button
+        type="button"
+        className="hexa-settings-profile"
+        onClick={() => setOpenSection("profile")}
+      >
         <Avatar
           src={profile?.avatar_url}
-          name={
-            profile?.full_name ||
-            profile?.username ||
-            "HEXA User"
-          }
-          size={64}
+          name={fullName}
+          size={62}
+          online
         />
 
-        <div>
-          <strong>
-            {profile?.full_name ||
-              profile?.username ||
-              "HEXA User"}
-          </strong>
+        <div className="hexa-settings-profile-copy">
+          <strong>{fullName}</strong>
 
-          <p>
-            {profile?.username
-              ? `@${profile.username}`
-              : profile?.email || "HEXA account"}
-          </p>
+          {username && (
+            <span>{username}</span>
+          )}
+
+          <small>
+            {profile?.about ||
+              "Available on HEXA"}
+          </small>
         </div>
-        <button className="hero-secondary" type="button" onClick={() => setEditProfile(true)}>Edit profile</button>
-      </div>
 
-      {/* APPEARANCE */}
+        <span className="hexa-settings-chevron">
+          ›
+        </span>
+      </button>
 
-      <div className="settings-section">
+
+      {/* ======================================================
+          ACCOUNT
+         ====================================================== */}
+
+      <section className="hexa-settings-group">
+
+        <div className="hexa-settings-group-title">
+          Account
+        </div>
 
         <button
-          className="settings-section-heading"
-          onClick={() => setShowThemes(v => !v)}
+          type="button"
+          className="hexa-settings-row"
+          onClick={() => setOpenSection("account")}
         >
+          <span className="hexa-settings-row-icon">
+            👤
+          </span>
+
           <div>
-            <strong>Appearance</strong>
-            <span>
-              Choose how HEXA looks on your devices.
-            </span>
+            <strong>Account</strong>
+            <small>
+              Profile, phone number and email
+            </small>
           </div>
 
-          <b>{showThemes ? "⌃" : "⌄"}</b>
+          <span>›</span>
         </button>
 
-        {showThemes && (
-          <div className="hexa-theme-panel">
+        <button
+          type="button"
+          className="hexa-settings-row"
+          onClick={() => setOpenSection("privacy")}
+        >
+          <span className="hexa-settings-row-icon">
+            🔐
+          </span>
 
-            <div className="theme-current">
+          <div>
+            <strong>Privacy</strong>
+            <small>
+              Last seen, online, read receipts and blocking
+            </small>
+          </div>
+
+          <span>›</span>
+        </button>
+
+        <button
+          type="button"
+          className="hexa-settings-row"
+          onClick={() => setOpenSection("security")}
+        >
+          <span className="hexa-settings-row-icon">
+            🛡️
+          </span>
+
+          <div>
+            <strong>Security</strong>
+            <small>
+              Encryption, passkeys and two-step verification
+            </small>
+          </div>
+
+          <span>›</span>
+        </button>
+
+      </section>
+
+
+      {/* ======================================================
+          CHATS
+         ====================================================== */}
+
+      <section className="hexa-settings-group">
+
+        <div className="hexa-settings-group-title">
+          Chats
+        </div>
+
+        <button
+          type="button"
+          className="hexa-settings-row"
+          onClick={() => setOpenSection("chats")}
+        >
+          <span className="hexa-settings-row-icon">
+            💬
+          </span>
+
+          <div>
+            <strong>Chat settings</strong>
+            <small>
+              Wallpaper, display, enter key and media
+            </small>
+          </div>
+
+          <span>›</span>
+        </button>
+
+        <button
+          type="button"
+          className="hexa-settings-row"
+          onClick={() => setOpenSection("theme")}
+        >
+          <span className="hexa-settings-row-icon">
+            🎨
+          </span>
+
+          <div>
+            <strong>Appearance</strong>
+            <small>
+              {activeTheme.name}
+            </small>
+          </div>
+
+          <span>›</span>
+        </button>
+
+        <button
+          type="button"
+          className="hexa-settings-row"
+          onClick={() => setOpenSection("storage")}
+        >
+          <span className="hexa-settings-row-icon">
+            📦
+          </span>
+
+          <div>
+            <strong>Storage and data</strong>
+            <small>
+              Media, downloads and network usage
+            </small>
+          </div>
+
+          <span>›</span>
+        </button>
+
+      </section>
+
+
+      {/* ======================================================
+          NOTIFICATIONS
+         ====================================================== */}
+
+      <section className="hexa-settings-group">
+
+        <div className="hexa-settings-group-title">
+          Notifications
+        </div>
+
+        <div className="hexa-settings-row hexa-settings-toggle-row">
+
+          <span className="hexa-settings-row-icon">
+            🔔
+          </span>
+
+          <div>
+            <strong>Message notifications</strong>
+            <small>
+              Show notifications for new messages
+            </small>
+          </div>
+
+          <button
+            type="button"
+            className={`hexa-switch ${
+              settings.notifications !== false
+                ? "on"
+                : ""
+            }`}
+            onClick={() =>
+              toggleSetting(
+                "notifications",
+                true
+              )
+            }
+          >
+            <span />
+          </button>
+
+        </div>
+
+
+        <div className="hexa-settings-row hexa-settings-toggle-row">
+
+          <span className="hexa-settings-row-icon">
+            🔊
+          </span>
+
+          <div>
+            <strong>Notification sounds</strong>
+            <small>
+              Play a sound for new messages
+            </small>
+          </div>
+
+          <button
+            type="button"
+            className={`hexa-switch ${
+              settings.notificationSounds !== false
+                ? "on"
+                : ""
+            }`}
+            onClick={() =>
+              toggleSetting(
+                "notificationSounds",
+                true
+              )
+            }
+          >
+            <span />
+          </button>
+
+        </div>
+
+      </section>
+
+
+      {/* ======================================================
+          CALLS
+         ====================================================== */}
+
+      <section className="hexa-settings-group">
+
+        <div className="hexa-settings-group-title">
+          Calls
+        </div>
+
+        <button
+          type="button"
+          className="hexa-settings-row"
+          onClick={() => setOpenSection("calls")}
+        >
+          <span className="hexa-settings-row-icon">
+            ☎
+          </span>
+
+          <div>
+            <strong>Calling</strong>
+            <small>
+              Camera, microphone and call preferences
+            </small>
+          </div>
+
+          <span>›</span>
+        </button>
+
+      </section>
+
+
+      {/* ======================================================
+          LINKED DEVICES
+         ====================================================== */}
+
+      <section className="hexa-settings-group">
+
+        <div className="hexa-settings-group-title">
+          Devices
+        </div>
+
+        <button
+          type="button"
+          className="hexa-settings-row"
+          onClick={() => setOpenSection("devices")}
+        >
+          <span className="hexa-settings-row-icon">
+            💻
+          </span>
+
+          <div>
+            <strong>Linked devices</strong>
+            <small>
+              Manage devices connected to your HEXA account
+            </small>
+          </div>
+
+          <span>›</span>
+        </button>
+
+      </section>
+
+
+      {/* ======================================================
+          SUPPORT
+         ====================================================== */}
+
+      <section className="hexa-settings-group">
+
+        <div className="hexa-settings-group-title">
+          Support
+        </div>
+
+        <button
+          type="button"
+          className="hexa-settings-row"
+          onClick={() => setOpenSection("help")}
+        >
+          <span className="hexa-settings-row-icon">
+            ❓
+          </span>
+
+          <div>
+            <strong>Help and support</strong>
+            <small>
+              FAQs, contact HEXA and report a problem
+            </small>
+          </div>
+
+          <span>›</span>
+        </button>
+
+        <button
+          type="button"
+          className="hexa-settings-row"
+          onClick={() => setOpenSection("about")}
+        >
+          <span className="hexa-settings-row-icon">
+            ℹ️
+          </span>
+
+          <div>
+            <strong>About HEXA</strong>
+            <small>
+              Version, terms and privacy policy
+            </small>
+          </div>
+
+          <span>›</span>
+        </button>
+
+      </section>
+
+
+      {/* ======================================================
+          LOG OUT
+         ====================================================== */}
+
+      <section className="hexa-settings-group hexa-settings-account-group">
+
+        <button
+          type="button"
+          className="hexa-settings-logout"
+          onClick={onSignOut}
+        >
+          <span>↪</span>
+          Sign out of HEXA
+        </button>
+
+      </section>
+
+
+      {/* ======================================================
+          THEME PANEL
+         ====================================================== */}
+
+      {openSection === "theme" && (
+        <div
+          className="hexa-settings-overlay"
+          onClick={() => setOpenSection(null)}
+        >
+          <div
+            className="hexa-settings-modal"
+            onClick={event =>
+              event.stopPropagation()
+            }
+          >
+
+            <div className="hexa-settings-modal-header">
+              <button
+                type="button"
+                onClick={() =>
+                  setOpenSection(null)
+                }
+              >
+                ←
+              </button>
+
               <div>
-                <span>Current theme</span>
-                <strong>
-                  {activeTheme.icon} {activeTheme.name}
-                </strong>
+                <strong>Appearance</strong>
+                <small>
+                  Choose your HEXA theme
+                </small>
               </div>
 
-              <small>
-                {activeTheme.description}
-              </small>
+              <button
+                type="button"
+                onClick={() =>
+                  setOpenSection(null)
+                }
+              >
+                ×
+              </button>
             </div>
 
-            <div className="hexa-theme-grid">
+            <div className="hexa-settings-theme-list">
 
               {Object.values(HEXA_THEMES).map(item => (
                 <button
                   key={item.id}
                   type="button"
-                  className={
-                    `hexa-theme-option ${
-                      theme === item.id
-                        ? "selected"
-                        : ""
-                    }`
+                  className={`hexa-settings-theme ${
+                    theme === item.id
+                      ? "selected"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    changeTheme(item.id)
                   }
-                  onClick={() => changeTheme(item.id)}
                 >
 
                   <div
-                    className="theme-preview"
+                    className="hexa-settings-theme-preview"
                     style={{
-                      background: item.vars["--hexa-bg"]
+                      background:
+                        item.vars["--hexa-bg"],
                     }}
                   >
                     <div
-                      className="theme-preview-sidebar"
                       style={{
                         background:
-                          item.vars["--hexa-sidebar"]
+                          item.vars["--hexa-message-in"],
                       }}
                     />
 
-                    <div className="theme-preview-content">
-
-                      <div
-                        className="theme-preview-message incoming"
-                        style={{
-                          background:
-                            item.vars["--hexa-message-in"]
-                        }}
-                      />
-
-                      <div
-                        className="theme-preview-message outgoing"
-                        style={{
-                          background:
-                            item.vars["--hexa-message-out"]
-                        }}
-                      />
-
-                    </div>
-
                     <div
-                      className="theme-preview-accent"
                       style={{
                         background:
-                          item.vars["--hexa-accent"]
+                          item.vars["--hexa-message-out"],
                       }}
                     />
                   </div>
 
-                  <div className="theme-option-copy">
+                  <div>
                     <strong>
                       {item.icon} {item.name}
                     </strong>
 
-                    <span>
+                    <small>
                       {item.description}
-                    </span>
+                    </small>
                   </div>
 
                   {theme === item.id && (
-                    <div className="theme-selected">
-                      ✓
-                    </div>
+                    <b>✓</b>
                   )}
 
                 </button>
@@ -5848,64 +6244,233 @@ function SettingsPage({ profile, onSignOut, onProfileSaved }) {
             </div>
 
           </div>
-        )}
-
-      </div>
-
-      {/* CHAT */}
-
-      <div className="settings-grid">
-
-        <div className="settings-card">
-          <div>
-            <strong>Chat appearance</strong>
-            <p>
-              Your selected theme automatically applies to
-              conversations, chat bubbles, menus and panels.
-            </p>
-          </div>
-
-          <span className="settings-status">
-            {activeTheme.name}
-          </span>
         </div>
+      )}
 
-        <div className="settings-card">
-          <div>
-            <strong>Theme synchronization</strong>
-            <p>
-              HEXA remembers your theme on this device.
-            </p>
-          </div>
 
-          <span className="settings-status">
-            Enabled
-          </span>
-        </div>
+      {/* ======================================================
+          SIMPLE DETAIL PANELS
+         ====================================================== */}
 
-        <div className="settings-card">
-          <div>
-            <strong>Account</strong>
-            <p>
-              Manage your HEXA session.
-            </p>
-          </div>
-
-          <button
-            className="settings-danger-button"
-            onClick={onSignOut}
+      {openSection &&
+        openSection !== "theme" &&
+        openSection !== "profile" && (
+          <div
+            className="hexa-settings-overlay"
+            onClick={() => setOpenSection(null)}
           >
-            Sign out
-          </button>
-        </div>
+            <div
+              className="hexa-settings-modal hexa-settings-detail"
+              onClick={event =>
+                event.stopPropagation()
+              }
+            >
 
-      </div>
+              <div className="hexa-settings-modal-header">
 
-      {editProfile && <ProfileEditModal profile={profile} onClose={() => setEditProfile(false)} onSaved={onProfileSaved} />}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOpenSection(null)
+                  }
+                >
+                  ←
+                </button>
+
+                <div>
+                  <strong>
+                    {{
+                      account: "Account",
+                      privacy: "Privacy",
+                      security: "Security",
+                      chats: "Chat settings",
+                      storage: "Storage and data",
+                      calls: "Calling",
+                      devices: "Linked devices",
+                      help: "Help and support",
+                      about: "About HEXA",
+                    }[openSection] || "Settings"}
+                  </strong>
+
+                  <small>
+                    HEXA settings
+                  </small>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOpenSection(null)
+                  }
+                >
+                  ×
+                </button>
+
+              </div>
+
+              <div className="hexa-detail-content">
+
+                {openSection === "account" && (
+                  <>
+                    <div className="hexa-detail-item">
+                      <strong>Profile name</strong>
+                      <span>{fullName}</span>
+                    </div>
+
+                    <div className="hexa-detail-item">
+                      <strong>Username</strong>
+                      <span>
+                        {username || "Not set"}
+                      </span>
+                    </div>
+
+                    <div className="hexa-detail-item">
+                      <strong>Email</strong>
+                      <span>
+                        {profile?.email ||
+                          "Not available"}
+                      </span>
+                    </div>
+                  </>
+                )}
+
+                {openSection === "privacy" && (
+                  <>
+                    <div className="hexa-detail-item">
+                      <strong>Last seen and online</strong>
+                      <span>Manage who can see your activity.</span>
+                    </div>
+
+                    <div className="hexa-detail-item">
+                      <strong>Read receipts</strong>
+                      <span>Control message read indicators.</span>
+                    </div>
+
+                    <div className="hexa-detail-item">
+                      <strong>Blocked contacts</strong>
+                      <span>Manage blocked HEXA accounts.</span>
+                    </div>
+                  </>
+                )}
+
+                {openSection === "security" && (
+                  <>
+                    <div className="hexa-detail-item">
+                      <strong>End-to-end encryption</strong>
+                      <span>Your supported HEXA conversations use encrypted transport.</span>
+                    </div>
+
+                    <div className="hexa-detail-item">
+                      <strong>Two-step verification</strong>
+                      <span>Protect your HEXA account with an additional security layer.</span>
+                    </div>
+
+                    <div className="hexa-detail-item">
+                      <strong>Passkeys</strong>
+                      <span>Manage supported passkey authentication.</span>
+                    </div>
+                  </>
+                )}
+
+                {openSection === "chats" && (
+                  <>
+                    <div className="hexa-detail-item">
+                      <strong>Enter key to send</strong>
+                      <span>Press Enter to send messages.</span>
+                    </div>
+
+                    <div className="hexa-detail-item">
+                      <strong>Media visibility</strong>
+                      <span>Choose how received media is handled.</span>
+                    </div>
+
+                    <div className="hexa-detail-item">
+                      <strong>Chat wallpaper</strong>
+                      <span>Customize your conversation background.</span>
+                    </div>
+                  </>
+                )}
+
+                {openSection === "storage" && (
+                  <>
+                    <div className="hexa-detail-item">
+                      <strong>Media auto-download</strong>
+                      <span>Control downloads on cellular and Wi-Fi.</span>
+                    </div>
+
+                    <div className="hexa-detail-item">
+                      <strong>Storage management</strong>
+                      <span>Review media and files stored by HEXA.</span>
+                    </div>
+                  </>
+                )}
+
+                {openSection === "calls" && (
+                  <>
+                    <div className="hexa-detail-item">
+                      <strong>Microphone</strong>
+                      <span>Manage your call microphone preference.</span>
+                    </div>
+
+                    <div className="hexa-detail-item">
+                      <strong>Camera</strong>
+                      <span>Manage your video call camera.</span>
+                    </div>
+
+                    <div className="hexa-detail-item">
+                      <strong>Call history</strong>
+                      <span>Review your HEXA voice and video calls.</span>
+                    </div>
+                  </>
+                )}
+
+                {openSection === "devices" && (
+                  <div className="hexa-detail-item">
+                    <strong>This device</strong>
+                    <span>
+                      Your current HEXA session is active on this device.
+                    </span>
+                  </div>
+                )}
+
+                {openSection === "help" && (
+                  <>
+                    <div className="hexa-detail-item">
+                      <strong>HEXA Help Center</strong>
+                      <span>Find answers to common questions.</span>
+                    </div>
+
+                    <div className="hexa-detail-item">
+                      <strong>Report a problem</strong>
+                      <span>Tell HEXA about a technical issue.</span>
+                    </div>
+                  </>
+                )}
+
+                {openSection === "about" && (
+                  <>
+                    <div className="hexa-detail-item">
+                      <strong>HEXA</strong>
+                      <span>Communication, connected.</span>
+                    </div>
+
+                    <div className="hexa-detail-item">
+                      <strong>Version</strong>
+                      <span>HEXA NEXUS</span>
+                    </div>
+                  </>
+                )}
+
+              </div>
+
+            </div>
+          </div>
+        )}
 
     </section>
   );
 }
+
 class HexaErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -9031,4 +9596,511 @@ video {
   }
 }
 
+
+/* ============================================================
+   HEXA SETTINGS
+   ============================================================ */
+
+.hexa-settings-page {
+  width: 100%;
+  max-width: 920px;
+  height: 100%;
+  margin: 0 auto;
+  padding: 24px 26px 40px;
+  overflow-y: auto;
+}
+
+/* Header */
+.hexa-settings-header {
+  margin-bottom: 18px;
+}
+
+.hexa-settings-header h1 {
+  margin: 0;
+  font-size: 26px;
+  line-height: 32px;
+  font-weight: 700;
+}
+
+.hexa-settings-header p {
+  margin: 5px 0 0;
+  color: var(--hexa-muted);
+  font-size: 13px;
+  line-height: 19px;
+}
+
+/* Profile */
+.hexa-settings-profile {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  margin-bottom: 22px;
+  border: 1px solid var(--hexa-border);
+  border-radius: 14px;
+  background: var(--hexa-panel);
+  color: var(--hexa-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.hexa-settings-profile:hover {
+  background: var(--hexa-panel-2);
+}
+
+.hexa-settings-profile-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.hexa-settings-profile-copy strong {
+  display: block;
+  font-size: 16px;
+  line-height: 21px;
+}
+
+.hexa-settings-profile-copy span,
+.hexa-settings-profile-copy small {
+  display: block;
+  color: var(--hexa-muted);
+}
+
+.hexa-settings-profile-copy span {
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.hexa-settings-profile-copy small {
+  margin-top: 3px;
+  font-size: 11px;
+}
+
+.hexa-settings-chevron {
+  color: var(--hexa-muted);
+  font-size: 25px;
+  line-height: 1;
+}
+
+/* Group */
+.hexa-settings-group {
+  margin-bottom: 20px;
+}
+
+.hexa-settings-group-title {
+  padding: 0 10px 7px;
+  color: var(--hexa-accent-2);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+/* Row */
+.hexa-settings-row {
+  width: 100%;
+  min-height: 70px;
+  padding: 10px 12px;
+
+  display: flex;
+  align-items: center;
+  gap: 13px;
+
+  border: 0;
+  border-bottom: 1px solid var(--hexa-border);
+
+  background: var(--hexa-panel);
+  color: var(--hexa-text);
+
+  text-align: left;
+  cursor: pointer;
+}
+
+.hexa-settings-group
+.hexa-settings-row:first-of-type {
+  border-radius: 12px 12px 0 0;
+}
+
+.hexa-settings-group
+.hexa-settings-row:last-child {
+  border-radius: 0 0 12px 12px;
+}
+
+.hexa-settings-row:hover {
+  background: var(--hexa-panel-2);
+}
+
+.hexa-settings-row-icon {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 10px;
+
+  background: var(--hexa-panel-2);
+
+  font-size: 18px;
+}
+
+.hexa-settings-row > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.hexa-settings-row strong {
+  display: block;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+.hexa-settings-row small {
+  display: block;
+  margin-top: 2px;
+  color: var(--hexa-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.hexa-settings-row > span:last-child {
+  color: var(--hexa-muted);
+  font-size: 20px;
+}
+
+/* Toggle */
+.hexa-settings-toggle-row {
+  cursor: default;
+}
+
+.hexa-settings-toggle-row > div {
+  cursor: default;
+}
+
+.hexa-switch {
+  width: 38px;
+  height: 22px;
+  min-width: 38px;
+
+  padding: 2px;
+
+  border: 0;
+  border-radius: 12px;
+
+  background: var(--hexa-panel-3);
+
+  cursor: pointer;
+}
+
+.hexa-switch span {
+  display: block;
+
+  width: 18px;
+  height: 18px;
+
+  border-radius: 50%;
+
+  background: white;
+
+  transition: transform .18s ease;
+}
+
+.hexa-switch.on {
+  background: var(--hexa-accent);
+}
+
+.hexa-switch.on span {
+  transform: translateX(16px);
+}
+
+/* Logout */
+.hexa-settings-account-group {
+  padding-bottom: 20px;
+}
+
+.hexa-settings-logout {
+  width: 100%;
+  min-height: 50px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 8px;
+
+  border: 1px solid rgba(229,57,88,.25);
+  border-radius: 12px;
+
+  background: rgba(229,57,88,.05);
+
+  color: var(--hexa-danger);
+
+  font-size: 13px;
+  font-weight: 600;
+
+  cursor: pointer;
+}
+
+.hexa-settings-logout:hover {
+  background: rgba(229,57,88,.1);
+}
+
+/* ============================================================
+   SETTINGS MODAL
+   ============================================================ */
+
+.hexa-settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 18px;
+
+  background: rgba(0,0,0,.55);
+
+  backdrop-filter: blur(7px);
+}
+
+.hexa-settings-modal {
+  width: min(560px, 100%);
+  max-height: min(760px, 90vh);
+
+  display: flex;
+  flex-direction: column;
+
+  overflow: hidden;
+
+  border: 1px solid var(--hexa-border-strong);
+  border-radius: 16px;
+
+  background: var(--hexa-panel);
+
+  box-shadow: var(--hexa-shadow);
+}
+
+.hexa-settings-modal-header {
+  height: 64px;
+  min-height: 64px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 12px;
+
+  padding: 0 14px;
+
+  border-bottom: 1px solid var(--hexa-border);
+}
+
+.hexa-settings-modal-header > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.hexa-settings-modal-header strong {
+  display: block;
+  font-size: 15px;
+}
+
+.hexa-settings-modal-header small {
+  display: block;
+  margin-top: 2px;
+  color: var(--hexa-muted);
+  font-size: 10px;
+}
+
+.hexa-settings-modal-header button {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+
+  border: 0;
+  border-radius: 50%;
+
+  background: transparent;
+  color: var(--hexa-text);
+
+  font-size: 20px;
+
+  cursor: pointer;
+}
+
+.hexa-settings-modal-header button:hover {
+  background: var(--hexa-panel-2);
+}
+
+/* Theme list */
+.hexa-settings-theme-list {
+  flex: 1;
+  min-height: 0;
+
+  overflow-y: auto;
+
+  padding: 10px;
+}
+
+.hexa-settings-theme {
+  width: 100%;
+
+  display: flex;
+  align-items: center;
+
+  gap: 12px;
+
+  padding: 10px;
+
+  margin-bottom: 6px;
+
+  border: 1px solid transparent;
+  border-radius: 12px;
+
+  background: transparent;
+  color: var(--hexa-text);
+
+  text-align: left;
+
+  cursor: pointer;
+}
+
+.hexa-settings-theme:hover {
+  background: var(--hexa-panel-2);
+}
+
+.hexa-settings-theme.selected {
+  border-color: var(--hexa-accent);
+  background: color-mix(
+    in srgb,
+    var(--hexa-accent) 8%,
+    transparent
+  );
+}
+
+.hexa-settings-theme-preview {
+  width: 72px;
+  height: 50px;
+  min-width: 72px;
+
+  position: relative;
+
+  overflow: hidden;
+
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+
+  gap: 4px;
+
+  padding: 7px;
+
+  border-radius: 8px;
+}
+
+.hexa-settings-theme-preview div {
+  width: 31px;
+  height: 12px;
+
+  border-radius: 5px;
+}
+
+.hexa-settings-theme-preview div:last-child {
+  margin-bottom: 6px;
+}
+
+.hexa-settings-theme > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
+.hexa-settings-theme strong {
+  display: block;
+  font-size: 12px;
+}
+
+.hexa-settings-theme small {
+  display: block;
+  margin-top: 3px;
+  color: var(--hexa-muted);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.hexa-settings-theme > b {
+  color: var(--hexa-accent-2);
+  font-size: 17px;
+}
+
+/* Detail */
+.hexa-detail-content {
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.hexa-detail-item {
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--hexa-border);
+}
+
+.hexa-detail-item strong {
+  display: block;
+  font-size: 13px;
+}
+
+.hexa-detail-item span {
+  display: block;
+  margin-top: 5px;
+  color: var(--hexa-muted);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+
+@media (max-width: 760px) {
+  .hexa-settings-page {
+    padding: 16px 10px 28px;
+  }
+
+  .hexa-settings-header h1 {
+    font-size: 22px;
+  }
+
+  .hexa-settings-header p {
+    font-size: 12px;
+  }
+
+  .hexa-settings-profile {
+    padding: 13px;
+    border-radius: 12px;
+  }
+
+  .hexa-settings-row {
+    min-height: 66px;
+    padding: 9px 10px;
+  }
+
+  .hexa-settings-row-icon {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+  }
+
+  .hexa-settings-overlay {
+    padding: 0;
+  }
+
+  .hexa-settings-modal {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+  }
+}
 `;
