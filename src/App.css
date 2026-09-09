@@ -2505,3 +2505,323 @@ select:focus-visible {
   }
 
 }
+/* ============================================================
+   HEXA RESPONSIVE SCALE SYSTEM
+   Keeps the entire interface proportional across displays.
+   ============================================================ */
+
+html {
+  font-size: clamp(13px, 0.72vw + 8px, 16px);
+}
+
+body {
+  min-width: 320px;
+  overflow: hidden;
+  webkit-text-size-adjust: 100%;
+}
+
+#root {
+  width: 100%;
+  min-height: 100dvh;
+  height: 100dvh;
+}
+
+/* Main HEXA shell */
+.hexa-app,
+.hexa-workspace,
+.hexa-shell,
+.hexa-layout {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: 100dvh;
+  min-height: 0;
+}
+
+/* Prevent flex/grid children from forcing the page wider */
+.hexa-app *,
+.hexa-workspace *,
+.hexa-shell *,
+.hexa-layout * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Consistent controls */
+button,
+input,
+textarea,
+select {
+  min-height: 40px;
+  max-height: 52px;
+}
+
+/* Consistent avatars */
+.avatar,
+.user-avatar,
+.profile-avatar,
+.chat-avatar {
+  width: clamp(36px, 3vw, 48px);
+  height: clamp(36px, 3vw, 48px);
+  min-width: clamp(36px, 3vw, 48px);
+  border-radius: 50%;
+}
+
+/* Sidebar */
+.sidebar,
+.hexa-sidebar {
+  width: clamp(220px, 19vw, 300px);
+  min-width: 220px;
+  max-width: 300px;
+}
+
+/* Chat list */
+.chat-list,
+.conversation-list {
+  width: clamp(280px, 25vw, 390px);
+  min-width: 260px;
+}
+
+/* Main content area */
+.main-content,
+.chat-main,
+.workspace-main,
+.content-area {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
+/* Message bubbles */
+.message-bubble {
+  width: fit-content;
+  max-width: min(72%, 680px);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Media inside messages */
+.message-bubble img,
+.message-bubble video,
+.message-bubble audio,
+.chat-media,
+.message-media {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Headers */
+.topbar,
+.chat-header,
+.page-header {
+  min-height: clamp(58px, 5vw, 76px);
+  height: clamp(58px, 5vw, 76px);
+}
+
+/* Composer */
+.message-composer,
+.chat-composer {
+  min-height: 58px;
+  padding:
+    clamp(8px, 1vw, 14px)
+    clamp(10px, 1.2vw, 18px);
+}
+
+/* Cards */
+.card,
+.panel,
+.chat-card,
+.settings-card {
+  border-radius: clamp(10px, 0.9vw, 18px);
+}
+
+/* Modals */
+.modal,
+.dialog,
+.hexa-modal {
+  width: min(92vw, 620px);
+  max-height: 90dvh;
+  overflow: auto;
+}
+
+/* ============================================================
+   TABLET
+   ============================================================ */
+
+@media (max-width: 1100px) {
+
+  .sidebar,
+  .hexa-sidebar {
+    width: 80px;
+    min-width: 80px;
+  }
+
+  .chat-list,
+  .conversation-list {
+    width: 300px;
+    min-width: 280px;
+  }
+
+  .message-bubble {
+    max-width: 78%;
+  }
+}
+
+
+/* ============================================================
+   SMALL TABLET / LARGE PHONE
+   ============================================================ */
+
+@media (max-width: 820px) {
+
+  html {
+    font-size: 14px;
+  }
+
+  body {
+    overflow: hidden;
+  }
+
+  .sidebar,
+  .hexa-sidebar {
+    width: 68px;
+    min-width: 68px;
+  }
+
+  .chat-list,
+  .conversation-list {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .message-bubble {
+    max-width: 84%;
+  }
+
+  .topbar,
+  .chat-header,
+  .page-header {
+    min-height: 58px;
+    height: 58px;
+  }
+}
+
+
+/* ============================================================
+   PHONE
+   ============================================================ */
+
+@media (max-width: 600px) {
+
+  html {
+    font-size: 14px;
+  }
+
+  .hexa-app,
+  .hexa-workspace,
+  .hexa-shell,
+  .hexa-layout {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+
+  .sidebar,
+  .hexa-sidebar {
+    width: 64px;
+    min-width: 64px;
+  }
+
+  .chat-list,
+  .conversation-list {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .message-bubble {
+    max-width: 88%;
+  }
+
+  .avatar,
+  .user-avatar,
+  .profile-avatar,
+  .chat-avatar {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+  }
+
+  button {
+    min-height: 38px;
+  }
+
+  .modal,
+  .dialog,
+  .hexa-modal {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+}
+
+
+/* ============================================================
+   VERY SMALL PHONES
+   ============================================================ */
+
+@media (max-width: 390px) {
+
+  html {
+    font-size: 13px;
+  }
+
+  .sidebar,
+  .hexa-sidebar {
+    width: 58px;
+    min-width: 58px;
+  }
+
+  .message-bubble {
+    max-width: 91%;
+  }
+
+  .message-composer,
+  .chat-composer {
+    padding: 6px 8px;
+  }
+}
+
+
+/* ============================================================
+   LARGE SCREENS
+   ============================================================ */
+
+@media (min-width: 1600px) {
+
+  html {
+    font-size: 16px;
+  }
+
+  .hexa-workspace,
+  .hexa-layout {
+    max-width: 1920px;
+    margin: 0 auto;
+  }
+}
+
+
+/* ============================================================
+   ACCESSIBILITY — RESPECT USER ZOOM PREFERENCES
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
