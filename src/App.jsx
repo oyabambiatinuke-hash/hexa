@@ -3762,332 +3762,818 @@ function ChatPage({
       }}
     >
 
-      {/* ======================================================
-          CHAT LIST
-          ====================================================== */}
+      
+{/* ======================================================
+    HEXA CHAT LIST — WHATSAPP STYLE
+    ====================================================== */}
 
-      <aside className="chat-list-panel">
+<aside className="chat-list-panel">
 
-        <div className="chat-list-header">
-          <div className="chat-list-title-wrap">
-            <div className="chat-list-title-row">
-              <h2>Chats</h2>
-              <span className="chat-count">{conversations.length}</span>
-            </div>
-            <span className="chat-list-header-subtitle">Your conversations</span>
-          </div>
+  {/* HEADER */}
+  <div className="chat-list-header">
 
-          <div className="chat-list-head-actions">
+    <div className="chat-list-title-wrap">
+      <div className="chat-list-title-row">
+        <h2>Chats</h2>
+
+        {conversations.length > 0 && (
+          <span className="chat-count">
+            {conversations.length > 999 ? "999+" : conversations.length}
+          </span>
+        )}
+      </div>
+
+      <span className="chat-list-header-subtitle">
+        Your conversations
+      </span>
+    </div>
+
+    <div className="chat-list-head-actions">
+
+      <button
+        type="button"
+        className="chat-header-action"
+        title="New chat"
+        onClick={() => setNewChatOpen(true)}
+      >
+        ＋
+      </button>
+
+      <button
+        type="button"
+        className="chat-header-action"
+        title="Message requests"
+        onClick={() => {
+          setMessageRequestsOpen(true);
+          loadMessageRequests();
+        }}
+      >
+        ⋮
+      </button>
+
+    </div>
+  </div>
+
+
+  {/* SEARCH */}
+  <div className="chat-search-box">
+
+    <span className="chat-search-icon">⌕</span>
+
+    <input
+      type="search"
+      value={chatSearch}
+      onChange={(event) => setChatSearch(event.target.value)}
+      placeholder="Search chats"
+      aria-label="Search chats"
+    />
+
+    {chatSearch && (
+      <button
+        type="button"
+        className="chat-search-clear"
+        onClick={() => setChatSearch("")}
+        aria-label="Clear search"
+      >
+        ×
+      </button>
+    )}
+
+  </div>
+
+
+  {/* PRIMARY FILTER TABS */}
+  <div className="chat-tabs">
+
+    <button
+      type="button"
+      className={chatFilter === "all" ? "active" : ""}
+      onClick={() => {
+        setChatFilter("all");
+        setActiveChatFolder("all");
+      }}
+    >
+      All
+      {conversations.length > 0 && (
+        <span>{conversations.length > 99 ? "99+" : conversations.length}</span>
+      )}
+    </button>
+
+    <button
+      type="button"
+      className={chatFilter === "unread" ? "active" : ""}
+      onClick={() => setChatFilter("unread")}
+    >
+      Unread
+
+      {conversations.filter(
+        (c) => Number(c.unread || 0) > 0
+      ).length > 0 && (
+        <span>
+          {conversations.filter(
+            (c) => Number(c.unread || 0) > 0
+          ).length > 99
+            ? "99+"
+            : conversations.filter(
+                (c) => Number(c.unread || 0) > 0
+              ).length}
+        </span>
+      )}
+    </button>
+
+    <button
+      type="button"
+      className={chatFilter === "favorites" ? "active" : ""}
+      onClick={() => {
+        setChatFilter("favorites");
+        setActiveChatFolder("all");
+      }}
+    >
+      Favorites
+
+      {starred.length > 0 && (
+        <span>
+          {starred.length > 99 ? "99+" : starred.length}
+        </span>
+      )}
+    </button>
+
+    <button
+      type="button"
+      className={chatFilter === "groups" ? "active" : ""}
+      onClick={() => {
+        setChatFilter("groups");
+        setActiveChatFolder("groups");
+      }}
+    >
+      Groups
+    </button>
+
+  </div>
+
+
+  {/* FOLDER STRIP */}
+  <div className="chat-folder-strip">
+
+    <button
+      type="button"
+      className={
+        activeChatFolder === "all" &&
+        chatFilter === "all"
+          ? "folder-chip active"
+          : "folder-chip"
+      }
+      onClick={() => {
+        setActiveChatFolder("all");
+        setChatFilter("all");
+      }}
+    >
+      All chats
+    </button>
+
+    {chatFolders.slice(0, 4).map((folder) => (
+      <button
+        key={folder.id}
+        type="button"
+        className={
+          activeChatFolder === folder.id
+            ? "folder-chip active"
+            : "folder-chip"
+        }
+        onClick={() => {
+          setActiveChatFolder(folder.id);
+          setChatFilter("all");
+        }}
+      >
+        {folder.name}
+      </button>
+    ))}
+
+    <button
+      type="button"
+      className="folder-more-button"
+      title="Chat folders"
+      onClick={() =>
+        setChatFolderMenuOpen((value) => !value)
+      }
+    >
+      ⋯
+    </button>
+
+  </div>
+
+
+  {/* FOLDER MENU */}
+  {chatFolderMenuOpen && (
+    <div className="chat-folder-dropdown-menu">
+
+      <button
+        type="button"
+        onClick={() => {
+          setActiveChatFolder("all");
+          setChatFilter("all");
+          setChatFolderMenuOpen(false);
+        }}
+      >
+        <span>💬</span>
+        <span>All chats</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          setActiveChatFolder("groups");
+          setChatFilter("groups");
+          setChatFolderMenuOpen(false);
+        }}
+      >
+        <span>👥</span>
+        <span>Groups</span>
+      </button>
+
+      <div className="folder-menu-divider" />
+
+      {chatFolders.map((folder) => (
+        <div
+          key={folder.id}
+          className="folder-menu-row"
+        >
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveChatFolder(folder.id);
+              setChatFilter("all");
+              setChatFolderMenuOpen(false);
+            }}
+          >
+            <span>🗂️</span>
+            <span>{folder.name}</span>
+          </button>
+
+          {folder.id !== "family" && (
             <button
-              className="new-chat-button"
               type="button"
-              title="New chat"
-              onClick={() => setNewChatOpen(true)}
+              className="folder-delete-button"
+              title={`Delete ${folder.name}`}
+              onClick={() => deleteChatFolder(folder.id)}
             >
-              ＋
+              ×
             </button>
-            <button
-              className="chat-list-menu-button"
-              type="button"
-              title="Chat options"
-              onClick={() => setMessageRequestsOpen(true)}
-            >
-              ⋮
-            </button>
-          </div>
-        </div>
-
-        <div className="chat-search">
-          <span>⌕</span>
-          <input
-            value={chatSearch}
-            onChange={event => setChatSearch(event.target.value)}
-            placeholder="Search chats, people or messages"
-          />
-          {chatSearch && (
-            <button type="button" className="chat-search-clear" onClick={() => setChatSearch("")} aria-label="Clear search">×</button>
           )}
+
         </div>
+      ))}
 
-        <div className="chat-folder-bar">
-          <div className="chat-folder-tabs">
-            <button
-              type="button"
-              className={activeChatFolder === "all" ? "selected" : ""}
-              onClick={() => { setActiveChatFolder("all"); setChatFilter("all"); }}
-            >
-              All
-            </button>
-            <button
-              type="button"
-              className={activeChatFolder === "groups" ? "selected" : ""}
-              onClick={() => { setActiveChatFolder("groups"); setChatFilter("groups"); }}
-            >
-              Groups
-            </button>
-            <button
-              type="button"
-              className={chatFilter === "favorites" ? "selected" : ""}
-              onClick={() => { setActiveChatFolder("all"); setChatFilter("favorites"); }}
-            >
-              Favorites
-            </button>
-            {chatFolders.slice(0, 4).map((folder) => (
-              <button
-                key={folder.id}
-                type="button"
-                className={activeChatFolder === folder.id ? "selected" : ""}
-                onClick={() => { setActiveChatFolder(folder.id); setChatFilter("all"); }}
-              >
-                {folder.name}
-              </button>
-            ))}
+      <div className="folder-menu-divider" />
+
+      <button
+        type="button"
+        className="create-folder-button"
+        onClick={() => {
+          setChatFolderMenuOpen(false);
+          createChatFolder();
+        }}
+      >
+        <span>＋</span>
+        <span>Create chat group</span>
+      </button>
+
+    </div>
+  )}
+
+
+  {/* CHAT SUMMARY */}
+  <div className="chat-list-summary">
+
+    <span>
+      {filteredConversations.length}{" "}
+      {filteredConversations.length === 1
+        ? "conversation"
+        : "conversations"}
+    </span>
+
+    {pinned.length > 0 && (
+      <span className="summary-pin">
+        📌 {pinned.length}
+      </span>
+    )}
+
+  </div>
+
+
+  {/* CONVERSATIONS */}
+  <div className="conversation-list">
+
+    {loadingConversations && !conversations.length && (
+      <div className="chat-loading">
+
+        {[1, 2, 3, 4].map((item) => (
+          <div
+            className="chat-loading-row"
+            key={item}
+          >
+            <div className="chat-loading-avatar" />
+
+            <div className="chat-loading-copy">
+              <div />
+              <div />
+            </div>
           </div>
+        ))}
 
+        <span>Loading conversations…</span>
+
+      </div>
+    )}
+
+
+    {filteredConversations.map((conversation) => {
+
+      const conversationId = String(conversation.id);
+
+      const isPinned =
+        pinned.includes(conversationId);
+
+      const isFavorite =
+        starred.includes(conversationId);
+
+      const isMuted =
+        muted.includes(conversationId);
+
+      const isActive =
+        selected?.id === conversation.id;
+
+      const unreadCount =
+        Number(conversation.unread || 0);
+
+      const preview =
+        conversation.lastMessage ||
+        conversation.latestMessage ||
+        conversation.description ||
+        "No messages yet";
+
+      const minePreview =
+        String(
+          conversation.latestMessageSender || ""
+        ) === String(profile?.id);
+
+      const displayPreview =
+        minePreview && preview
+          ? `You: ${preview}`
+          : preview;
+
+
+      return (
+        <div
+          key={conversation.id}
+          className={
+            `conversation-row ${
+              isActive ? "active" : ""
+            } ${
+              unreadCount ? "has-unread" : ""
+            }`
+          }
+        >
+
+          {/* MAIN CHAT BUTTON */}
           <button
             type="button"
-            className="chat-folder-plus"
-            title="Create chat group"
-            onClick={createChatFolder}
-          >
-            ＋
-          </button>
+            className="conversation-main-button"
+            onClick={() => {
 
-          <button
-            type="button"
-            className="chat-folder-dropdown"
-            title="Chat groups"
-            onClick={() => setChatFolderMenuOpen((value) => !value)}
-          >
-            ▾
-          </button>
+              setSelected(conversation);
 
-          {chatFolderMenuOpen && (
-            <div className="chat-folder-menu">
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveChatFolder("all");
-                  setChatFilter("all");
-                  setChatFolderMenuOpen(false);
-                }}
-              >
-                All chats
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveChatFolder("groups");
-                  setChatFilter("groups");
-                  setChatFolderMenuOpen(false);
-                }}
-              >
-                Groups
-              </button>
-              {chatFolders.map((folder) => (
-                <div key={folder.id} className="chat-folder-menu-row">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveChatFolder(folder.id);
-                      setChatFilter("all");
-                      setChatFolderMenuOpen(false);
-                    }}
-                  >
-                    {folder.name}
-                  </button>
-                  {folder.id !== "family" && (
-                    <button
-                      type="button"
-                      className="chat-folder-delete"
-                      onClick={() => deleteChatFolder(folder.id)}
-                      title={`Delete ${folder.name}`}
-                    >
-                      ×
-                    </button>
+              setMobileConversationOpen(true);
+
+              setConversations((current) =>
+                current.map((item) =>
+                  String(item.id) ===
+                  String(conversation.id)
+                    ? {
+                        ...item,
+                        unread: 0,
+                      }
+                    : item
+                )
+              );
+
+            }}
+          >
+
+            <div className="conversation-avatar-wrap">
+
+              <Avatar
+                src={conversation.avatar_url}
+                name={
+                  conversation.name ||
+                  "HEXA User"
+                }
+                size={50}
+                online={conversation.online}
+              />
+
+              {(conversation.kind === "group" ||
+                conversation.type === "group" ||
+                conversation.type === "system_group") && (
+                <span className="conversation-group-badge">
+                  👥
+                </span>
+              )}
+
+            </div>
+
+
+            <div className="conversation-content">
+
+              <div className="conversation-topline">
+
+                <strong>
+                  {conversation.name ||
+                    "HEXA User"}
+                </strong>
+
+                <time
+                  className={
+                    unreadCount
+                      ? "unread-time"
+                      : ""
+                  }
+                >
+                  {formatChatTime(
+                    conversation.lastMessageAt ||
+                    conversation.latestMessageAt
                   )}
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={createChatFolder}
-              >
-                ＋ Create chat group
-              </button>
-            </div>
-          )}
-        </div>
+                </time>
 
-        <div className="chat-filter-row secondary">
-          {[
-            ["all", "All", conversations.length],
-            ["unread", "Unread", conversations.filter(c => Number(c.unread || 0) > 0).length],
-            ["groups", "Groups", conversations.filter(c => c.kind === "group" || c.type === "group" || c.type === "system_group").length],
-            ["favorites", "Favorites", starred.length]
-          ].map(([id, label, count]) => (
-            <button key={id} type="button" className={chatFilter === id ? "selected" : ""} onClick={() => setChatFilter(id)}>
-              <span>{label}</span>{Number(count) > 0 && <em>{count > 99 ? "99+" : count}</em>}
-            </button>
-          ))}
+              </div>
+
+
+              <div className="conversation-bottomline">
+
+                <span
+                  className={
+                    unreadCount
+                      ? "preview-unread"
+                      : ""
+                  }
+                >
+                  {displayPreview}
+                </span>
+
+
+                <div className="conversation-indicators">
+
+                  {isPinned && (
+                    <small title="Pinned">
+                      📌
+                    </small>
+                  )}
+
+                  {isFavorite && (
+                    <small title="Favorite">
+                      ★
+                    </small>
+                  )}
+
+                  {isMuted && (
+                    <small title="Muted">
+                      🔕
+                    </small>
+                  )}
+
+                  {unreadCount > 0 && (
+                    <b className="unread-badge">
+                      {unreadCount > 99
+                        ? "99+"
+                        : unreadCount}
+                    </b>
+                  )}
+
+                </div>
+
+              </div>
+
+            </div>
+
+          </button>
+
+
+          {/* CHAT OPTIONS */}
           <button
             type="button"
-            className={messageRequests.length ? "request-pill has-requests" : "request-pill"}
-            onClick={() => { setMessageRequestsOpen(true); loadMessageRequests(); }}
+            className="conversation-options-button"
+            title="Chat options"
+            onClick={(event) => {
+              event.stopPropagation();
+
+              setSelected(conversation);
+              setChatFolderAssignOpen(true);
+            }}
           >
-            <span>Requests</span>{messageRequests.length > 0 && <em>{messageRequests.length > 99 ? "99+" : messageRequests.length}</em>}
+            ⋮
           </button>
+
+        </div>
+      );
+    })}
+
+
+    {/* EMPTY STATE */}
+    {!filteredConversations.length && (
+      <div className="empty-chat-list">
+
+        <div className="empty-chat-icon">
+          💬
         </div>
 
-        <div className="chat-list-summary">
-          <span>{filteredConversations.length} conversation{filteredConversations.length === 1 ? "" : "s"}</span>
-          {pinned.length > 0 && <span>📌 {pinned.length} pinned</span>}
+        <strong>
+          {chatSearch
+            ? "No matching chats"
+            : "No conversations yet"}
+        </strong>
+
+        <span>
+          {chatSearch
+            ? "Try another name, username or message."
+            : "Start a new HEXA conversation."}
+        </span>
+
+        {!chatSearch && (
+          <button
+            type="button"
+            className="empty-chat-action"
+            onClick={() =>
+              setNewChatOpen(true)
+            }
+          >
+            Start a chat
+          </button>
+        )}
+
+      </div>
+    )}
+
+  </div>
+
+
+  {/* ASSIGN CHAT TO FOLDERS */}
+  {chatFolderAssignOpen && selected && (
+    <div className="chat-folder-assign-popover">
+
+      <div className="chat-folder-assign-header">
+
+        <div>
+          <strong>Chat folders</strong>
+          <span>
+            Organize this conversation
+          </span>
         </div>
 
-        <div className="conversation-list">
-          {loadingConversations && !conversations.length && (
-            <div className="chat-loading">
-              <div className="chat-skeleton" />
-              <div className="chat-skeleton" />
-              <div className="chat-skeleton" />
-              <span>Loading conversations…</span>
-            </div>
-          )}
+        <button
+          type="button"
+          onClick={() =>
+            setChatFolderAssignOpen(false)
+          }
+        >
+          ×
+        </button>
 
-          {filteredConversations.map(conversation => {
-            const conversationId = String(conversation.id);
-            const isPinned = pinned.includes(conversationId);
-            const isFavorite = starred.includes(conversationId);
-            const isMuted = muted.includes(conversationId);
-            const isActive = selected?.id === conversation.id;
-            const unreadCount = Number(conversation.unread || 0);
-            const preview = conversation.lastMessage || conversation.latestMessage || conversation.description || "No messages yet";
-            const minePreview = String(conversation.latestMessageSender || "") === String(profile.id);
-            const displayPreview = minePreview && preview ? `You: ${preview}` : preview;
+      </div>
+
+
+      <div className="chat-folder-assign-name">
+        <Avatar
+          src={selected.avatar_url}
+          name={selected.name}
+          size={38}
+        />
+
+        <strong>
+          {selected.name}
+        </strong>
+      </div>
+
+
+      <p>
+        Choose one or more folders for this
+        conversation.
+      </p>
+
+
+      {chatFolders.map((folder) => {
+
+        const currentIds =
+          selected.chatFolderIds || [];
+
+        const checked =
+          currentIds.includes(folder.id);
+
+        return (
+          <label
+            key={folder.id}
+            className="chat-folder-check"
+          >
+
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={(event) => {
+
+                const next =
+                  event.target.checked
+                    ? [
+                        ...currentIds,
+                        folder.id,
+                      ]
+                    : currentIds.filter(
+                        (id) =>
+                          id !== folder.id
+                      );
+
+                setConversationFolders(
+                  selected.id,
+                  next
+                );
+
+              }}
+            />
+
+            <span>{folder.name}</span>
+
+          </label>
+        );
+      })}
+
+
+      <button
+        type="button"
+        className="chat-folder-new-inline"
+        onClick={createChatFolder}
+      >
+        ＋ Create new folder
+      </button>
+
+    </div>
+  )}
+
+</aside>
+
+
+{/* ======================================================
+    MESSAGE REQUESTS
+    ====================================================== */}
+
+{messageRequestsOpen && (
+  <div
+    className="message-requests-modal"
+    onClick={() =>
+      setMessageRequestsOpen(false)
+    }
+  >
+
+    <div
+      className="message-requests-card"
+      onClick={(event) =>
+        event.stopPropagation()
+      }
+    >
+
+      <div className="message-requests-header">
+
+        <div>
+          <strong>
+            Message requests
+          </strong>
+
+          <span>
+            People who want to start a
+            conversation with you
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onClick={() =>
+            setMessageRequestsOpen(false)
+          }
+        >
+          ×
+        </button>
+
+      </div>
+
+
+      {requestsLoading ? (
+
+        <div className="request-loading">
+          Loading requests…
+        </div>
+
+      ) : messageRequests.length ? (
+
+        <div className="request-list">
+
+          {messageRequests.map((request) => {
+
+            const sender =
+              request.sender || {};
 
             return (
-              <button
-                key={conversation.id}
-                type="button"
-                className={`conversation ${isActive ? "active" : ""} ${unreadCount ? "has-unread" : ""}`}
-                onClick={() => {
-                  setSelected(conversation);
-                  setMobileConversationOpen(true);
-                  setConversations(current => current.map(item => String(item.id) === String(conversation.id) ? { ...item, unread: 0 } : item));
-                }}
+              <div
+                className="request-item"
+                key={request.id}
               >
-                <div className="conversation-avatar-wrap">
-                  <Avatar
-                    src={conversation.avatar_url}
-                    name={conversation.name}
-                    size={50}
-                    online={conversation.online}
-                  />
-                  {conversation.kind === "group" && <span className="conversation-type-badge">👥</span>}
+
+                <Avatar
+                  src={sender.avatar_url}
+                  name={
+                    sender.full_name ||
+                    sender.username ||
+                    "HEXA User"
+                  }
+                  size={48}
+                />
+
+
+                <div className="request-copy">
+
+                  <strong>
+                    {sender.full_name ||
+                      sender.username ||
+                      "HEXA User"}
+                  </strong>
+
+                  <span>
+                    {sender.username
+                      ? `@${sender.username}`
+                      : "HEXA user"}
+                  </span>
+
+                  <small>
+                    Wants to message you
+                  </small>
+
                 </div>
 
-                <div className="conversation-content">
-                  <div className="conversation-topline">
-                    <strong>{conversation.name}</strong>
-                    <time className={unreadCount ? "unread-time" : ""}>
-                      {formatChatTime(conversation.lastMessageAt || conversation.latestMessageAt)}
-                    </time>
-                  </div>
 
-                  <div className="conversation-bottomline">
-                    <span className={unreadCount ? "preview-unread" : ""}>{displayPreview}</span>
-                    <div className="conversation-indicators">
-                      {isPinned && <small title="Pinned">📌</small>}
-                      {isFavorite && <small title="Favorite">★</small>}
-                      {isMuted && <small title="Muted">🔕</small>}
-                      {unreadCount > 0 && <b className="unread-badge">{unreadCount > 99 ? "99+" : unreadCount}</b>}
-                      <small
-                        className="chat-folder-assign-trigger"
-                        title="Assign to chat group"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setSelected(conversation);
-                          setChatFolderAssignOpen(true);
-                        }}
-                      >
-                        ▾
-                      </small>
-                    </div>
-                  </div>
+                <div className="request-actions">
+
+                  <button
+                    className="hero-primary"
+                    type="button"
+                    onClick={() =>
+                      acceptMessageRequest(
+                        request
+                      )
+                    }
+                  >
+                    Accept
+                  </button>
+
+                  <button
+                    className="hero-secondary"
+                    type="button"
+                    onClick={() =>
+                      declineMessageRequest(
+                        request
+                      )
+                    }
+                  >
+                    Decline
+                  </button>
+
                 </div>
-              </button>
+
+              </div>
             );
           })}
 
-          {!filteredConversations.length && (
-            <div className="empty-chat-list">
-              <div className="empty-chat-icon">⌕</div>
-              <strong>{chatSearch ? "No matching chats" : "No conversations yet"}</strong>
-              <span>{chatSearch ? "Try another name, username or message." : "Start a new HEXA conversation."}</span>
-              {!chatSearch && (
-                <button type="button" className="empty-chat-action" onClick={() => setNewChatOpen(true)}>Start a chat</button>
-              )}
-            </div>
-          )}
         </div>
 
-        {chatFolderAssignOpen && selected && (
-          <div className="chat-folder-assign-popover">
-            <div className="chat-folder-assign-header">
-              <strong>Chat groups</strong>
-              <button type="button" onClick={() => setChatFolderAssignOpen(false)}>×</button>
-            </div>
-            <p>Assign “{selected.name}” to one or more groups.</p>
-            {chatFolders.map((folder) => {
-              const currentIds = selected.chatFolderIds || [];
-              const checked = currentIds.includes(folder.id);
-              return (
-                <label key={folder.id} className="chat-folder-check">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(event) => {
-                      const next = event.target.checked
-                        ? [...currentIds, folder.id]
-                        : currentIds.filter((id) => id !== folder.id);
-                      setConversationFolders(selected.id, next);
-                    }}
-                  />
-                  <span>{folder.name}</span>
-                </label>
-              );
-            })}
-            <button type="button" className="chat-folder-new-inline" onClick={createChatFolder}>
-              ＋ Create new group
-            </button>
-          </div>
-        )}
+      ) : (
 
-      </aside>
+        <div className="request-empty">
 
-      {messageRequestsOpen && (
-        <div className="message-requests-modal" onClick={() => setMessageRequestsOpen(false)}>
-          <div className="message-requests-card" onClick={e => e.stopPropagation()}>
-            <div className="message-requests-header">
-              <div><strong>Message requests</strong><span>People who want to start a chat with you</span></div>
-              <button type="button" onClick={() => setMessageRequestsOpen(false)}>×</button>
-            </div>
-            {requestsLoading ? <div className="request-empty">Loading requests…</div> : messageRequests.length ? (
-              <div className="request-list">
-                {messageRequests.map(request => {
-                  const sender = request.sender || {};
-                  return (
-                    <div className="request-item" key={request.id}>
-                      <Avatar src={sender.avatar_url} name={sender.full_name || sender.username || "HEXA User"} size={48}/>
-                      <div className="request-copy"><strong>{sender.full_name || sender.username || "HEXA User"}</strong><span>{sender.username ? `@${sender.username}` : "HEXA user"}</span><small>Wants to message you</small></div>
-                      <div className="request-actions"><button className="hero-primary" type="button" onClick={() => acceptMessageRequest(request)}>Accept</button><button className="hero-secondary" type="button" onClick={() => declineMessageRequest(request)}>Decline</button></div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : <div className="request-empty"><div>💬</div><strong>No message requests</strong><span>New requests will appear here before they become chats.</span></div>}
-          </div>
+          <div>💬</div>
+
+          <strong>
+            No message requests
+          </strong>
+
+          <span>
+            New requests will appear here
+            before they become chats.
+          </span>
+
         </div>
+
       )}
+
+    </div>
+
+  </div>
+)}
 
       {/* ======================================================
           CHAT MAIN
