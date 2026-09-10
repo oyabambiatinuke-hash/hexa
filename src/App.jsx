@@ -5866,7 +5866,7 @@ function UniversalSearch({ search, profile, onMessage }) {
    HEXA SETTINGS
    ============================================================ */
 
-function ProfileEditor({ profile }) {
+function ProfileEditor({ profile, onSaved }) {
   const [name, setName] = useState(profile?.full_name || profile?.display_name || "");
   const [username, setUsername] = useState(profile?.username || "");
   const [about, setAbout] = useState(profile?.about || "");
@@ -5906,6 +5906,7 @@ function ProfileEditor({ profile }) {
       }).eq("id", profile.id).select("*").single();
       if (error) throw error;
       setStatus(`Saved as @${data.username}`);
+      onSaved?.(data);
     } catch (error) {
       setStatus(error?.message || "Unable to save your profile.");
     } finally { setBusy(false); }
@@ -5928,7 +5929,10 @@ function ProfileEditor({ profile }) {
       if (!publicUrl) throw new Error("The profile picture uploaded but no public URL was returned.");
       const { error: updateError } = await supabase.from("profiles").update({ avatar_url: publicUrl, updated_at: new Date().toISOString() }).eq("id", profile.id);
       if (updateError) throw updateError;
-      setAvatarUrl(`${publicUrl}?v=${Date.now()}`);
+      const nextAvatarUrl = `${publicUrl}?v=${Date.now()}`;
+      setAvatarUrl(nextAvatarUrl);
+      const nextProfile = { ...profile, avatar_url: publicUrl, updated_at: new Date().toISOString() };
+      onSaved?.(nextProfile);
       setStatus("Profile picture updated.");
     } catch (error) {
       setStatus(error?.message || "Unable to upload profile picture. Make sure the avatars storage bucket exists.");
@@ -5954,7 +5958,7 @@ function ProfileEditor({ profile }) {
   );
 }
 
-function SettingsPage({ profile, onSignOut }) {
+function SettingsPage({ profile, onSignOut, onProfileSaved }) {
   const [theme, setTheme] = useState(getSavedHexaTheme());
   const [showThemes, setShowThemes] = useState(true);
 
@@ -5985,7 +5989,7 @@ function SettingsPage({ profile, onSignOut }) {
 
       {/* PROFILE */}
 
-      <ProfileEditor profile={profile} />
+      <ProfileEditor profile={profile} onSaved={onProfileSaved} />
 
       <div className="settings-card hexa-profile-settings">
         <Avatar
@@ -6287,6 +6291,45 @@ function AuthenticatedHEXA({ session, onSignOut }) {
   }, [session?.user?.id]);
   useEffect(() => {
     if (!profile?.id || typeof window === "undefined") return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(`hexa-notifications:${profile.id}`) || "[]");
+      if (Array.isArray(saved)) setNotifications(saved.slice(0, 100));
+    } catch {
+      setNotifications([]);
+    }
+  }, [profile?.id]);
+
+  useEffect(() => {
+    if (!profile?.id || typeof window === "undefined") return;
+    try {
+      localStorage.setItem(`hexa-notifications:${profile.id}`, JSON.stringify(notifications.slice(0, 100)));
+    } catch {}
+  }, [profile?.id, notifications]);
+
+  function pushNotification(notification) {
+    const item = {
+      id: notification.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      title: notification.title || "HEXA notification",
+      body: notification.body || "",
+      kind: notification.kind || "general",
+      conversation_id: notification.conversation_id || null,
+      created_at: notification.created_at || new Date().toISOString(),
+    };
+    setNotifications((items) => [item, ...items.filter((x) => String(x.id) !== String(item.id))].slice(0, 100));
+    return item;
+  }
+
+  async function enableBrowserNotifications() {
+    if (!("Notification" in window)) return;
+    try {
+      await Notification.requestPermission();
+    } catch (error) {
+      console.warn("HEXA notification permission:", error);
+    }
+  }
+
+  useEffect(() => {
+    if (!profile?.id || typeof window === "undefined") return;
 
     // Ask once for browser notifications. The user can deny this and HEXA
     // will continue using the in-app notification center normally.
@@ -6303,15 +6346,14 @@ function AuthenticatedHEXA({ session, onSignOut }) {
           const message = payload.new;
           if (!message || message.sender_id === profile.id) return;
 
-          const body = message.content || "New HEXA message";
-          const notification = {
-            id: `${message.id || Date.now()}-${Date.now()}`,
-            title: "New HEXA message",
+          const body = message.content || (message.message_type === "image" ? "📷 Photo" : message.message_type === "video" ? "🎥 Video" : message.message_type === "voice" ? "🎙 Voice message" : "New HEXA message");
+          const notification = pushNotification({
+            id: `${message.id || Date.now()}-message`,
+            title: "New message",
             body,
-            created_at: new Date().toISOString(),
-          };
-
-          setNotifications((items) => [notification, ...items].slice(0, 50));
+            kind: "message",
+            conversation_id: message.conversation_id || null,
+          });
 
           // System-level notification when HEXA is not the foreground page.
           if (
@@ -6335,6 +6377,50 @@ function AuthenticatedHEXA({ session, onSignOut }) {
           }
         }
       )
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "message_requests", filter: `recipient_id=eq.${profile.id}` }, (payload) => {
+        const request = payload.new;
+        if (!request || request.status !== "pending") return;
+        pushNotification({
+          id: `${request.id}-request`,
+          title: "New message request",
+          body: "Someone wants to start a HEXA conversation with you.",
+          kind: "request",
+        });
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "message_requests", filter: `sender_id=eq.${profile.id}` }, (payload) => {
+        const request = payload.new;
+        if (!request) return;
+        if (request.status === "accepted") {
+          pushNotification({ id: `${request.id}-accepted`, title: "Message request accepted", body: "Your HEXA conversation is now open.", kind: "request" });
+        } else if (request.status === "declined") {
+          pushNotification({ id: `${request.id}-declined`, title: "Message request declined", body: "Your message request was declined.", kind: "request" });
+        }
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "calls" }, (payload) => {
+        const call = payload.new;
+        if (!call || String(call.callee_id) !== String(profile.id)) return;
+        pushNotification({
+          id: `${call.id}-incoming`,
+          title: call.type === "video" ? "Incoming video call" : "Incoming voice call",
+          body: "Tap HEXA to answer the call.",
+          kind: "call",
+          conversation_id: call.conversation_id || null,
+        });
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "calls" }, (payload) => {
+        const call = payload.new;
+        if (!call || (String(call.caller_id) !== String(profile.id) && String(call.callee_id) !== String(profile.id))) return;
+        if (["missed", "declined", "ended"].includes(call.status)) {
+          const label = call.status === "missed" ? "Missed" : call.status === "declined" ? "Declined" : "Call ended";
+          pushNotification({
+            id: `${call.id}-${call.status}`,
+            title: call.type === "video" ? `Video call · ${label}` : `Voice call · ${label}`,
+            body: "Open Calls or the conversation for details.",
+            kind: "call",
+            conversation_id: call.conversation_id || null,
+          });
+        }
+      })
       .subscribe();
 
     return () => {
@@ -6361,10 +6447,10 @@ function AuthenticatedHEXA({ session, onSignOut }) {
     case "status":page=<StatusPage profile={profile}/>;break;
     case "calls":page=<CallsPage profile={profile}/>;break;
     case "kora":page=<KoraPage profile={profile}/>;break;
-    case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut}/>;break;
+    case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut} onProfileSaved={(next)=>setProfile(p=>({...p,...next}))}/>;break;
     default:page=<ChatPage profile={profile} onStartCall={(c,type,mode)=>setCallTarget({conversation:c,type,mode: mode === "chat" ? (type === "video" ? "video-chat" : "voice-chat") : (type === "video" ? "video-call" : "voice-call")})}/>;
   }
-  return <div className={`hexa-app ${activePage === "chat" ? "chat-mode" : ""}`}><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className={`hexa-main ${activePage === "chat" ? "hexa-main-chat" : ""}`}>{activePage !== "chat" && <Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/>}<main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");try{const chat=await ensureHexaDirectConversation({profileId:profile.id,otherUserId:p.id,otherProfile:p});setChatTarget(chat);setActivePage("chat");}catch(error){try{const request=await supabase.from("message_requests").insert({sender_id:profile.id,recipient_id:p.id,status:"pending"});if(request.error)throw request.error;alert("Message request sent. They can accept it before the chat opens.");}catch(requestError){alert(requestError?.message||error?.message||"Unable to start this conversation.");}}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div></div>;
+  return <div className={`hexa-app ${activePage === "chat" ? "chat-mode" : ""}`}><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className={`hexa-main ${activePage === "chat" ? "hexa-main-chat" : ""}`}>{activePage !== "chat" && <Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/>}<main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");try{const chat=await ensureHexaDirectConversation({profileId:profile.id,otherUserId:p.id,otherProfile:p});setChatTarget(chat);setActivePage("chat");}catch(error){try{const request=await supabase.from("message_requests").insert({sender_id:profile.id,recipient_id:p.id,status:"pending"});if(request.error)throw request.error;alert("Message request sent. They can accept it before the chat opens.");}catch(requestError){alert(requestError?.message||error?.message||"Unable to start this conversation.");}}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><div style={{display:"flex",gap:8}}><button type="button" onClick={enableBrowserNotifications}>Enable</button><button type="button" onClick={()=>{setNotifications([]);try{localStorage.removeItem(`hexa-notifications:${profile.id}`)}catch{}}}>Clear</button></div></div>{notifications.length?notifications.map(n=><button type="button" className="notification-item notification-item-button" key={n.id} onClick={()=>{setShowNotifications(false); if(n.conversation_id){setChatTarget({id:n.conversation_id});setActivePage("chat");} else if(n.kind === "call"){setActivePage("calls");} else if(n.kind === "request"){setActivePage("chat");}}}><span>{n.kind === "call" ? "☎" : n.kind === "request" ? "✉" : "●"}</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></button>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div></div>;
 }
 
 
@@ -6684,7 +6770,7 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: 16px;
   position: relative;
   overflow: hidden;
   background:
@@ -6703,8 +6789,8 @@ button:disabled {
 
 .hexa-auth-glow {
   position: absolute;
-  width: 360px;
-  height: 360px;
+  width: 260px;
+  height: 260px;
   border-radius: 50%;
   filter: blur(90px);
   pointer-events: none;
@@ -6723,12 +6809,12 @@ button:disabled {
 }
 
 .hexa-auth-card {
-  width: min(100%, 470px);
-  padding: 38px;
+  width: min(100%, 400px);
+  padding: 26px;
   border: 1px solid var(--hexa-border);
   background: rgba(13,17,24,.92);
   backdrop-filter: blur(24px);
-  border-radius: 28px;
+  border-radius: 20px;
   box-shadow: var(--hexa-shadow);
   position: relative;
   z-index: 2;
@@ -6737,8 +6823,8 @@ button:disabled {
 .hexa-brand {
   display: flex;
   align-items: center;
-  gap: 13px;
-  margin-bottom: 34px;
+  gap: 10px;
+  margin-bottom: 22px;
 }
 
 .hexa-logo,
@@ -6759,10 +6845,10 @@ button:disabled {
 }
 
 .hexa-logo {
-  width: 50px;
-  height: 50px;
-  border-radius: 15px;
-  font-size: 22px;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  font-size: 19px;
 }
 
 .hexa-brand strong {
@@ -6779,25 +6865,25 @@ button:disabled {
 }
 
 .auth-heading h1 {
-  font-size: 30px;
-  line-height: 1.1;
-  margin: 0 0 10px;
+  font-size: 24px;
+  line-height: 1.15;
+  margin: 0 0 7px;
 }
 
 .auth-heading p {
   color: var(--hexa-muted);
-  margin: 0 0 26px;
+  margin: 0 0 18px;
   line-height: 1.6;
 }
 
 .auth-field {
   display: block;
-  margin-bottom: 16px;
+  margin-bottom: 11px;
 }
 
 .auth-field span {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   color: #cbd3df;
   font-size: 13px;
   font-weight: 700;
@@ -7117,7 +7203,7 @@ button:disabled {
 .hexa-avatar {
   position: relative;
   border-radius: 50%;
-  overflow: visible;
+  overflow: hidden;
   display: grid;
   place-items: center;
   background:
@@ -7149,8 +7235,8 @@ button:disabled {
   border-radius: 50%;
   background: var(--hexa-success);
   border: 2px solid #090c11;
-  bottom: -1px;
-  right: -1px;
+  bottom: 1px;
+  right: 1px;
 }
 
 .hexa-main {
@@ -8242,7 +8328,7 @@ function WorkspacePlaceholder({ title, description, icon, children }) { return <
   }
 
   .auth-heading h1 {
-    font-size: 25px;
+    font-size: 22px;
   }
 
   .feature-grid {
@@ -9180,5 +9266,44 @@ const EXTRA_CHAT_STYLES = `
 .profile-avatar-change{border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:999px;padding:8px 12px;cursor:pointer}
 .profile-editor-fields{display:flex;flex-direction:column;gap:12px}.profile-editor-title{display:flex;align-items:center;justify-content:space-between;gap:12px}.profile-editor-title strong,.profile-editor-title span{display:block}.profile-editor-title span{color:var(--hexa-muted);font-size:12px;margin-top:3px}.settings-field{display:flex;flex-direction:column;gap:6px}.settings-field>span{font-size:12px;color:var(--hexa-muted);font-weight:700}.profile-save-status{margin:0}.call-mode-actions{flex-wrap:wrap}.call-mode-actions button{min-width:150px}
 @media(max-width:760px){.profile-editor-card{grid-template-columns:1fr}.profile-editor-avatar-wrap{align-items:flex-start}.profile-editor-title{align-items:flex-start;flex-direction:column}}
+
+/* HEXA polished chat list + notifications */
+.chat-list-panel{background:var(--hexa-sidebar);}
+.chat-list-header{padding:18px 16px 12px;border-bottom:1px solid var(--hexa-border);}
+.chat-list-title-row h2{font-size:20px;letter-spacing:-.02em;color:var(--hexa-text);}
+.chat-list-header-subtitle{font-size:9px!important;text-transform:uppercase;letter-spacing:.08em;color:var(--hexa-muted)!important;}
+.chat-list-head-actions{display:flex;gap:6px;}
+.new-chat-button,.chat-list-menu-button{width:34px;height:34px;border-radius:10px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);display:grid;place-items:center;}
+.chat-search{margin:10px 12px 6px;height:38px;border:1px solid var(--hexa-border);border-radius:12px;background:var(--hexa-panel-2);}
+.chat-search input{font-size:11px;}
+.chat-filter-row{padding:6px 12px 7px;gap:5px;}
+.chat-filter-row button{padding:6px 9px;font-size:10px;background:transparent;}
+.chat-filter-row button.selected{background:var(--hexa-accent);}
+.chat-list-summary{padding:3px 14px 7px;font-size:8px;color:var(--hexa-muted);}
+.conversation{position:relative;display:flex;align-items:center;width:100%;padding:10px 13px;border:0;border-bottom:1px solid rgba(255,255,255,.035);background:transparent;color:var(--hexa-text);text-align:left;gap:11px;cursor:pointer;}
+.conversation:hover{background:rgba(255,255,255,.035);}
+.conversation.active{background:rgba(124,92,255,.13);}
+.conversation.has-unread{background:rgba(124,92,255,.045);}
+.conversation.has-unread.active{background:rgba(124,92,255,.16);}
+.conversation-avatar-wrap{position:relative;flex:0 0 auto;}
+.conversation .hexa-avatar{width:48px!important;height:48px!important;border:1px solid var(--hexa-border-strong);}
+.conversation-content{min-width:0;flex:1;}
+.conversation-topline,.conversation-bottomline{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;}
+.conversation-topline strong{font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.conversation-topline time{font-size:9px;color:var(--hexa-muted);flex:0 0 auto;}
+.conversation-topline time.unread-time{color:var(--hexa-accent-2);font-weight:800;}
+.conversation-bottomline{margin-top:4px;}
+.conversation-bottomline>span{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--hexa-muted);}
+.conversation-bottomline>span.preview-unread{color:var(--hexa-text);font-weight:650;}
+.conversation-indicators{display:flex;align-items:center;gap:4px;flex:0 0 auto;}
+.conversation-indicators small{font-size:9px;color:var(--hexa-muted);}
+.unread-badge{min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--hexa-accent);color:#fff;display:grid;place-items:center;font-size:9px;}
+.conversation-type-badge{position:absolute;right:-2px;bottom:-2px;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;background:var(--hexa-panel-3);border:2px solid var(--hexa-sidebar);font-size:9px;}
+.notification-item-button{width:100%;border:0;background:transparent;color:var(--hexa-text);text-align:left;cursor:pointer;}
+.notification-item-button:hover{background:rgba(255,255,255,.04);}
+.notifications-panel{padding:8px;}
+.notifications-header{padding:10px 8px;}
+.notifications-header button{font-size:10px;cursor:pointer;}
+@media (max-width:900px){.chat-list-panel{width:100%;}.conversation{padding:10px 12px;}}
 
 `;
