@@ -1,44 +1,220 @@
-import Stripe from "stripe";
-import { createClient } from "@supabase/supabase-js";
+// api/hexa-subscription-webhook.js
 
-const stripe = new Stripe(
-  process.env.STRIPE_SECRET_KEY
-);
+import crypto from "node:crypto";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+function timingSafeEqualHex(a, b) {
+  try {
+    const aa = Buffer.from(String(a), "utf8");
+    const bb = Buffer.from(String(b), "utf8");
+
+    if (aa.length !== bb.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(aa, bb);
+  } catch {
+    return false;
   }
-);
+}
 
-function planFromPriceId(priceId) {
-  if (
-    priceId ===
-    process.env.STRIPE_PRICE_PLUS
-  ) {
-    return "plus";
-  }
-
-  if (
-    priceId ===
-    process.env.STRIPE_PRICE_PRO
-  ) {
-    return "pro";
+function verifyStripeSignature(payload, signature, secret) {
+  if (!payload || !signature || !secret) {
+    return false;
   }
 
-  if (
-    priceId ===
-    process.env.STRIPE_PRICE_ULTRA
-  ) {
-    return "ultra";
+  const pieces = String(signature)
+    .split(",")
+    .map((item) => item.trim());
+
+  let timestamp = null;
+  const signatures = [];
+
+  for (const piece of pieces) {
+    const separator = piece.indexOf("=");
+
+    if (separator === -1) {
+      continue;
+    }
+
+    const key = piece.slice(0, separator);
+    const value = piece.slice(separator + 1);
+
+    if (key === "t") {
+      timestamp = value;
+    }
+
+    if (key === "v1") {
+      signatures.push(value);
+    }
   }
 
-  return null;
+  if (!timestamp || !signatures.length) {
+    return false;
+  }
+
+  const timestampNumber = Number(timestamp);
+
+  if (!Number.isFinite(timestampNumber)) {
+    return false;
+  }
+
+  /*
+    Reject signatures that are more than five minutes old.
+  */
+  const age = Math.abs(
+    Math.floor(Date.now() / 1000) - timestampNumber
+  );
+
+  if (age > 300) {
+    return false;
+  }
+
+  const signedPayload = `${timestamp}.${payload}`;
+
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(signedPayload, "utf8")
+    .digest("hex");
+
+  return signatures.some((signatureValue) =>
+    timingSafeEqualHex(expected, signatureValue)
+  );
+}
+
+async function readRawBody(req) {
+  const chunks = [];
+
+  for await (const chunk of req) {
+    chunks.push(
+      Buffer.isBuffer(chunk)
+        ? chunk
+        : Buffer.from(chunk)
+    );
+  }
+
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function supabaseRequest(path, options = {}) {
+  const base = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!base || !key) {
+    throw new Error(
+      "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing on Vercel."
+    );
+  }
+
+  const response = await fetch(
+    `${base}/rest/v1/${path}`,
+    {
+      ...options,
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        Prefer: "return=representation",
+        ...(options.headers || {}),
+      },
+    }
+  );
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(
+      text ||
+        `Supabase request failed with status ${response.status}`
+    );
+  }
+
+  return text ? JSON.parse(text) : null;
+}
+
+function toISOStringFromUnix(seconds) {
+  if (!seconds) {
+    return null;
+  }
+
+  return new Date(
+    Number(seconds) * 1000
+  ).toISOString();
+}
+
+function normalizeSubscriptionStatus(status) {
+  const allowed = [
+    "incomplete",
+    "trialing",
+    "active",
+    "past_due",
+    "canceled",
+    "unpaid",
+  ];
+
+  return allowed.includes(status)
+    ? status
+    : "incomplete";
+}
+
+function getSubscriptionMetadata(object) {
+  return object?.metadata || {};
+}
+
+async function upsertHexaSubscription({
+  userId,
+  planId,
+  status,
+  customerId,
+  subscriptionId,
+  currentPeriodStart,
+  currentPeriodEnd,
+  cancelAtPeriodEnd,
+}) {
+  const planNames = {
+    plus: "HEXA Plus",
+    pro: "HEXA Pro",
+    ultra: "HEXA Ultra",
+  };
+
+  if (!userId || !planNames[planId]) {
+    return;
+  }
+
+  await supabaseRequest(
+    "hexa_subscriptions?on_conflict=user_id",
+    {
+      method: "POST",
+      headers: {
+        Prefer:
+          "resolution=merge-duplicates,return=representation",
+      },
+      body: JSON.stringify([
+        {
+          user_id: userId,
+          plan_id: planId,
+          plan_name: planNames[planId],
+          status: normalizeSubscriptionStatus(status),
+          provider: "stripe",
+          provider_customer_id: customerId || null,
+          provider_subscription_id:
+            subscriptionId || null,
+          current_period_start:
+            currentPeriodStart || null,
+          current_period_end:
+            currentPeriodEnd || null,
+          cancel_at_period_end:
+            Boolean(cancelAtPeriodEnd),
+          updated_at: new Date().toISOString(),
+        },
+      ]),
+    }
+  );
 }
 
 export default async function handler(req, res) {
@@ -48,193 +224,245 @@ export default async function handler(req, res) {
     });
   }
 
-  const signature =
-    req.headers["stripe-signature"];
+  const webhookSecret =
+    process.env.STRIPE_WEBHOOK_SECRET;
 
-  if (!signature) {
-    return res.status(400).json({
-      error: "Missing Stripe signature.",
+  if (!webhookSecret) {
+    console.error(
+      "STRIPE_WEBHOOK_SECRET is missing."
+    );
+
+    return res.status(500).json({
+      error:
+        "STRIPE_WEBHOOK_SECRET is not configured on Vercel.",
     });
   }
 
-  let event;
-
   try {
-    event =
-      stripe.webhooks.constructEvent(
-        req.body,
-        signature,
-        process.env.STRIPE_WEBHOOK_SECRET
-      );
-  } catch (error) {
-    console.error(
-      "Stripe webhook verification failed:",
-      error
+    /*
+      Stripe signature verification MUST use the raw request body.
+    */
+    const rawBody = await readRawBody(req);
+
+    const signature =
+      req.headers["stripe-signature"];
+
+    const valid = verifyStripeSignature(
+      rawBody,
+      signature,
+      webhookSecret
     );
 
-    return res.status(400).send(
-      `Webhook Error: ${error.message}`
-    );
-  }
-
-  try {
-    switch (event.type) {
-      case "checkout.session.completed": {
-        const session = event.data.object;
-
-        const subscriptionId =
-          typeof session.subscription ===
-          "string"
-            ? session.subscription
-            : session.subscription?.id;
-
-        const userId =
-          session.metadata?.hexaUserId;
-
-        const plan =
-          session.metadata?.hexaPlan ||
-          "plus";
-
-        if (
-          userId &&
-          subscriptionId
-        ) {
-          const subscription =
-            await stripe.subscriptions.retrieve(
-              subscriptionId
-            );
-
-          const item =
-            subscription.items?.data?.[0];
-
-          const priceId =
-            item?.price?.id;
-
-          const resolvedPlan =
-            planFromPriceId(priceId) ||
-            plan;
-
-          const { error } =
-            await supabase
-              .from("subscriptions")
-              .upsert(
-                {
-                  user_id: userId,
-                  provider: "stripe",
-                  provider_subscription_id:
-                    subscription.id,
-                  plan: resolvedPlan,
-                  status:
-                    subscription.status,
-                  current_period_start:
-                    subscription.current_period_start
-                      ? new Date(
-                          subscription
-                            .current_period_start *
-                            1000
-                        ).toISOString()
-                      : null,
-                  current_period_end:
-                    subscription.current_period_end
-                      ? new Date(
-                          subscription
-                            .current_period_end *
-                            1000
-                        ).toISOString()
-                      : null,
-                },
-                {
-                  onConflict:
-                    "provider_subscription_id",
-                }
-              );
-
-          if (error) {
-            throw error;
-          }
-        }
-
-        break;
-      }
-
-      case "customer.subscription.updated":
-      case "customer.subscription.deleted": {
-        const subscription =
-          event.data.object;
-
-        const status =
-          event.type ===
-          "customer.subscription.deleted"
-            ? "canceled"
-            : subscription.status;
-
-        const item =
-          subscription.items?.data?.[0];
-
-        const priceId =
-          item?.price?.id;
-
-        const plan =
-          planFromPriceId(priceId);
-
-        const patch = {
-          status,
-        };
-
-        if (plan) {
-          patch.plan = plan;
-        }
-
-        if (
-          subscription.current_period_start
-        ) {
-          patch.current_period_start =
-            new Date(
-              subscription.current_period_start *
-                1000
-            ).toISOString();
-        }
-
-        if (
-          subscription.current_period_end
-        ) {
-          patch.current_period_end =
-            new Date(
-              subscription.current_period_end *
-                1000
-            ).toISOString();
-        }
-
-        const { error } =
-          await supabase
-            .from("subscriptions")
-            .update(patch)
-            .eq(
-              "provider",
-              "stripe"
-            )
-            .eq(
-              "provider_subscription_id",
-              subscription.id
-            );
-
-        if (error) {
-          throw error;
-        }
-
-        break;
-      }
-
-      default:
-        break;
+    if (!valid) {
+      return res.status(400).json({
+        error: "Invalid Stripe signature.",
+      });
     }
 
+    const event = JSON.parse(rawBody);
+
+    const object =
+      event?.data?.object || {};
+
+    const now = new Date().toISOString();
+
+    /*
+      --------------------------------------------------------
+      CHECKOUT COMPLETED
+      --------------------------------------------------------
+    */
+    if (
+      event.type ===
+      "checkout.session.completed"
+    ) {
+      const metadata =
+        getSubscriptionMetadata(object);
+
+      const userId =
+        metadata.user_id ||
+        object.client_reference_id ||
+        null;
+
+      const planId =
+        metadata.plan_id || null;
+
+      const customerId =
+        object.customer || null;
+
+      const subscriptionId =
+        object.subscription || null;
+
+      if (
+        userId &&
+        planId &&
+        ["plus", "pro", "ultra"].includes(planId)
+      ) {
+        await upsertHexaSubscription({
+          userId,
+          planId,
+          status: "active",
+          customerId,
+          subscriptionId,
+          currentPeriodStart: null,
+          currentPeriodEnd: null,
+          cancelAtPeriodEnd: false,
+        });
+      }
+    }
+
+    /*
+      --------------------------------------------------------
+      SUBSCRIPTION CREATED / UPDATED
+      --------------------------------------------------------
+    */
+    if (
+      event.type ===
+        "customer.subscription.created" ||
+      event.type ===
+        "customer.subscription.updated"
+    ) {
+      const metadata =
+        getSubscriptionMetadata(object);
+
+      const userId =
+        metadata.user_id || null;
+
+      const planId =
+        metadata.plan_id || null;
+
+      /*
+        The subscription metadata should now contain
+        the user and plan because Checkout writes
+        subscription_data.metadata.
+      */
+      if (
+        userId &&
+        planId &&
+        ["plus", "pro", "ultra"].includes(planId)
+      ) {
+        await upsertHexaSubscription({
+          userId,
+          planId,
+          status: object.status,
+          customerId: object.customer,
+          subscriptionId: object.id,
+          currentPeriodStart:
+            toISOStringFromUnix(
+              object.current_period_start
+            ),
+          currentPeriodEnd:
+            toISOStringFromUnix(
+              object.current_period_end
+            ),
+          cancelAtPeriodEnd:
+            object.cancel_at_period_end,
+        });
+      } else {
+        /*
+          Compatibility fallback:
+          find the HEXA subscription by Stripe subscription ID.
+        */
+        const existing =
+          object.id
+            ? await supabaseRequest(
+                `hexa_subscriptions?provider_subscription_id=eq.${encodeURIComponent(
+                  object.id
+                )}&select=id,user_id`,
+                {
+                  method: "GET",
+                }
+              )
+            : [];
+
+        if (existing?.length) {
+          await supabaseRequest(
+            `hexa_subscriptions?id=eq.${encodeURIComponent(
+              existing[0].id
+            )}`,
+            {
+              method: "PATCH",
+              body: JSON.stringify({
+                status:
+                  normalizeSubscriptionStatus(
+                    object.status
+                  ),
+                provider_customer_id:
+                  object.customer || null,
+                current_period_start:
+                  toISOStringFromUnix(
+                    object.current_period_start
+                  ),
+                current_period_end:
+                  toISOStringFromUnix(
+                    object.current_period_end
+                  ),
+                cancel_at_period_end:
+                  Boolean(
+                    object.cancel_at_period_end
+                  ),
+                updated_at: now,
+              }),
+            }
+          );
+        }
+      }
+    }
+
+    /*
+      --------------------------------------------------------
+      SUBSCRIPTION DELETED / CANCELLED
+      --------------------------------------------------------
+    */
+    if (
+      event.type ===
+      "customer.subscription.deleted"
+    ) {
+      const subscriptionId = object.id;
+
+      if (subscriptionId) {
+        const rows =
+          await supabaseRequest(
+            `hexa_subscriptions?provider_subscription_id=eq.${encodeURIComponent(
+              subscriptionId
+            )}&select=id`,
+            {
+              method: "GET",
+            }
+          );
+
+        if (rows?.length) {
+          await supabaseRequest(
+            `hexa_subscriptions?id=eq.${encodeURIComponent(
+              rows[0].id
+            )}`,
+            {
+              method: "PATCH",
+              body: JSON.stringify({
+                status: "canceled",
+                cancel_at_period_end: false,
+                current_period_end:
+                  toISOStringFromUnix(
+                    object.current_period_end
+                  ),
+                updated_at: now,
+              }),
+            }
+          );
+        }
+      }
+    }
+
+    /*
+      Stripe only needs a successful 2xx response.
+    */
     return res.status(200).json({
       received: true,
+      event_id: event.id || null,
+      event_type: event.type || null,
     });
   } catch (error) {
     console.error(
-      "HEXA subscription webhook processing error:",
+      "HEXA Stripe webhook error:",
       error
     );
 
