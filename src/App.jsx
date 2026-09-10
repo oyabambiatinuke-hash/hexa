@@ -9674,4 +9674,540 @@ const EXTRA_CHAT_STYLES = `
 .notifications-header button{font-size:10px;cursor:pointer;}
 @media (max-width:900px){.chat-list-panel{width:100%;}.conversation{padding:10px 12px;}}
 
+/* ============================================================
+   COMPACT HEXA AUTH SCREEN
+   Fits small phones, tablets and laptops without scrolling
+   ============================================================ */
+
+.hexa-auth-page {
+  min-height: 100dvh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.hexa-auth-card {
+  width: min(100%, 390px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+
+  padding: 20px 22px 16px;
+  border-radius: 18px;
+  box-sizing: border-box;
+
+  /* Keeps the card compact */
+  scrollbar-width: thin;
+}
+
+/* ============================================================
+   BRAND
+   ============================================================ */
+
+.hexa-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.hexa-logo {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  border-radius: 11px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.hexa-brand strong {
+  display: block;
+  font-size: 19px;
+  line-height: 1.05;
+}
+
+.hexa-brand span {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  opacity: 0.65;
+}
+
+/* ============================================================
+   HEADING
+   ============================================================ */
+
+.auth-heading {
+  margin-bottom: 14px;
+}
+
+.auth-heading h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.15;
+  letter-spacing: -0.4px;
+}
+
+.auth-heading p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: 0.7;
+}
+
+/* ============================================================
+   ALERTS
+   ============================================================ */
+
+.auth-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+
+  padding: 8px 10px;
+  margin-bottom: 10px;
+
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.auth-alert span {
+  flex-shrink: 0;
+  font-weight: 800;
+}
+
+/* ============================================================
+   FORM
+   ============================================================ */
+
+.auth-field {
+  display: block;
+  margin-bottom: 9px;
+}
+
+.auth-field > span {
+  display: block;
+  margin-bottom: 4px;
+
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.auth-field input {
+  width: 100%;
+  height: 39px;
+
+  padding: 0 11px;
+  box-sizing: border-box;
+
+  border-radius: 9px;
+  font-size: 12px;
+
+  outline: none;
+}
+
+/* ============================================================
+   PASSWORD STRENGTH
+   ============================================================ */
+
+.password-strength {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 8px;
+  margin-top: -3px;
+  margin-bottom: 8px;
+
+  font-size: 9px;
+}
+
+.strength-bars {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+}
+
+.strength-bars i {
+  height: 3px;
+  flex: 1;
+  border-radius: 10px;
+  opacity: 0.18;
+}
+
+.strength-bars i.filled {
+  opacity: 1;
+}
+
+/* ============================================================
+   FORGOT PASSWORD
+   ============================================================ */
+
+.auth-forgot-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -2px;
+  margin-bottom: 9px;
+}
+
+.text-button {
+  border: 0;
+  background: none;
+  padding: 2px;
+
+  font-size: 10px;
+  cursor: pointer;
+}
+
+/* ============================================================
+   PRIMARY BUTTON
+   ============================================================ */
+
+.primary-auth-button {
+  width: 100%;
+  height: 40px;
+
+  border: 0;
+  border-radius: 9px;
+
+  font-size: 12px;
+  font-weight: 750;
+
+  cursor: pointer;
+}
+
+.primary-auth-button:disabled,
+.google-auth-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ============================================================
+   DIVIDER
+   ============================================================ */
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+
+  margin: 11px 0;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  opacity: 0.14;
+  background: currentColor;
+}
+
+.auth-divider span {
+  font-size: 9px;
+  opacity: 0.55;
+}
+
+/* ============================================================
+   GOOGLE
+   ============================================================ */
+
+.google-auth-button {
+  width: 100%;
+  height: 39px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+
+  border-radius: 9px;
+
+  font-size: 11px;
+  font-weight: 650;
+
+  cursor: pointer;
+}
+
+.google-icon {
+  width: 18px;
+  height: 18px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  font-size: 14px;
+  font-weight: 800;
+}
+
+/* ============================================================
+   SIGN IN / SIGN UP SWITCH
+   ============================================================ */
+
+.auth-switch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+
+  gap: 4px;
+
+  margin-top: 12px;
+
+  font-size: 10px;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.auth-switch button {
+  border: 0;
+  background: none;
+
+  padding: 0;
+
+  font-size: 10px;
+  font-weight: 750;
+
+  cursor: pointer;
+}
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+
+.auth-footer {
+  margin: 10px 0 0;
+
+  font-size: 8px;
+  line-height: 1.3;
+
+  text-align: center;
+  opacity: 0.45;
+}
+
+/* ============================================================
+   GLOW — KEEP IT SUBTLE
+   ============================================================ */
+
+.hexa-auth-glow {
+  position: fixed;
+  width: 180px;
+  height: 180px;
+
+  border-radius: 50%;
+
+  pointer-events: none;
+  opacity: 0.12;
+
+  filter: blur(70px);
+}
+
+.glow-one {
+  top: -80px;
+  left: -60px;
+}
+
+.glow-two {
+  right: -70px;
+  bottom: -80px;
+}
+
+/* ============================================================
+   SMALL PHONES
+   ============================================================ */
+
+@media (max-width: 420px) {
+  .hexa-auth-page {
+    padding: 8px;
+    align-items: center;
+  }
+
+  .hexa-auth-card {
+    width: 100%;
+    max-height: calc(100dvh - 16px);
+    padding: 16px 17px 12px;
+    border-radius: 15px;
+  }
+
+  .hexa-brand {
+    margin-bottom: 10px;
+  }
+
+  .hexa-logo {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    font-size: 18px;
+    border-radius: 9px;
+  }
+
+  .hexa-brand strong {
+    font-size: 17px;
+  }
+
+  .hexa-brand span {
+    font-size: 9px;
+  }
+
+  .auth-heading {
+    margin-bottom: 10px;
+  }
+
+  .auth-heading h1 {
+    font-size: 19px;
+  }
+
+  .auth-heading p {
+    font-size: 10px;
+  }
+
+  .auth-field {
+    margin-bottom: 7px;
+  }
+
+  .auth-field > span {
+    font-size: 10px;
+    margin-bottom: 3px;
+  }
+
+  .auth-field input {
+    height: 35px;
+    font-size: 11px;
+    border-radius: 8px;
+  }
+
+  .primary-auth-button,
+  .google-auth-button {
+    height: 36px;
+  }
+
+  .auth-divider {
+    margin: 8px 0;
+  }
+
+  .auth-switch {
+    margin-top: 9px;
+  }
+
+  .auth-footer {
+    margin-top: 7px;
+  }
+}
+
+/* ============================================================
+   VERY SMALL PHONES
+   ============================================================ */
+
+@media (max-height: 650px) {
+  .hexa-auth-card {
+    padding-top: 13px;
+    padding-bottom: 10px;
+  }
+
+  .hexa-brand {
+    margin-bottom: 7px;
+  }
+
+  .auth-heading {
+    margin-bottom: 8px;
+  }
+
+  .auth-heading h1 {
+    font-size: 18px;
+  }
+
+  .auth-heading p {
+    display: none;
+  }
+
+  .auth-field {
+    margin-bottom: 6px;
+  }
+
+  .auth-field input {
+    height: 33px;
+  }
+
+  .primary-auth-button,
+  .google-auth-button {
+    height: 34px;
+  }
+
+  .auth-divider {
+    margin: 7px 0;
+  }
+
+  .auth-switch {
+    margin-top: 7px;
+  }
+
+  .auth-footer {
+    display: none;
+  }
+}
+
+/* ============================================================
+   LANDSCAPE PHONES
+   ============================================================ */
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .hexa-auth-page {
+    align-items: flex-start;
+    padding: 6px;
+  }
+
+  .hexa-auth-card {
+    max-height: calc(100dvh - 12px);
+    padding: 10px 16px;
+  }
+
+  .hexa-brand {
+    margin-bottom: 5px;
+  }
+
+  .auth-heading {
+    margin-bottom: 5px;
+  }
+
+  .auth-heading p {
+    display: none;
+  }
+
+  .auth-field {
+    margin-bottom: 5px;
+  }
+
+  .auth-field input {
+    height: 31px;
+  }
+
+  .primary-auth-button,
+  .google-auth-button {
+    height: 32px;
+  }
+
+  .auth-divider {
+    margin: 5px 0;
+  }
+
+  .auth-switch {
+    margin-top: 5px;
+  }
+
+  .auth-footer {
+    display: none;
+  }
+}
+
 `;
