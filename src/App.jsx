@@ -1314,7 +1314,7 @@ function Sidebar({
         <div className="sidebar-bottom">
           <div className="sidebar-user">
             <Avatar
-              src={profile?.avatar_url}
+              src={profile?.avatar_url ? `${profile.avatar_url}${profile.avatar_url.includes("?") ? "&" : "?"}v=${encodeURIComponent(profile?.updated_at || "")}` : null}
               name={
                 profile?.full_name ||
                 profile?.username ||
@@ -1453,27 +1453,30 @@ function NexusHome({
 
 async function askKora({ messages, profile }) {
   const endpoint = import.meta.env.VITE_KORA_API_URL || "/api/kora";
+  if (!endpoint) throw new Error("Kora API endpoint is not configured.");
   const response = await fetch(endpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    credentials: "same-origin",
     body: JSON.stringify({
       profile: {
         id: profile?.id || null,
         name: profile?.display_name || profile?.full_name || profile?.username || "HEXA user",
         username: profile?.username || null,
       },
-      messages: messages.map((message) => ({
-        role: message.role === "kora" ? "assistant" : "user",
-        content: message.text,
+      messages: messages.filter(Boolean).slice(-32).map((message) => ({
+        role: message.role === "kora" || message.role === "assistant" ? "assistant" : "user",
+        content: String(message.text || message.content || ""),
       })),
     }),
   });
-
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload?.error || `Kora request failed (${response.status})`);
+    throw new Error(payload?.error || payload?.message || `Kora request failed (${response.status})`);
   }
-  return payload?.text || payload?.message || "I’m here. What would you like to do?";
+  const answer = payload?.text || payload?.message || payload?.output_text || payload?.output;
+  if (!answer) throw new Error("Kora connected, but the server returned no answer.");
+  return String(answer);
 }
 
 function KoraPage({ profile }) {
@@ -3295,12 +3298,29 @@ function ChatPage({
   const filteredConversations = useMemo(() => {
     const term = chatSearch.trim().toLowerCase();
     let list = conversations.filter(c => !archived.includes(String(c.id)));
-    if (chatFilter === "unread") list=list.filter(c=>Number(c.unread||0)>0);
-    if (chatFilter === "groups") list=list.filter(c=>c.kind==="group" || c.type==="group");
-    if (chatFilter === "favorites") list=list.filter(c=>starred.includes(String(c.id)));
+    if (chatFilter === "unread") list = list.filter(c => Number(c.unread || 0) > 0);
+    if (chatFilter === "groups") list = list.filter(c => c.kind === "group" || c.type === "group" || c.type === "system_group");
+    if (chatFilter === "favorites") list = list.filter(c => starred.includes(String(c.id)));
+
+    list = [...list].sort((a, b) => {
+      const ap = pinned.includes(String(a.id)) ? 1 : 0;
+      const bp = pinned.includes(String(b.id)) ? 1 : 0;
+      if (ap !== bp) return bp - ap;
+      return new Date(b.lastMessageAt || b.latestMessageAt || 0) - new Date(a.lastMessageAt || a.latestMessageAt || 0);
+    });
+
     if (!term) return list;
-    return list.filter(c=>String(c.name||"").toLowerCase().includes(term)||String(c.lastMessage||"").toLowerCase().includes(term)||String(c.username||"").toLowerCase().includes(term));
-  },[conversations,chatSearch,archived,chatFilter,starred]);
+    return list.filter(c => {
+      const haystack = [
+        c.name,
+        c.username,
+        c.lastMessage,
+        c.latestMessage,
+        c.description
+      ].map(value => String(value || "").toLowerCase()).join(" ");
+      return haystack.includes(term);
+    });
+  }, [conversations, chatSearch, archived, chatFilter, starred, pinned]);
 
   /* ============================================================
      MESSAGE RENDERER
@@ -3554,13 +3574,12 @@ function ChatPage({
       <aside className="chat-list-panel">
 
         <div className="chat-list-header">
-
-          <div>
-            <h2>Chats</h2>
-
-            <span className="chat-list-header-subtitle">
-              Stay connected
-            </span>
+          <div className="chat-list-title-wrap">
+            <div className="chat-list-title-row">
+              <h2>Chats</h2>
+              <span className="chat-count">{conversations.length}</span>
+            </div>
+            <span className="chat-list-header-subtitle">Your conversations</span>
           </div>
 
           <div className="chat-list-head-actions">
@@ -3568,11 +3587,7 @@ function ChatPage({
               className="new-chat-button"
               type="button"
               title="New chat"
-              onClick={() =>
-                setNewChatOpen(
-                  true
-                )
-              }
+              onClick={() => setNewChatOpen(true)}
             >
               ＋
             </button>
@@ -3585,184 +3600,119 @@ function ChatPage({
               ⋮
             </button>
           </div>
-
         </div>
 
         <div className="chat-search">
-
-          <span>
-            ⌕
-          </span>
-
+          <span>⌕</span>
           <input
-            value={
-              chatSearch
-            }
-            onChange={event =>
-              setChatSearch(
-                event.target
-                  .value
-              )
-            }
-            placeholder="Search chats"
+            value={chatSearch}
+            onChange={event => setChatSearch(event.target.value)}
+            placeholder="Search chats, people or messages"
           />
-
+          {chatSearch && (
+            <button type="button" className="chat-search-clear" onClick={() => setChatSearch("")} aria-label="Clear search">×</button>
+          )}
         </div>
 
         <div className="chat-filter-row">
           {[
-            ["all", "All"],
-            ["unread", "Unread"],
-            ["favorites", "Favorites"],
-            ["groups", "Groups"]
-          ].map(([id, label]) => (
-            <button key={id} type="button" className={chatFilter === id ? "selected" : ""} onClick={() => setChatFilter(id)}>{label}</button>
+            ["all", "All", conversations.length],
+            ["unread", "Unread", conversations.filter(c => Number(c.unread || 0) > 0).length],
+            ["groups", "Groups", conversations.filter(c => c.kind === "group" || c.type === "group" || c.type === "system_group").length],
+            ["favorites", "Favorites", starred.length]
+          ].map(([id, label, count]) => (
+            <button key={id} type="button" className={chatFilter === id ? "selected" : ""} onClick={() => setChatFilter(id)}>
+              <span>{label}</span>{Number(count) > 0 && <em>{count > 99 ? "99+" : count}</em>}
+            </button>
           ))}
-          <button type="button" className={messageRequests.length ? "request-pill has-requests" : "request-pill"} onClick={() => { setMessageRequestsOpen(true); loadMessageRequests(); }}>
-            Requests{messageRequests.length ? ` ${messageRequests.length}` : ""}
+          <button
+            type="button"
+            className={messageRequests.length ? "request-pill has-requests" : "request-pill"}
+            onClick={() => { setMessageRequestsOpen(true); loadMessageRequests(); }}
+          >
+            <span>Requests</span>{messageRequests.length > 0 && <em>{messageRequests.length > 99 ? "99+" : messageRequests.length}</em>}
           </button>
         </div>
 
+        <div className="chat-list-summary">
+          <span>{filteredConversations.length} conversation{filteredConversations.length === 1 ? "" : "s"}</span>
+          {pinned.length > 0 && <span>📌 {pinned.length} pinned</span>}
+        </div>
+
         <div className="conversation-list">
-
-          {loadingConversations &&
-            !conversations.length && (
-              <div className="chat-loading">
-                Loading chats…
-              </div>
-            )}
-
-          {filteredConversations.map(
-            conversation => (
-              <button
-                key={
-                  conversation.id
-                }
-                type="button"
-                className={
-                  `conversation ${
-                    selected?.id ===
-                    conversation.id
-                      ? "active"
-                      : ""
-                  }`
-                }
-                onClick={() => {
-                  setSelected(
-                    conversation
-                  );
-
-                  setMobileConversationOpen(
-                    true
-                  );
-
-                  setConversations(
-                    current =>
-                      current.map(
-                        item =>
-                          String(
-                            item.id
-                          ) ===
-                          String(
-                            conversation.id
-                          )
-                            ? {
-                                ...item,
-                                unread: 0
-                              }
-                            : item
-                      )
-                  );
-                }}
-              >
-
-                <Avatar
-                  src={
-                    conversation.avatar_url
-                  }
-                  name={
-                    conversation.name
-                  }
-                  size={48}
-                  online={
-                    conversation.online
-                  }
-                />
-
-                <div className="conversation-content">
-
-                  <div className="conversation-topline">
-
-                    <strong>
-                      {
-                        conversation.name
-                      }
-                    </strong>
-
-                    {conversation.lastMessageAt && (
-                      <time>
-                        {formatChatTime(
-                          conversation.lastMessageAt
-                        )}
-                      </time>
-                    )}
-
-                  </div>
-
-                  <div className="conversation-bottomline">
-
-                    <span>
-                      {
-                        conversation.lastMessage ||
-                        conversation.description ||
-                        "No messages yet"
-                      }
-                    </span>
-
-                    {conversation.unread >
-                      0 && (
-                      <b className="unread-badge">
-                        {conversation.unread >
-                        99
-                          ? "99+"
-                          : conversation.unread}
-                      </b>
-                    )}
-
-                  </div>
-
-                </div>
-
-                {muted.includes(
-                  String(
-                    conversation.id
-                  )
-                ) && (
-                  <small>
-                    🔕
-                  </small>
-                )}
-
-              </button>
-            )
-          )}
-
-          {!filteredConversations.length && (
-            <div className="empty-chat-list">
-              <div>
-                💬
-              </div>
-
-              <strong>
-                No chats found
-              </strong>
-
-              <span>
-                Start a new HEXA conversation.
-              </span>
+          {loadingConversations && !conversations.length && (
+            <div className="chat-loading">
+              <div className="chat-skeleton" />
+              <div className="chat-skeleton" />
+              <div className="chat-skeleton" />
+              <span>Loading conversations…</span>
             </div>
           )}
 
+          {filteredConversations.map(conversation => {
+            const conversationId = String(conversation.id);
+            const isPinned = pinned.includes(conversationId);
+            const isFavorite = starred.includes(conversationId);
+            const isMuted = muted.includes(conversationId);
+            const isActive = selected?.id === conversation.id;
+            const unreadCount = Number(conversation.unread || 0);
+            const preview = conversation.lastMessage || conversation.latestMessage || conversation.description || "No messages yet";
+            const minePreview = String(conversation.latestMessageSender || "") === String(profile.id);
+            const displayPreview = minePreview && preview ? `You: ${preview}` : preview;
+
+            return (
+              <button
+                key={conversation.id}
+                type="button"
+                className={`conversation ${isActive ? "active" : ""} ${unreadCount ? "has-unread" : ""}`}
+                onClick={() => {
+                  setSelected(conversation);
+                  setMobileConversationOpen(true);
+                  setConversations(current => current.map(item => String(item.id) === String(conversation.id) ? { ...item, unread: 0 } : item));
+                }}
+              >
+                <div className="conversation-avatar-wrap">
+                  <Avatar
+                    src={conversation.avatar_url}
+                    name={conversation.name}
+                    size={50}
+                    online={conversation.online}
+                  />
+                  {conversation.kind === "group" && <span className="conversation-type-badge">👥</span>}
+                </div>
+
+                <div className="conversation-content">
+                  <div className="conversation-topline">
+                    <strong>{conversation.name}</strong>
+                    <time className={unreadCount ? "unread-time" : ""}>
+                      {formatChatTime(conversation.lastMessageAt || conversation.latestMessageAt)}
+                    </time>
+                  </div>
+
+                  <div className="conversation-bottomline">
+                    <span className={unreadCount ? "preview-unread" : ""}>{displayPreview}</span>
+                    <div className="conversation-indicators">
+                      {isPinned && <small title="Pinned">📌</small>}
+                      {isFavorite && <small title="Favorite">★</small>}
+                      {isMuted && <small title="Muted">🔕</small>}
+                      {unreadCount > 0 && <b className="unread-badge">{unreadCount > 99 ? "99+" : unreadCount}</b>}
+                    </div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+
+          {!filteredConversations.length && (
+            <div className="empty-chat-list">
+              <div className="empty-chat-icon">⌕</div>
+              <strong>{chatSearch ? "No matching chats" : "No conversations yet"}</strong>
+              <span>{chatSearch ? "Try another name, username or message." : "Start a new HEXA conversation."}</span>
+              {!chatSearch && (
+                <button type="button" className="empty-chat-action" onClick={() => setNewChatOpen(true)}>Start a chat</button>
+              )}
+            </div>
+          )}
         </div>
 
       </aside>
@@ -5222,6 +5172,10 @@ async function loadHexaConversations(profile) {
               latest?.content ||
               getChatPreviewText(latest),
 
+            lastMessage:
+              latest?.content ||
+              getChatPreviewText(latest),
+
             latestMessageAt:
               latest?.created_at ||
               conversation.updated_at ||
@@ -5261,6 +5215,10 @@ async function loadHexaConversations(profile) {
           is_admin: Boolean(membership?.is_admin),
 
           latestMessage:
+            latest?.content ||
+            getChatPreviewText(latest),
+
+          lastMessage:
             latest?.content ||
             getChatPreviewText(latest),
 
@@ -5908,6 +5866,94 @@ function UniversalSearch({ search, profile, onMessage }) {
    HEXA SETTINGS
    ============================================================ */
 
+function ProfileEditor({ profile }) {
+  const [name, setName] = useState(profile?.full_name || profile?.display_name || "");
+  const [username, setUsername] = useState(profile?.username || "");
+  const [about, setAbout] = useState(profile?.about || "");
+  const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || "");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const fileRef = useRef(null);
+
+  useEffect(() => {
+    setName(profile?.full_name || profile?.display_name || "");
+    setUsername(profile?.username || "");
+    setAbout(profile?.about || "");
+    setAvatarUrl(profile?.avatar_url || "");
+  }, [profile?.id, profile?.full_name, profile?.display_name, profile?.username, profile?.about, profile?.avatar_url]);
+
+  async function saveProfile(event) {
+    event?.preventDefault();
+    if (!profile?.id || busy) return;
+    const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 30);
+    if (cleanUsername.length < 3) {
+      setStatus("Username must contain at least 3 letters, numbers or underscores.");
+      return;
+    }
+    setBusy(true); setStatus("");
+    try {
+      const { data: duplicate, error: duplicateError } = await supabase
+        .from("profiles").select("id").eq("username", cleanUsername).neq("id", profile.id).maybeSingle();
+      if (duplicateError) throw duplicateError;
+      if (duplicate) throw new Error("That username is already taken.");
+      const { data, error } = await supabase.from("profiles").update({
+        full_name: name.trim() || cleanUsername,
+        display_name: name.trim() || cleanUsername,
+        username: cleanUsername,
+        about: about.trim() || null,
+        avatar_url: avatarUrl || null,
+        updated_at: new Date().toISOString(),
+      }).eq("id", profile.id).select("*").single();
+      if (error) throw error;
+      setStatus(`Saved as @${data.username}`);
+    } catch (error) {
+      setStatus(error?.message || "Unable to save your profile.");
+    } finally { setBusy(false); }
+  }
+
+  async function changeAvatar(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !profile?.id) return;
+    if (!file.type.startsWith("image/")) { setStatus("Choose an image file."); return; }
+    if (file.size > 5 * 1024 * 1024) { setStatus("Profile pictures must be 5 MB or smaller."); return; }
+    setBusy(true); setStatus("Uploading profile picture…");
+    try {
+      const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+      const path = `${profile.id}/avatar-${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from("avatars").upload(path, file, { upsert: true, contentType: file.type, cacheControl: "3600" });
+      if (uploadError) throw uploadError;
+      const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+      const publicUrl = data?.publicUrl;
+      if (!publicUrl) throw new Error("The profile picture uploaded but no public URL was returned.");
+      const { error: updateError } = await supabase.from("profiles").update({ avatar_url: publicUrl, updated_at: new Date().toISOString() }).eq("id", profile.id);
+      if (updateError) throw updateError;
+      setAvatarUrl(`${publicUrl}?v=${Date.now()}`);
+      setStatus("Profile picture updated.");
+    } catch (error) {
+      setStatus(error?.message || "Unable to upload profile picture. Make sure the avatars storage bucket exists.");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <form className="settings-card profile-editor-card" onSubmit={saveProfile}>
+      <div className="profile-editor-avatar-wrap">
+        <Avatar src={avatarUrl} name={name || username || "HEXA User"} size={92} online />
+        <input ref={fileRef} hidden type="file" accept="image/*" onChange={changeAvatar} />
+        <button type="button" className="profile-avatar-change" onClick={() => fileRef.current?.click()} disabled={busy}>Change photo</button>
+      </div>
+      <div className="profile-editor-fields">
+        <div className="profile-editor-title"><div><strong>Edit profile</strong><span>Your picture stays inside the HEXA profile circle.</span></div><span className="settings-status">{profile?.email || "HEXA account"}</span></div>
+        <label className="settings-field"><span>Name</span><input className="modal-input" value={name} onChange={e => setName(e.target.value)} maxLength={80} placeholder="Your name" /></label>
+        <label className="settings-field"><span>Username</span><input className="modal-input" value={username} onChange={e => setUsername(e.target.value.toLowerCase())} maxLength={30} placeholder="username" /></label>
+        <label className="settings-field"><span>About</span><textarea className="modal-input modal-textarea" value={about} onChange={e => setAbout(e.target.value)} maxLength={140} placeholder="Tell people about yourself" /></label>
+        {status && <p className="muted profile-save-status">{status}</p>}
+        <button className="hero-primary" type="submit" disabled={busy}>{busy ? "Saving…" : "Save profile"}</button>
+      </div>
+    </form>
+  );
+}
+
 function SettingsPage({ profile, onSignOut }) {
   const [theme, setTheme] = useState(getSavedHexaTheme());
   const [showThemes, setShowThemes] = useState(true);
@@ -5938,6 +5984,8 @@ function SettingsPage({ profile, onSignOut }) {
       </div>
 
       {/* PROFILE */}
+
+      <ProfileEditor profile={profile} />
 
       <div className="settings-card hexa-profile-settings">
         <Avatar
@@ -6312,10 +6360,6 @@ function AuthenticatedHEXA({ session, onSignOut }) {
     case "channels":page=<ChannelsPage profile={profile}/>;break;
     case "status":page=<StatusPage profile={profile}/>;break;
     case "calls":page=<CallsPage profile={profile}/>;break;
-    case "voice-chat":page=<LiveMediaModePage profile={profile} mode="voice-chat"/>;break;
-    case "voice-call":page=<LiveMediaModePage profile={profile} mode="voice-call"/>;break;
-    case "video-chat":page=<LiveMediaModePage profile={profile} mode="video-chat"/>;break;
-    case "video-call":page=<LiveMediaModePage profile={profile} mode="video-call"/>;break;
     case "kora":page=<KoraPage profile={profile}/>;break;
     case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut}/>;break;
     default:page=<ChatPage profile={profile} onStartCall={(c,type,mode)=>setCallTarget({conversation:c,type,mode: mode === "chat" ? (type === "video" ? "video-chat" : "voice-chat") : (type === "video" ? "video-call" : "voice-call")})}/>;
@@ -7493,6 +7537,46 @@ button:disabled {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* ============================================================
+   CHAT LIST POLISH
+   ============================================================ */
+.chat-list-title-wrap { min-width: 0; }
+.chat-list-title-row { display: flex; align-items: center; gap: 7px; }
+.chat-list-title-row h2 { margin: 0; }
+.chat-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; color: #bbc4d2; background: rgba(255,255,255,.07); }
+.chat-list-header-subtitle { display: block; margin-top: 4px; }
+.chat-filter-row { padding: 0 13px 8px; display: flex; gap: 5px; overflow-x: auto; scrollbar-width: none; }
+.chat-filter-row::-webkit-scrollbar { display: none; }
+.chat-filter-row button { flex: 0 0 auto; min-height: 29px; padding: 0 9px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--hexa-border); border-radius: 999px; background: rgba(255,255,255,.025); color: #8994a5; font-size: 10px; }
+.chat-filter-row button.selected { color: white; border-color: rgba(124,92,255,.42); background: rgba(124,92,255,.14); }
+.chat-filter-row button em { font-style: normal; font-size: 8px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; color: white; background: rgba(255,255,255,.09); }
+.chat-filter-row .has-requests, .chat-filter-row .request-pill.has-requests { color: white; border-color: rgba(66,211,146,.28); background: rgba(66,211,146,.08); }
+.chat-search-clear { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); width: 24px; height: 24px; border: 0; border-radius: 50%; background: rgba(255,255,255,.06); color: #9ca8b8; }
+.chat-list-summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 1px 16px 7px; color: #687384; font-size: 8px; text-transform: uppercase; letter-spacing: .08em; }
+.conversation { position: relative; border: 1px solid transparent; }
+.conversation:hover { background: rgba(255,255,255,.045); border-color: rgba(255,255,255,.03); }
+.conversation.active { background: rgba(124,92,255,.09); border-color: rgba(124,92,255,.16); box-shadow: inset 2px 0 var(--hexa-accent); }
+.conversation.has-unread { background: rgba(255,255,255,.018); }
+.conversation.has-unread.active { background: rgba(124,92,255,.09); }
+.conversation-avatar-wrap { position: relative; flex: 0 0 auto; }
+.conversation-type-badge { position: absolute; right: -2px; bottom: -1px; width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: #131923; border: 2px solid #090c11; font-size: 8px; }
+.conversation-content { flex: 1; min-width: 0; }
+.conversation-content strong { max-width: calc(100% - 60px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-topline time { flex: 0 0 auto; }
+.conversation-topline time.unread-time { color: var(--hexa-success); font-weight: 700; }
+.conversation-bottomline { min-width: 0; display: flex; align-items: center; gap: 7px; }
+.conversation-bottomline > span { flex: 1; min-width: 0; }
+.conversation-bottomline .preview-unread { color: #d9e0ea; font-weight: 600; }
+.conversation-indicators { flex: 0 0 auto; display: flex; align-items: center; gap: 3px; }
+.conversation-indicators small { color: #758092; font-size: 8px; }
+.unread-badge { min-width: 18px; height: 18px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--hexa-accent); color: #fff; font-size: 8px; }
+.chat-loading { padding: 20px 16px; display: grid; gap: 9px; color: #6e798a; font-size: 9px; }
+.chat-skeleton { height: 45px; border-radius: 11px; background: linear-gradient(90deg, rgba(255,255,255,.035), rgba(255,255,255,.065), rgba(255,255,255,.035)); background-size: 220% 100%; animation: hexa-skeleton 1.25s ease-in-out infinite; }
+@keyframes hexa-skeleton { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+.empty-chat-list { padding: 46px 24px; text-align: center; }
+.empty-chat-icon { width: 54px; height: 54px; margin: 0 auto 13px; border-radius: 18px; display: flex; align-items: center; justify-content: center; background: rgba(124,92,255,.1); font-size: 25px; color: #b7aaff; }
+.empty-chat-action { margin-top: 13px; height: 34px; padding: 0 14px; border: 0; border-radius: 10px; color: white; background: var(--hexa-accent); font-size: 10px; }
 
 .chat-main {
   min-width: 0;
@@ -9085,5 +9169,16 @@ const EXTRA_CHAT_STYLES = `
     display: none !important;
   }
 }
+
+/* ============================================================
+   HEXA PROFILE / CALL CATEGORY POLISH
+   ============================================================ */
+.profile-editor-card{display:grid;grid-template-columns:150px 1fr;gap:24px;align-items:start;margin-bottom:18px}
+.profile-editor-avatar-wrap{display:flex;flex-direction:column;align-items:center;gap:10px}
+.profile-editor-avatar-wrap .hexa-avatar{border:3px solid var(--hexa-accent);box-shadow:0 8px 30px rgba(0,0,0,.2);overflow:hidden}
+.profile-editor-avatar-wrap .hexa-avatar img{width:100%;height:100%;display:block;object-fit:cover}
+.profile-avatar-change{border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:999px;padding:8px 12px;cursor:pointer}
+.profile-editor-fields{display:flex;flex-direction:column;gap:12px}.profile-editor-title{display:flex;align-items:center;justify-content:space-between;gap:12px}.profile-editor-title strong,.profile-editor-title span{display:block}.profile-editor-title span{color:var(--hexa-muted);font-size:12px;margin-top:3px}.settings-field{display:flex;flex-direction:column;gap:6px}.settings-field>span{font-size:12px;color:var(--hexa-muted);font-weight:700}.profile-save-status{margin:0}.call-mode-actions{flex-wrap:wrap}.call-mode-actions button{min-width:150px}
+@media(max-width:760px){.profile-editor-card{grid-template-columns:1fr}.profile-editor-avatar-wrap{align-items:flex-start}.profile-editor-title{align-items:flex-start;flex-direction:column}}
 
 `;
