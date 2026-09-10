@@ -1715,6 +1715,16 @@ function ChatPage({
   const [messageRequests, setMessageRequests] = useState([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [chatFilter, setChatFilter] = useState("all");
+  const [chatFolders, setChatFolders] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("hexa-chat-folders") || '[{"id":"family","name":"Family"}]');
+    } catch {
+      return [{ id: "family", name: "Family" }];
+    }
+  });
+  const [activeChatFolder, setActiveChatFolder] = useState("all");
+  const [chatFolderMenuOpen, setChatFolderMenuOpen] = useState(false);
+  const [chatFolderAssignOpen, setChatFolderAssignOpen] = useState(false);
 
   const [replyTo, setReplyTo] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -2779,7 +2789,7 @@ function ChatPage({
       };
       const { data, error } = await supabase.from("messages").insert(payload).select("*, message_reactions(*), message_attachments(*), message_user_actions(*)").single();
       if (error) throw error;
-      await supabase.from("message_attachments").insert({
+      const attachmentRecord = {
         message_id: data.id,
         user_id: profile.id,
         file_name: `voice-${Date.now()}.webm`,
@@ -2788,9 +2798,24 @@ function ChatPage({
         mime_type: blob.type || "audio/webm",
         file_size: blob.size,
         duration,
-      });
-      setMessages((current) => [...current, { ...data, metadata: { ...(data.metadata || {}), file_url: upload.url } }]);
-      updateConversationPreview(selected, data);
+      };
+      const { error: attachmentError } = await supabase.from("message_attachments").insert(attachmentRecord);
+      if (attachmentError) console.warn("HEXA voice attachment record:", attachmentError.message);
+
+      // Keep the just-sent voice note fully hydrated locally. The realtime INSERT
+      // for messages does not include nested message_attachments rows.
+      const hydratedVoiceMessage = {
+        ...data,
+        content: "",
+        message_type: "voice",
+        metadata: { ...(data.metadata || {}), file_url: upload.url, duration_seconds: duration, storage_path: upload.path, storage_bucket: upload.bucket, mime_type: blob.type || "audio/webm" },
+        message_attachments: [attachmentRecord],
+      };
+      setMessages((current) => [
+        ...current.filter((item) => String(item.client_message_id || "") !== String(clientMessageId)),
+        hydratedVoiceMessage,
+      ]);
+      updateConversationPreview(selected, { ...data, content: "Voice message", message_type: "voice" });
       cancelVoiceRecording();
     } catch (error) {
       safeAlert(error?.message || "Unable to send the voice message.");
@@ -3116,15 +3141,42 @@ function ChatPage({
     setReactionMenu(null);
 
     try {
-      const { error } = await supabase.rpc("hexa_react_to_message", {
-        p_message_id: item.id,
-        p_reaction: emoji,
-      });
-      if (error) throw error;
+      const existing = (item.message_reactions || []).find(
+        (reaction) => String(reaction.user_id) === String(profile.id)
+      );
+
+      if (existing && String(existing.reaction) === String(emoji)) {
+        const { error } = await supabase
+          .from("message_reactions")
+          .delete()
+          .eq("message_id", item.id)
+          .eq("user_id", profile.id);
+        if (error) throw error;
+      } else {
+        const { error: deleteError } = await supabase
+          .from("message_reactions")
+          .delete()
+          .eq("message_id", item.id)
+          .eq("user_id", profile.id);
+        if (deleteError) throw deleteError;
+
+        const { error: insertError } = await supabase
+          .from("message_reactions")
+          .insert({
+            message_id: item.id,
+            user_id: profile.id,
+            reaction: emoji,
+          });
+        if (insertError) throw insertError;
+      }
+
       await loadMessages(selected);
     } catch (error) {
       console.warn("HEXA reaction:", error);
-      safeAlert(error?.message || "Unable to update reaction.");
+      safeAlert(
+        error?.message ||
+        "Unable to update reaction. Check message_reactions permissions."
+      );
     }
   }
 
@@ -3298,18 +3350,48 @@ function ChatPage({
   const filteredConversations = useMemo(() => {
     const term = chatSearch.trim().toLowerCase();
     let list = conversations.filter(c => !archived.includes(String(c.id)));
-    if (chatFilter === "unread") list = list.filter(c => Number(c.unread || 0) > 0);
-    if (chatFilter === "groups") list = list.filter(c => c.kind === "group" || c.type === "group" || c.type === "system_group");
-    if (chatFilter === "favorites") list = list.filter(c => starred.includes(String(c.id)));
+
+    if (chatFilter === "unread") {
+      list = list.filter(c => Number(c.unread || 0) > 0);
+    }
+    if (chatFilter === "groups") {
+      list = list.filter(c => c.kind === "group" || c.type === "group" || c.type === "system_group");
+    }
+    if (chatFilter === "favorites") {
+      list = list.filter(c => starred.includes(String(c.id)));
+    }
+
+    let assignments = {};
+    try {
+      assignments = JSON.parse(localStorage.getItem("hexa-chat-folder-assignments") || "{}");
+    } catch {}
+
+    if (activeChatFolder !== "all" && activeChatFolder !== "groups") {
+      list = list.filter(c =>
+        (c.chatFolderIds || assignments[String(c.id)] || []).includes(activeChatFolder)
+      );
+    }
+
+    if (activeChatFolder === "groups") {
+      list = list.filter(c =>
+        c.kind === "group" || c.type === "group" || c.type === "system_group"
+      );
+    }
 
     list = [...list].sort((a, b) => {
       const ap = pinned.includes(String(a.id)) ? 1 : 0;
       const bp = pinned.includes(String(b.id)) ? 1 : 0;
       if (ap !== bp) return bp - ap;
-      return new Date(b.lastMessageAt || b.latestMessageAt || 0) - new Date(a.lastMessageAt || a.latestMessageAt || 0);
+
+      return new Date(
+        b.lastMessageAt || b.latestMessageAt || 0
+      ) - new Date(
+        a.lastMessageAt || a.latestMessageAt || 0
+      );
     });
 
     if (!term) return list;
+
     return list.filter(c => {
       const haystack = [
         c.name,
@@ -3317,10 +3399,86 @@ function ChatPage({
         c.lastMessage,
         c.latestMessage,
         c.description
-      ].map(value => String(value || "").toLowerCase()).join(" ");
+      ]
+        .map(value => String(value || "").toLowerCase())
+        .join(" ");
+
       return haystack.includes(term);
     });
-  }, [conversations, chatSearch, archived, chatFilter, starred, pinned]);
+  }, [
+    conversations,
+    chatSearch,
+    archived,
+    chatFilter,
+    starred,
+    pinned,
+    activeChatFolder
+  ]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("hexa-chat-folders", JSON.stringify(chatFolders));
+    } catch {}
+  }, [chatFolders]);
+
+  const chatFolderAssignments = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem("hexa-chat-folder-assignments") || "{}");
+    } catch {
+      return {};
+    }
+  }, [chatFolders]);
+
+  function setConversationFolders(conversationId, folderIds) {
+    try {
+      const key = String(conversationId);
+      const current = JSON.parse(localStorage.getItem("hexa-chat-folder-assignments") || "{}");
+      current[key] = Array.from(new Set(folderIds));
+      localStorage.setItem("hexa-chat-folder-assignments", JSON.stringify(current));
+    } catch {}
+    setConversations((items) =>
+      items.map((item) =>
+        String(item.id) === String(conversationId)
+          ? { ...item, chatFolderIds: folderIds }
+          : item
+      )
+    );
+  }
+
+  function createChatFolder() {
+    const name = window.prompt("New chat group name");
+    const clean = String(name || "").trim();
+    if (!clean) return;
+    const id = `folder-${Date.now()}`;
+    setChatFolders((items) => [...items, { id, name: clean.slice(0, 30) }]);
+    setActiveChatFolder(id);
+    setChatFolderMenuOpen(false);
+  }
+
+  function deleteChatFolder(folderId) {
+    setChatFolders((items) => items.filter((folder) => folder.id !== folderId));
+    setConversations((items) => items.map((item) => ({
+      ...item,
+      chatFolderIds: (item.chatFolderIds || []).filter((id) => id !== folderId)
+    })));
+    try {
+      const current = JSON.parse(localStorage.getItem("hexa-chat-folder-assignments") || "{}");
+      Object.keys(current).forEach((key) => {
+        current[key] = (current[key] || []).filter((id) => id !== folderId);
+      });
+      localStorage.setItem("hexa-chat-folder-assignments", JSON.stringify(current));
+    } catch {}
+    if (activeChatFolder === folderId) setActiveChatFolder("all");
+  }
+
+  function toggleChatFolder(conversation) {
+    const current = conversation?.chatFolderIds || [];
+    const selectedIds = new Set(current);
+    for (const folder of chatFolders) {
+      if (folder.id === "family") continue;
+    }
+    setChatFolderAssignOpen(false);
+  }
 
   /* ============================================================
      MESSAGE RENDERER
@@ -3478,8 +3636,45 @@ function ChatPage({
             if (item.message_type === "video" && mediaUrl) {
               return <video src={mediaUrl} controls className="message-media" />;
             }
-            if (item.message_type === "audio" && mediaUrl) {
-              return <audio src={mediaUrl} controls className="message-audio" />;
+            if ((item.message_type === "voice" || item.message_type === "audio") && mediaUrl) {
+              const duration = Number(
+                item.metadata?.duration_seconds ||
+                attachmentRow?.duration ||
+                0
+              );
+              return (
+                <div className="voice-message-player">
+                  <div className="voice-message-icon">🎙</div>
+                  <div className="voice-message-player-main">
+                    <audio
+                      src={mediaUrl}
+                      controls
+                      preload="metadata"
+                      className="message-audio"
+                    />
+                    <div className="voice-message-footer">
+                      <span>{duration ? formatRecordingTime(duration) : "Voice message"}</span>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          const audio = event.currentTarget
+                            .closest(".voice-message-player")
+                            ?.querySelector("audio");
+                          if (!audio) return;
+                          audio.playbackRate =
+                            audio.playbackRate === 1
+                              ? 1.5
+                              : audio.playbackRate === 1.5
+                                ? 2
+                                : 1;
+                        }}
+                      >
+                        1×
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
             }
             if (item.message_type === "file" && mediaUrl) {
               return <a className="message-file" href={mediaUrl} target="_blank" rel="noreferrer">📎 {item.content || attachmentRow?.file_name || "Download file"}</a>;
@@ -3614,7 +3809,116 @@ function ChatPage({
           )}
         </div>
 
-        <div className="chat-filter-row">
+        <div className="chat-folder-bar">
+          <div className="chat-folder-tabs">
+            <button
+              type="button"
+              className={activeChatFolder === "all" ? "selected" : ""}
+              onClick={() => { setActiveChatFolder("all"); setChatFilter("all"); }}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              className={activeChatFolder === "groups" ? "selected" : ""}
+              onClick={() => { setActiveChatFolder("groups"); setChatFilter("groups"); }}
+            >
+              Groups
+            </button>
+            <button
+              type="button"
+              className={chatFilter === "favorites" ? "selected" : ""}
+              onClick={() => { setActiveChatFolder("all"); setChatFilter("favorites"); }}
+            >
+              Favorites
+            </button>
+            {chatFolders.slice(0, 4).map((folder) => (
+              <button
+                key={folder.id}
+                type="button"
+                className={activeChatFolder === folder.id ? "selected" : ""}
+                onClick={() => { setActiveChatFolder(folder.id); setChatFilter("all"); }}
+              >
+                {folder.name}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            className="chat-folder-plus"
+            title="Create chat group"
+            onClick={createChatFolder}
+          >
+            ＋
+          </button>
+
+          <button
+            type="button"
+            className="chat-folder-dropdown"
+            title="Chat groups"
+            onClick={() => setChatFolderMenuOpen((value) => !value)}
+          >
+            ▾
+          </button>
+
+          {chatFolderMenuOpen && (
+            <div className="chat-folder-menu">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveChatFolder("all");
+                  setChatFilter("all");
+                  setChatFolderMenuOpen(false);
+                }}
+              >
+                All chats
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveChatFolder("groups");
+                  setChatFilter("groups");
+                  setChatFolderMenuOpen(false);
+                }}
+              >
+                Groups
+              </button>
+              {chatFolders.map((folder) => (
+                <div key={folder.id} className="chat-folder-menu-row">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveChatFolder(folder.id);
+                      setChatFilter("all");
+                      setChatFolderMenuOpen(false);
+                    }}
+                  >
+                    {folder.name}
+                  </button>
+                  {folder.id !== "family" && (
+                    <button
+                      type="button"
+                      className="chat-folder-delete"
+                      onClick={() => deleteChatFolder(folder.id)}
+                      title={`Delete ${folder.name}`}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={createChatFolder}
+              >
+                ＋ Create chat group
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="chat-filter-row secondary">
           {[
             ["all", "All", conversations.length],
             ["unread", "Unread", conversations.filter(c => Number(c.unread || 0) > 0).length],
@@ -3696,6 +4000,17 @@ function ChatPage({
                       {isFavorite && <small title="Favorite">★</small>}
                       {isMuted && <small title="Muted">🔕</small>}
                       {unreadCount > 0 && <b className="unread-badge">{unreadCount > 99 ? "99+" : unreadCount}</b>}
+                      <small
+                        className="chat-folder-assign-trigger"
+                        title="Assign to chat group"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSelected(conversation);
+                          setChatFolderAssignOpen(true);
+                        }}
+                      >
+                        ▾
+                      </small>
                     </div>
                   </div>
                 </div>
@@ -3714,6 +4029,38 @@ function ChatPage({
             </div>
           )}
         </div>
+
+        {chatFolderAssignOpen && selected && (
+          <div className="chat-folder-assign-popover">
+            <div className="chat-folder-assign-header">
+              <strong>Chat groups</strong>
+              <button type="button" onClick={() => setChatFolderAssignOpen(false)}>×</button>
+            </div>
+            <p>Assign “{selected.name}” to one or more groups.</p>
+            {chatFolders.map((folder) => {
+              const currentIds = selected.chatFolderIds || [];
+              const checked = currentIds.includes(folder.id);
+              return (
+                <label key={folder.id} className="chat-folder-check">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(event) => {
+                      const next = event.target.checked
+                        ? [...currentIds, folder.id]
+                        : currentIds.filter((id) => id !== folder.id);
+                      setConversationFolders(selected.id, next);
+                    }}
+                  />
+                  <span>{folder.name}</span>
+                </label>
+              );
+            })}
+            <button type="button" className="chat-folder-new-inline" onClick={createChatFolder}>
+              ＋ Create new group
+            </button>
+          </div>
+        )}
 
       </aside>
 
@@ -7577,6 +7924,27 @@ button:disabled {
   font-size: 11px;
 }
 
+.chat-folder-bar{position:relative;display:flex;align-items:center;gap:6px;padding:7px 14px 5px;border-bottom:1px solid var(--hexa-border);background:var(--hexa-sidebar)}
+.chat-folder-tabs{display:flex;align-items:center;gap:4px;min-width:0;overflow-x:auto;scrollbar-width:none;flex:1}
+.chat-folder-tabs::-webkit-scrollbar{display:none}
+.chat-folder-tabs button{border:0;background:transparent;color:var(--hexa-muted);padding:7px 10px;border-radius:9px;white-space:nowrap;font-size:11px;font-weight:700;cursor:pointer}
+.chat-folder-tabs button.selected{background:rgba(124,92,255,.13);color:var(--hexa-text)}
+.chat-folder-plus,.chat-folder-dropdown{width:30px;height:30px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:9px;cursor:pointer;display:grid;place-items:center;flex:0 0 auto}
+.chat-folder-menu{position:absolute;right:12px;top:45px;width:210px;z-index:45;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:12px;box-shadow:var(--hexa-shadow);padding:6px}
+.chat-folder-menu>button,.chat-folder-menu-row>button{display:block;width:100%;border:0;background:transparent;color:var(--hexa-text);text-align:left;padding:9px;border-radius:8px;font-size:11px;cursor:pointer}
+.chat-folder-menu>button:hover,.chat-folder-menu-row>button:hover{background:rgba(255,255,255,.05)}
+.chat-folder-menu-row{display:flex;align-items:center}
+.chat-folder-menu-row>button:first-child{flex:1}
+.chat-folder-delete{width:30px!important;text-align:center!important;color:var(--hexa-danger)!important}
+.chat-filter-row.secondary{padding-top:7px}
+.chat-folder-assign-trigger{opacity:.55;cursor:pointer;padding:3px}
+.chat-folder-assign-popover{position:absolute;z-index:50;left:16px;right:16px;bottom:16px;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:14px;box-shadow:var(--hexa-shadow);padding:12px}
+.chat-folder-assign-header{display:flex;justify-content:space-between;align-items:center}
+.chat-folder-assign-header button{border:0;background:transparent;color:var(--hexa-muted);font-size:18px;cursor:pointer}
+.chat-folder-assign-popover p{font-size:10px;color:var(--hexa-muted);margin:7px 0 10px}
+.chat-folder-check{display:flex;align-items:center;gap:8px;padding:7px 4px;font-size:11px}
+.chat-folder-check input{accent-color:var(--hexa-accent)}
+.chat-folder-new-inline{width:100%;margin-top:7px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:9px;padding:8px;font-size:11px}
 .conversation-list {
   overflow-y: auto;
   max-height: calc(100% - 100px);
