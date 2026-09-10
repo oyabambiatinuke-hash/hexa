@@ -418,7 +418,6 @@ if (typeof window !== "undefined") {
 }
 
 const NAV_ITEMS = [
-  { id: "nexus", label: "Home", icon: "⌂" },
   { id: "chat", label: "Chats", icon: "💬" },
   { id: "status", label: "Status", icon: "◌" },
   { id: "groups", label: "Groups", icon: "👥" },
@@ -714,6 +713,22 @@ async function ensureHexaProfile(user) {
   }
 
   if (existing) {
+    if (!existing.username || !String(existing.username).trim()) {
+      const repairedUsername = await makeUniqueUsername();
+      const { data: repaired, error: repairError } = await supabase
+        .from("profiles")
+        .update({
+          username: repairedUsername,
+          full_name: existing.full_name || fullName || repairedUsername,
+          display_name: existing.display_name || existing.full_name || fullName || repairedUsername,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id)
+        .select("id,email,username,full_name,avatar_url,updated_at")
+        .maybeSingle();
+      if (repairError) throw new Error(`HEXA username repair failed: ${repairError.message}`);
+      return repaired || { ...existing, username: repairedUsername };
+    }
     return existing;
   }
 
@@ -1627,6 +1642,41 @@ function formatChatTime(value) {
    HEXA-style master/detail messaging experience
    ============================================================ */
 
+async function ensureHexaDirectConversation({ profileId, otherUserId, otherProfile }) {
+  if (!isHexaUuid(profileId) || !isHexaUuid(otherUserId) || String(profileId) === String(otherUserId)) {
+    throw new Error("Invalid HEXA conversation participants.");
+  }
+  let conversation = null;
+  try {
+    const rpc = await supabase.rpc("hexa_get_or_create_direct", { p_other_user_id: otherUserId });
+    const row = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data;
+    if (!rpc.error && row?.id && isHexaUuid(row.id)) conversation = row;
+  } catch {}
+  if (!conversation) {
+    const direct = await supabase.from("conversations").select("*").eq("type", "direct")
+      .or(`and(user_a.eq.${profileId},user_b.eq.${otherUserId}),and(user_a.eq.${otherUserId},user_b.eq.${profileId})`)
+      .limit(1).maybeSingle();
+    if (direct.error) throw direct.error;
+    conversation = direct.data;
+  }
+  if (!conversation) {
+    const created = await supabase.from("conversations").insert({
+      type: "direct", name: otherProfile?.full_name || otherProfile?.username || "HEXA User",
+      created_by: profileId, owner_id: profileId, user_a: profileId, user_b: otherUserId
+    }).select("*").single();
+    if (created.error) throw created.error;
+    conversation = created.data;
+  }
+  const members = await supabase.from("conversation_members").upsert([
+    { conversation_id: conversation.id, user_id: profileId, is_admin: false },
+    { conversation_id: conversation.id, user_id: otherUserId, is_admin: false },
+  ], { onConflict: "conversation_id,user_id", ignoreDuplicates: true });
+  if (members.error) throw members.error;
+  return { ...conversation, id: conversation.id, realConversationId: conversation.id, kind: "direct", type: "direct",
+    name: otherProfile?.full_name || otherProfile?.username || conversation.name || "HEXA User",
+    username: otherProfile?.username || "", avatar_url: otherProfile?.avatar_url || null, otherUserId, unread: 0 };
+}
+
 function ChatPage({
   profile,
   initialConversation,
@@ -1898,14 +1948,14 @@ function ChatPage({
 
   async function acceptMessageRequest(request) {
     try {
-      const { data, error } = await supabase.rpc("hexa_get_or_create_direct", { p_other_user_id: request.sender_id });
-      if (error) throw error;
-      await supabase.from("message_requests").update({ status: "accepted" }).eq("id", request.id);
       const sender = request.sender || {};
-      setChatTargetForRequest({ ...(data || {}), name: sender.full_name || sender.username || "HEXA User", kind: "direct", avatar_url: sender.avatar_url || null });
-    } catch (error) {
-      alert(error?.message || "Unable to accept request.");
-    }
+      const conversation = await ensureHexaDirectConversation({ profileId: profile.id, otherUserId: request.sender_id, otherProfile: sender });
+      const { error } = await supabase.from("message_requests").update({ status: "accepted", responded_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", request.id).eq("recipient_id", profile.id);
+      if (error) throw error;
+      setConversations(current => [conversation, ...current.filter(item => String(item.id) !== String(conversation.id))]);
+      setSelected(conversation); setMobileConversationOpen(true); setMessageRequestsOpen(false);
+      setMessageRequests(items => items.filter(item => item.id !== request.id));
+    } catch (error) { alert(error?.message || "Unable to accept request."); }
   }
 
   async function declineMessageRequest(request) {
@@ -2566,31 +2616,29 @@ function ChatPage({
     if (!person?.id || !profile?.id || person.id === profile.id) return;
     setLoadingConversations(true);
     try {
-      const existing = await supabase.from("conversations")
-        .select("*").eq("type", "direct")
+      const existing = await supabase.from("conversations").select("*").eq("type", "direct")
         .or(`and(user_a.eq.${profile.id},user_b.eq.${person.id}),and(user_a.eq.${person.id},user_b.eq.${profile.id})`)
         .limit(1).maybeSingle();
       if (existing.error) throw existing.error;
       if (!existing.data) {
-        const request = await supabase.from("message_requests").insert({ sender_id: profile.id, recipient_id: person.id, status: "pending" });
-        if (request.error) throw request.error;
-        setNewChatOpen(false);
-        setNewChatSearch("");
-        alert("Message request sent. They can accept it before the chat opens.");
+        const pending = await supabase.from("message_requests").select("id,status")
+          .eq("sender_id", profile.id).eq("recipient_id", person.id).eq("status", "pending")
+          .limit(1).maybeSingle();
+        if (!pending.data) {
+          const request = await supabase.from("message_requests").insert({ sender_id: profile.id, recipient_id: person.id, status: "pending" });
+          if (request.error) throw request.error;
+        }
+        setNewChatOpen(false); setNewChatSearch("");
+        alert(pending.data ? "Message request already sent." : "Message request sent. They can accept it before the chat opens.");
         return;
       }
-      const chat = { ...existing.data, name: person.full_name || person.username || "HEXA User", username: person.username || "", avatar_url: person.avatar_url || null, kind: "direct", online: Boolean(person.online), otherUserId: person.id, unread: 0 };
+      const chat = await ensureHexaDirectConversation({ profileId: profile.id, otherUserId: person.id, otherProfile: person });
       setConversations(current => [chat, ...current.filter(item => String(item.id) !== String(chat.id))]);
-      setSelected(chat);
-      setMobileConversationOpen(true);
-      setNewChatOpen(false);
-      setNewChatSearch("");
+      setSelected(chat); setMobileConversationOpen(true); setNewChatOpen(false); setNewChatSearch("");
       onOpenChatWithUser?.();
     } catch (error) {
       alert(error?.message || "Unable to open this chat.");
-    } finally {
-      setLoadingConversations(false);
-    }
+    } finally { setLoadingConversations(false); }
   }
 
   /* ============================================================
@@ -3510,25 +3558,33 @@ function ChatPage({
           <div>
             <h2>Chats</h2>
 
-            <span>
-              {
-                conversations.length
-              } conversations
+            <span className="chat-list-header-subtitle">
+              Stay connected
             </span>
           </div>
 
-          <button
-            className="new-chat-button"
-            type="button"
-            title="New chat"
-            onClick={() =>
-              setNewChatOpen(
-                true
-              )
-            }
-          >
-            ＋
-          </button>
+          <div className="chat-list-head-actions">
+            <button
+              className="new-chat-button"
+              type="button"
+              title="New chat"
+              onClick={() =>
+                setNewChatOpen(
+                  true
+                )
+              }
+            >
+              ＋
+            </button>
+            <button
+              className="chat-list-menu-button"
+              type="button"
+              title="Chat options"
+              onClick={() => setMessageRequestsOpen(true)}
+            >
+              ⋮
+            </button>
+          </div>
 
         </div>
 
@@ -5021,6 +5077,50 @@ async function loadHexaConversations(profile) {
       otherProfiles.map((person) => [person.id, person])
     );
 
+    // Some direct conversations rely only on conversation_members.
+    // Resolve those participants so calls and chat headers still work.
+    const directMissingMemberConversations = (conversationRows || []).filter(
+      (conversation) =>
+        conversation.type === "direct" &&
+        (!isHexaUuid(conversation.user_a) || !isHexaUuid(conversation.user_b))
+    );
+
+    const membershipByConversation = {};
+    if (directMissingMemberConversations.length) {
+      const missingIds = directMissingMemberConversations.map((c) => c.id);
+      const { data: memberRows } = await supabase
+        .from("conversation_members")
+        .select("conversation_id,user_id,is_admin")
+        .in("conversation_id", missingIds);
+
+      for (const member of memberRows || []) {
+        if (!membershipByConversation[member.conversation_id]) {
+          membershipByConversation[member.conversation_id] = [];
+        }
+        membershipByConversation[member.conversation_id].push(member);
+      }
+
+      const missingOtherIds = [
+        ...new Set(
+          Object.values(membershipByConversation)
+            .flat()
+            .map((member) => member.user_id)
+            .filter((id) => isHexaUuid(id) && String(id) !== String(profile.id))
+        )
+      ];
+
+      if (missingOtherIds.length) {
+        const { data: missingProfiles } = await supabase
+          .from("profiles")
+          .select("id,username,full_name,avatar_url")
+          .in("id", missingOtherIds);
+
+        for (const person of missingProfiles || []) {
+          profileMap[person.id] = person;
+        }
+      }
+    }
+
     /*
      * Get recent messages so the Chat list can show:
      *
@@ -5070,11 +5170,24 @@ async function loadHexaConversations(profile) {
 
         if (conversation.type === "direct") {
           const otherUserId =
-            conversation.user_a === profile.id
+            isHexaUuid(conversation.user_a) &&
+            String(conversation.user_a) === String(profile.id)
               ? conversation.user_b
-              : conversation.user_a;
+              : isHexaUuid(conversation.user_b) &&
+                String(conversation.user_b) === String(profile.id)
+                ? conversation.user_a
+                : null;
 
-          const person = profileMap[otherUserId];
+          const membershipFallback = (membershipByConversation[conversation.id] || [])
+            .map((member) => member.user_id)
+            .find((id) => isHexaUuid(id) && String(id) !== String(profile.id));
+
+          const resolvedOtherUserId =
+            otherUserId || membershipFallback || null;
+
+          const person = resolvedOtherUserId
+            ? profileMap[resolvedOtherUserId]
+            : null;
 
           const displayName =
             person?.full_name ||
@@ -5085,6 +5198,7 @@ async function loadHexaConversations(profile) {
             ...conversation,
 
             id: conversation.id,
+            realConversationId: conversation.id,
 
             name: displayName,
 
@@ -5102,7 +5216,7 @@ async function loadHexaConversations(profile) {
 
             is_admin: Boolean(membership?.is_admin),
 
-            otherUserId,
+            otherUserId: resolvedOtherUserId,
 
             latestMessage:
               latest?.content ||
@@ -5123,6 +5237,7 @@ async function loadHexaConversations(profile) {
           ...conversation,
 
           id: conversation.id,
+          realConversationId: conversation.id,
 
           name:
             conversation.name ||
@@ -5598,25 +5713,73 @@ function WebRTCCallLauncher({ profile, target, onClose }) {
     let mounted = true;
     (async () => {
       const conversation = target?.conversation;
-      const user = conversation?.user_a === profile.id
-        ? conversation?.user_b
-        : conversation?.user_a;
-      if (!conversation?.id || !user) {
-        setError("This conversation does not have a direct call target.");
+      const realConversationId = conversation?.realConversationId || conversation?.id;
+      if (!realConversationId || !isHexaUuid(realConversationId)) {
+        setError("This conversation is not ready for calling.");
         return;
       }
 
-      const { data, error: callError } = await supabase.rpc("hexa_create_call", {
-        p_conversation_id: conversation.id,
-        p_callee_id: user,
-        p_type: target.type,
-        p_external: false,
-      });
-      if (!mounted) return;
-      if (callError) {
-        setError(callError.message);
+      let user = null;
+
+      // Prefer the participant already resolved by the chat list.
+      if (isHexaUuid(conversation.otherUserId) && String(conversation.otherUserId) !== String(profile.id)) {
+        user = conversation.otherUserId;
+      }
+
+      // Backward-compatible direct-chat columns.
+      if (!user) {
+        const candidate = String(conversation.user_a || "") === String(profile.id)
+          ? conversation.user_b
+          : conversation.user_a;
+        if (isHexaUuid(candidate) && String(candidate) !== String(profile.id)) {
+          user = candidate;
+        }
+      }
+
+      // Final fallback: resolve the other member from conversation_members.
+      if (!user) {
+        const { data: members, error: memberError } = await supabase
+          .from("conversation_members")
+          .select("user_id")
+          .eq("conversation_id", realConversationId);
+
+        if (memberError) {
+          setError(memberError.message || "Unable to find the other participant.");
+          return;
+        }
+
+        const candidates = (members || [])
+          .map((member) => member.user_id)
+          .filter((id) => isHexaUuid(id) && String(id) !== String(profile.id));
+
+        // Calls are 1:1. A group/community/channel must use the group-call
+        // flow instead of inventing a single callee.
+        if (String(conversation?.type || conversation?.kind || "").toLowerCase() === "group" || candidates.length > 1) {
+          setError("Group calls must be started from the group call control.");
+          return;
+        }
+
+        user = candidates[0] || null;
+      }
+
+      if (!user || !isHexaUuid(user)) {
+        setError("This conversation does not have another participant to call.");
         return;
       }
+
+      let data = null;
+      let callError = null;
+      try {
+        const result = await supabase.rpc("hexa_create_call", { p_conversation_id: realConversationId, p_callee_id: user, p_type: target.type, p_external: false });
+        data = Array.isArray(result.data) ? result.data[0] : result.data;
+        callError = result.error;
+      } catch (e) { callError = e; }
+      if (callError || !data) {
+        const fallback = await supabase.from("calls").insert({ conversation_id: realConversationId, caller_id: profile.id, callee_id: user, type: target.type, status: "ringing", rate_kobo_per_second: 30, currency: "NGN", metadata: { mode: target.mode || (target.type === "video" ? "video-call" : "voice-call") } }).select("*").single();
+        if (fallback.error) { setError(fallback.error.message || callError?.message || "Unable to create the call."); return; }
+        data = fallback.data;
+      }
+      if (!mounted) return;
 
       if (data?.id && target?.mode) {
         const currentMetadata = data?.metadata && typeof data.metadata === "object" ? data.metadata : {};
@@ -5632,7 +5795,13 @@ function WebRTCCallLauncher({ profile, target, onClose }) {
       if (mounted) setCall({ data, peer: peer || { id: user, full_name: "HEXA User" } });
     })();
     return () => { mounted = false; };
-  }, [profile?.id, target?.conversation?.id, target?.type]);
+  }, [
+    profile?.id,
+    target?.conversation?.id,
+    target?.conversation?.realConversationId,
+    target?.type,
+    target?.mode,
+  ]);
 
   if (error) {
     return <div className="story-viewer"><div className="coming-card"><h2>Call unavailable</h2><p>{error}</p><button onClick={onClose}>Close</button></div></div>;
@@ -6137,7 +6306,6 @@ function AuthenticatedHEXA({ session, onSignOut }) {
     </div>
   );
   let page; switch(activePage){
-    case "nexus":page=<NexusHome profile={profile} setActivePage={setActivePage}/>;break;
     case "chat":page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type,mode)=>setCallTarget({conversation:c,type,mode: mode === "chat" ? (type === "video" ? "video-chat" : "voice-chat") : (type === "video" ? "video-call" : "voice-call")})} onOpenChatWithUser={()=>setSearch("")}/>;break;
     case "groups":page=<GroupsPage profile={profile} onOpenChat={c=>{setChatTarget(c);setActivePage("chat")}}/>;break;
     case "communities":page=<CommunitiesPage profile={profile}/>;break;
@@ -6150,9 +6318,9 @@ function AuthenticatedHEXA({ session, onSignOut }) {
     case "video-call":page=<LiveMediaModePage profile={profile} mode="video-call"/>;break;
     case "kora":page=<KoraPage profile={profile}/>;break;
     case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut}/>;break;
-    default:page=<NexusHome profile={profile} setActivePage={setActivePage}/>;
+    default:page=<ChatPage profile={profile} onStartCall={(c,type,mode)=>setCallTarget({conversation:c,type,mode: mode === "chat" ? (type === "video" ? "video-chat" : "voice-chat") : (type === "video" ? "video-call" : "voice-call")})}/>;
   }
-  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const request=await supabase.from("message_requests").insert({sender_id:profile.id,recipient_id:p.id,status:"pending"});if(request.error){alert(request.error.message);return}alert("Message request sent.");}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div></div>;
+  return <div className={`hexa-app ${activePage === "chat" ? "chat-mode" : ""}`}><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className={`hexa-main ${activePage === "chat" ? "hexa-main-chat" : ""}`}>{activePage !== "chat" && <Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/>}<main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");try{const chat=await ensureHexaDirectConversation({profileId:profile.id,otherUserId:p.id,otherProfile:p});setChatTarget(chat);setActivePage("chat");}catch(error){try{const request=await supabase.from("message_requests").insert({sender_id:profile.id,recipient_id:p.id,status:"pending"});if(request.error)throw request.error;alert("Message request sent. They can accept it before the chat opens.");}catch(requestError){alert(requestError?.message||error?.message||"Unable to start this conversation.");}}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div></div>;
 }
 
 
@@ -6384,7 +6552,7 @@ export default function App() {
 
   return (
     <HexaErrorBoundary>
-      <style>{APP_STYLES}</style>
+      <style>{APP_STYLES}</style><style>{EXTRA_CHAT_STYLES}</style>
 
       {session ? (
         <AuthenticatedHEXA
@@ -8629,5 +8797,293 @@ function WorkspacePlaceholder({ title, description, icon, children }) { return <
 .kora-composer textarea { flex:1; resize:none; min-height:46px; max-height:140px; padding:12px 14px; border:1px solid var(--hexa-border); border-radius:14px; background:var(--hexa-panel); color:var(--hexa-text); outline:none; font:inherit; }
 .kora-composer textarea:focus { border-color: var(--hexa-accent); }
 @media (max-width:760px){ .kora-shell{min-height:calc(100vh - 150px); border-radius:14px;} .kora-messages{padding:16px;} .kora-message{max-width:92%;} .kora-composer{padding:10px;} }
+
+`;
+
+const EXTRA_CHAT_STYLES = `
+/* ============================================================
+   CHAT UI — compact WhatsApp-style proportional layout
+   ============================================================ */
+.chat-mode .hexa-sidebar {
+  width: 64px !important;
+  min-width: 64px !important;
+  max-width: 64px !important;
+  padding: 10px 8px !important;
+  align-items: center;
+}
+.chat-mode .sidebar-brand {
+  width: 46px !important;
+  justify-content: center !important;
+  padding: 6px !important;
+  margin-bottom: 8px;
+}
+.chat-mode .sidebar-brand > div:last-of-type,
+.chat-mode .sidebar-section-label,
+.chat-mode .sidebar-item > span:not(.sidebar-icon),
+.chat-mode .sidebar-user-info {
+  display: none !important;
+}
+.chat-mode .sidebar-nav {
+  width: 100%;
+  display: grid;
+  gap: 5px;
+}
+.chat-mode .sidebar-item {
+  width: 46px !important;
+  height: 46px !important;
+  min-height: 46px !important;
+  padding: 0 !important;
+  margin: 0 auto !important;
+  border-radius: 13px !important;
+  justify-content: center !important;
+}
+.chat-mode .sidebar-icon {
+  font-size: 18px !important;
+  width: auto !important;
+}
+.chat-mode .sidebar-bottom {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.chat-mode .sidebar-user {
+  padding: 6px !important;
+}
+.chat-mode .hexa-main-chat .hexa-topbar {
+  display: none !important;
+}
+.chat-mode .hexa-main-chat .hexa-content {
+  height: 100vh !important;
+  min-height: 100vh !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+}
+.chat-mode .chat-layout {
+  height: 100vh !important;
+  min-height: 100vh !important;
+  grid-template-columns: minmax(315px, 370px) minmax(0, 1fr) !important;
+  background: #06080d !important;
+}
+.chat-mode .chat-list-panel {
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  background: #090c11 !important;
+  border-right: 1px solid rgba(255,255,255,.07) !important;
+}
+.chat-mode .chat-list-header {
+  height: 64px !important;
+  padding: 0 16px !important;
+  border-bottom: 1px solid rgba(255,255,255,.055);
+}
+.chat-mode .chat-list-header h2 {
+  font-size: 20px !important;
+  font-weight: 800 !important;
+  letter-spacing: -.02em;
+}
+.chat-mode .chat-list-header-subtitle {
+  font-size: 9px !important;
+  color: #77808d !important;
+  margin-top: 3px;
+}
+.chat-mode .chat-list-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.chat-mode .new-chat-button,
+.chat-mode .chat-list-menu-button {
+  width: 34px !important;
+  height: 34px !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 10px !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: #aeb6c2 !important;
+  font-size: 21px !important;
+}
+.chat-mode .new-chat-button:hover,
+.chat-mode .chat-list-menu-button:hover {
+  background: rgba(255,255,255,.055) !important;
+  color: #fff !important;
+}
+.chat-mode .chat-search {
+  margin: 11px 12px 8px !important;
+}
+.chat-mode .chat-search input {
+  height: 38px !important;
+  border-radius: 10px !important;
+  background: #11151b !important;
+  border: 1px solid rgba(255,255,255,.05) !important;
+  font-size: 11px !important;
+  color: #e7eaf0 !important;
+}
+.chat-mode .chat-filter-row {
+  padding: 2px 12px 10px !important;
+  gap: 6px !important;
+}
+.chat-mode .chat-filter-row button {
+  padding: 6px 10px !important;
+  min-height: 29px !important;
+  background: #11151b !important;
+  border-color: rgba(255,255,255,.06) !important;
+  color: #818b98 !important;
+  font-size: 10px !important;
+}
+.chat-mode .chat-filter-row button.selected {
+  background: var(--hexa-accent) !important;
+  color: #fff !important;
+}
+.chat-mode .conversation-list {
+  max-height: calc(100vh - 153px) !important;
+}
+.chat-mode .conversation {
+  width: calc(100% - 8px) !important;
+  margin: 1px 4px !important;
+  padding: 10px 10px !important;
+  min-height: 68px;
+  border-radius: 11px !important;
+  gap: 11px !important;
+}
+.chat-mode .conversation:hover {
+  background: rgba(255,255,255,.035) !important;
+}
+.chat-mode .conversation.active {
+  background: rgba(124,92,255,.10) !important;
+  box-shadow: inset 2px 0 var(--hexa-accent) !important;
+}
+.chat-mode .conversation .hexa-avatar {
+  width: 46px !important;
+  height: 46px !important;
+  min-width: 46px !important;
+}
+.chat-mode .conversation-content {
+  flex: 1 !important;
+  min-width: 0 !important;
+}
+.chat-mode .conversation-topline {
+  display: flex !important;
+  align-items: baseline !important;
+  gap: 8px !important;
+}
+.chat-mode .conversation-topline strong {
+  flex: 1 !important;
+  min-width: 0 !important;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px !important;
+  font-weight: 750 !important;
+}
+.chat-mode .conversation-topline time {
+  flex: 0 0 auto;
+  color: #697382 !important;
+  font-size: 9px !important;
+}
+.chat-mode .conversation-bottomline {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  margin-top: 4px !important;
+}
+.chat-mode .conversation-bottomline span {
+  flex: 1 !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  font-size: 10px !important;
+  line-height: 1.35 !important;
+  color: #7b8491 !important;
+}
+.chat-mode .unread-badge {
+  min-width: 17px !important;
+  height: 17px !important;
+  padding: 0 5px !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  border-radius: 999px !important;
+  font-size: 8px !important;
+  background: var(--hexa-accent) !important;
+  color: white !important;
+}
+.chat-mode .chat-main {
+  min-width: 0;
+  background: #0a0d12 !important;
+}
+.chat-mode .chat-header {
+  height: 64px !important;
+  min-height: 64px !important;
+  padding: 0 16px !important;
+  background: #0b0f14 !important;
+  border-bottom: 1px solid rgba(255,255,255,.055) !important;
+}
+.chat-mode .chat-header strong {
+  font-size: 12px !important;
+}
+.chat-mode .chat-header span {
+  color: #737d8b !important;
+  font-size: 9px !important;
+}
+.chat-mode .chat-header-actions {
+  gap: 3px !important;
+}
+.chat-mode .chat-header-actions button {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 9px !important;
+  color: #8e98a8 !important;
+}
+.chat-mode .messages-area {
+  padding: 24px clamp(20px, 5vw, 80px) 18px !important;
+  background: radial-gradient(circle at 50% 0, rgba(124,92,255,.025), transparent 42%) !important;
+}
+.chat-mode .hexa-message-row {
+  margin: 6px 0 !important;
+}
+.chat-mode .message-bubble {
+  max-width: min(68vw, 620px) !important;
+  border-radius: 13px !important;
+  padding: 8px 10px !important;
+}
+.chat-mode .message-content {
+  font-size: 12px !important;
+  line-height: 1.45 !important;
+}
+.chat-mode .message-meta {
+  font-size: 8px !important;
+}
+.chat-mode .message-composer {
+  min-height: 64px !important;
+  padding: 9px 12px !important;
+  background: #0a0d12 !important;
+}
+.chat-mode .message-composer input {
+  height: 40px !important;
+  border-radius: 11px !important;
+  background: #12161d !important;
+  font-size: 11px !important;
+}
+@media (max-width: 820px) {
+  .chat-mode .hexa-sidebar {
+    width: 56px !important;
+    min-width: 56px !important;
+    max-width: 56px !important;
+  }
+  .chat-mode .chat-layout {
+    grid-template-columns: 320px minmax(0,1fr) !important;
+  }
+}
+@media (max-width: 700px) {
+  .chat-mode .chat-layout {
+    display: block !important;
+  }
+  .chat-mode .chat-list-panel {
+    height: 100vh !important;
+  }
+  .chat-mode .mobile-chat-open .chat-list-panel {
+    display: none !important;
+  }
+}
 
 `;
