@@ -2760,69 +2760,282 @@ function ChatPage({
   }
 
   async function sendVoiceMessage() {
-    if (!recordingBlob || !selected?.id || isLocalHexaChat(selected) || isSystem) return;
-    if (recordingSeconds < 1) {
-      cancelVoiceRecording();
-      return;
-    }
-
-    const blob = recordingBlob;
-    const duration = recordingSeconds;
-    try {
-      setLoading(true);
-      const upload = await uploadChatBlob(blob, `voice-${Date.now()}.webm`);
-      const clientMessageId = `hexa-${crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
-      const payload = {
-        conversation_id: selected.realConversationId || selected.id,
-        sender_id: profile.id,
-        content: "Voice message",
-        message_type: "voice",
-        client_message_id: clientMessageId,
-        status: "sent",
-        metadata: {
-          storage_bucket: upload.bucket,
-          storage_path: upload.path,
-          file_url: upload.url,
-          mime_type: blob.type || "audio/webm",
-          duration_seconds: duration,
-        },
-      };
-      const { data, error } = await supabase.from("messages").insert(payload).select("*, message_reactions(*), message_attachments(*), message_user_actions(*)").single();
-      if (error) throw error;
-      const attachmentRecord = {
-        message_id: data.id,
-        user_id: profile.id,
-        file_name: `voice-${Date.now()}.webm`,
-        file_path: upload.path,
-        file_url: upload.url,
-        mime_type: blob.type || "audio/webm",
-        file_size: blob.size,
-        duration,
-      };
-      const { error: attachmentError } = await supabase.from("message_attachments").insert(attachmentRecord);
-      if (attachmentError) console.warn("HEXA voice attachment record:", attachmentError.message);
-
-      // Keep the just-sent voice note fully hydrated locally. The realtime INSERT
-      // for messages does not include nested message_attachments rows.
-      const hydratedVoiceMessage = {
-        ...data,
-        content: "",
-        message_type: "voice",
-        metadata: { ...(data.metadata || {}), file_url: upload.url, duration_seconds: duration, storage_path: upload.path, storage_bucket: upload.bucket, mime_type: blob.type || "audio/webm" },
-        message_attachments: [attachmentRecord],
-      };
-      setMessages((current) => [
-        ...current.filter((item) => String(item.client_message_id || "") !== String(clientMessageId)),
-        hydratedVoiceMessage,
-      ]);
-      updateConversationPreview(selected, { ...data, content: "Voice message", message_type: "voice" });
-      cancelVoiceRecording();
-    } catch (error) {
-      safeAlert(error?.message || "Unable to send the voice message.");
-    } finally {
-      setLoading(false);
-    }
+  if (
+    !recordingBlob ||
+    !selected?.id ||
+    isLocalHexaChat(selected) ||
+    isSystem
+  ) {
+    return;
   }
+
+  if (recordingSeconds < 1) {
+    cancelVoiceRecording();
+    return;
+  }
+
+  const blob = recordingBlob;
+  const duration = recordingSeconds;
+  const fileName = `voice-${Date.now()}.webm`;
+
+  try {
+    setLoading(true);
+
+    /* ============================================================
+       1. UPLOAD THE ACTUAL AUDIO FILE
+       ============================================================ */
+
+    const upload = await uploadChatBlob(
+      blob,
+      fileName
+    );
+
+    if (!upload?.url || !upload?.path) {
+      throw new Error(
+        "The voice recording uploaded without a usable file URL."
+      );
+    }
+
+    const conversationId =
+      selected.realConversationId ||
+      selected.id;
+
+    if (!isHexaUuid(conversationId)) {
+      throw new Error(
+        "This conversation is not ready for voice messages."
+      );
+    }
+
+    const clientMessageId =
+      `hexa-${
+        crypto?.randomUUID?.() ||
+        `${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2)}`
+      }`;
+
+    const mimeType =
+      blob.type ||
+      "audio/webm";
+
+    /* ============================================================
+       2. PUT THE AUDIO INFORMATION DIRECTLY INTO MESSAGE METADATA
+       ============================================================ */
+
+    const voiceMetadata = {
+      storage_bucket:
+        upload.bucket || "chat-media",
+
+      storage_path:
+        upload.path,
+
+      file_url:
+        upload.url,
+
+      mime_type:
+        mimeType,
+
+      file_name:
+        fileName,
+
+      file_size:
+        blob.size,
+
+      duration_seconds:
+        duration,
+
+      is_voice_message:
+        true,
+
+      voice_message:
+        true,
+    };
+
+    /* ============================================================
+       3. INSERT MESSAGE
+       ============================================================ */
+
+    const payload = {
+      conversation_id:
+        conversationId,
+
+      sender_id:
+        profile.id,
+
+      receiver_id:
+        isHexaUuid(selected.otherUserId)
+          ? selected.otherUserId
+          : null,
+
+      /*
+       * IMPORTANT:
+       * Do NOT store "Voice message" as the visible content.
+       * Keep content empty and let the renderer create the
+       * actual voice-note UI from metadata/attachment.
+       */
+      content:
+        "",
+
+      message_type:
+        "voice",
+
+      client_message_id:
+        clientMessageId,
+
+      status:
+        "sent",
+
+      metadata:
+        voiceMetadata,
+    };
+
+    const {
+      data,
+      error,
+    } = await supabase
+      .from("messages")
+      .insert(payload)
+      .select("*")
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    if (!data?.id) {
+      throw new Error(
+        "Supabase created the voice message without returning its ID."
+      );
+    }
+
+    /* ============================================================
+       4. CREATE THE REAL ATTACHMENT RECORD
+       ============================================================ */
+
+    const attachmentRecord = {
+      message_id:
+        data.id,
+
+      user_id:
+        profile.id,
+
+      file_name:
+        fileName,
+
+      file_path:
+        upload.path,
+
+      file_url:
+        upload.url,
+
+      mime_type:
+        mimeType,
+
+      file_size:
+        blob.size,
+
+      duration:
+        duration,
+    };
+
+    const {
+      data: attachmentData,
+      error: attachmentError,
+    } = await supabase
+      .from("message_attachments")
+      .insert(attachmentRecord)
+      .select("*")
+      .single();
+
+    if (attachmentError) {
+      console.warn(
+        "HEXA voice attachment record:",
+        attachmentError.message
+      );
+    }
+
+    /* ============================================================
+       5. FULLY HYDRATE THE MESSAGE LOCALLY
+       ============================================================ */
+
+    const hydratedVoiceMessage = {
+      ...data,
+
+      content: "",
+
+      message_type:
+        "voice",
+
+      metadata: {
+        ...(data.metadata || {}),
+        ...voiceMetadata,
+      },
+
+      message_attachments: [
+        attachmentData || attachmentRecord,
+      ],
+
+      pending:
+        false,
+
+      failed:
+        false,
+    };
+
+    /* ============================================================
+       6. REPLACE ANY OPTIMISTIC VERSION
+       ============================================================ */
+
+    setMessages((current) => [
+      ...current.filter(
+        (item) =>
+          String(
+            item.client_message_id || ""
+          ) !==
+          String(clientMessageId)
+      ),
+
+      hydratedVoiceMessage,
+    ]);
+
+    /* ============================================================
+       7. UPDATE CHAT PREVIEW
+       ============================================================ */
+
+    updateConversationPreview(
+      selected,
+      {
+        ...hydratedVoiceMessage,
+
+        content:
+          "🎙 Voice message",
+
+        message_type:
+          "voice",
+      }
+    );
+
+    /* ============================================================
+       8. CLEAN UP RECORDER
+       ============================================================ */
+
+    cancelVoiceRecording();
+
+  } catch (error) {
+    console.error(
+      "HEXA voice message:",
+      error
+    );
+
+    safeAlert(
+      error?.message ||
+      "Unable to send the voice message."
+    );
+
+  } finally {
+    setLoading(false);
+  }
+}
 
   /* ============================================================
      SEND MESSAGE
