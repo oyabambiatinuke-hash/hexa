@@ -6937,7 +6937,7 @@ button:disabled {
 .hexa-avatar {
   position: relative;
   border-radius: 50%;
-  overflow: visible;
+  overflow: hidden;
   display: grid;
   place-items: center;
   background:
@@ -7451,6 +7451,74 @@ button:disabled {
 .empty-chat p {
   color: var(--hexa-muted);
   font-size: 11px;
+}
+
+
+/* WhatsApp-style message alignment */
+.hexa-message-row {
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  gap: 7px;
+  margin: 7px 0;
+}
+
+.hexa-message-row.mine {
+  justify-content: flex-end;
+}
+
+.hexa-message-row.incoming {
+  justify-content: flex-start;
+}
+
+.hexa-message-row .message-bubble {
+  max-width: min(72%, 560px);
+  min-width: 0;
+}
+
+.hexa-message-row.mine .message-bubble {
+  margin-left: auto;
+}
+
+.hexa-message-row.incoming .message-bubble {
+  margin-right: auto;
+}
+
+.hexa-message-row .hexa-avatar {
+  width: 30px !important;
+  height: 30px !important;
+  min-width: 30px !important;
+  overflow: hidden !important;
+  border-radius: 50% !important;
+}
+
+.hexa-message-row .hexa-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 100%;
+  min-height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.hexa-avatar {
+  overflow: hidden !important;
+  border-radius: 50% !important;
+}
+
+.hexa-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 100%;
+  min-height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.hexa-online-dot {
+  z-index: 2;
 }
 
 .message-row {
