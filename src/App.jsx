@@ -6839,7 +6839,7 @@ function SubscriptionPage({ profile }) {
   );
 }
 
-function SettingsPage({ profile, onSignOut }) {
+function SettingsPage({ profile, onSignOut, onNavigate }) {
   const [theme, setTheme] = useState(getSavedHexaTheme());
   const [showThemes, setShowThemes] = useState(true);
 
@@ -7015,53 +7015,71 @@ function SettingsPage({ profile, onSignOut }) {
 
       </div>
 
-      {/* CHAT */}
-
-      <div className="settings-grid">
-
-        <div className="settings-card">
-          <div>
-            <strong>Chat appearance</strong>
-            <p>
-              Your selected theme automatically applies to
-              conversations, chat bubbles, menus and panels.
-            </p>
+      <div className="settings-layout-grid">
+        <div className="settings-card settings-feature-card">
+          <div className="settings-feature-icon">👤</div>
+          <div className="settings-feature-copy">
+            <strong>Profile</strong>
+            <p>Manage your name, username and profile picture.</p>
           </div>
-
-          <span className="settings-status">
-            {activeTheme.name}
-          </span>
+          <span className="settings-status">Account</span>
         </div>
 
-        <div className="settings-card">
-          <div>
-            <strong>Theme synchronization</strong>
-            <p>
-              HEXA remembers your theme on this device.
-            </p>
+        <div className="settings-card settings-feature-card">
+          <div className="settings-feature-icon">🔔</div>
+          <div className="settings-feature-copy">
+            <strong>Notifications</strong>
+            <p>Message alerts, call alerts and notification preferences.</p>
           </div>
-
-          <span className="settings-status">
-            Enabled
-          </span>
+          <span className="settings-status">Active</span>
         </div>
 
-        <div className="settings-card">
-          <div>
-            <strong>Account</strong>
-            <p>
-              Manage your HEXA session.
-            </p>
+        <div className="settings-card settings-feature-card">
+          <div className="settings-feature-icon">💬</div>
+          <div className="settings-feature-copy">
+            <strong>Chats & media</strong>
+            <p>Control chat appearance, media behaviour and conversation preferences.</p>
           </div>
-
-          <button
-            className="settings-danger-button"
-            onClick={onSignOut}
-          >
-            Sign out
-          </button>
+          <button type="button" onClick={() => onNavigate?.("chat")}>Open</button>
         </div>
 
+        <div className="settings-card settings-feature-card settings-clickable" onClick={() => onNavigate?.("subscription")}>
+          <div className="settings-feature-icon">★</div>
+          <div className="settings-feature-copy">
+            <strong>Subscription</strong>
+            <p>Manage HEXA Plus, Pro or Ultra through Stripe.</p>
+          </div>
+          <span className="settings-status">Stripe</span>
+        </div>
+
+        <div className="settings-card settings-feature-card">
+          <div className="settings-feature-icon">🔒</div>
+          <div className="settings-feature-copy">
+            <strong>Privacy & security</strong>
+            <p>Review account privacy, sessions and security-related controls.</p>
+          </div>
+          <span className="settings-status">Protected</span>
+        </div>
+
+        <div className="settings-card settings-feature-card">
+          <div className="settings-feature-icon">📞</div>
+          <div className="settings-feature-copy">
+            <strong>Calls</strong>
+            <p>Voice and video calling uses your existing HEXA call system.</p>
+          </div>
+          <button type="button" onClick={() => onNavigate?.("calls")}>Open</button>
+        </div>
+      </div>
+
+      <div className="settings-card settings-account-footer">
+        <div className="settings-footer-avatar">
+          <Avatar src={profile?.avatar_url} name={profile?.full_name || profile?.username || "hexachi User"} size={44} />
+        </div>
+        <div className="settings-feature-copy">
+          <strong>{profile?.full_name || profile?.username || "hexachi User"}</strong>
+          <p>{profile?.email || (profile?.username ? `@${profile.username}` : "Signed in to hexachi")}</p>
+        </div>
+        <button className="settings-danger-button" onClick={onSignOut}>Sign out</button>
       </div>
 
     </section>
@@ -7137,7 +7155,7 @@ function AuthenticatedHEXA({ session, onSignOut }) {
     case "calls":page=<CallsPage profile={profile}/>;break;
     case "kora":page=<KoraPage profile={profile}/>;break;
     case "subscription":page=<SubscriptionPage profile={profile}/>;break;
-    case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut}/>;break;
+    case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut} onNavigate={setActivePage}/>;break;
     case "projects":page=<WorkspacePlaceholder title="Projects" description="Organize collaborative work." icon="◆"/>;break;
     case "developer":page=<WorkspacePlaceholder title="Developer Hub" description="Build and connect with HEXA." icon="</>"/>;break;
     default:page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type,mode)=>setCallTarget({conversation:c,type,mode: mode || (type === "video" ? "video-call" : "voice-call")})} onOpenChatWithUser={()=>setSearch("")}/>;
@@ -7156,7 +7174,7 @@ function AuthenticatedHEXA({ session, onSignOut }) {
       }
     : null;
 
-  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{normalizedCallTarget && (isGroupCallTarget ? <GroupCallLauncher profile={profile} target={normalizedCallTarget} onClose={()=>setCallTarget(null)} /> : <WebRTCCallLauncher profile={profile} target={normalizedCallTarget} onClose={()=>setCallTarget(null)} />)}</main></div><MobileBottomNav activePage={activePage} setActivePage={setActivePage}/></div>;
+  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{normalizedCallTarget && (isGroupCallTarget ? <GroupCallLauncher profile={profile} target={normalizedCallTarget} onClose={()=>setCallTarget(null)} /> : <WebRTCCallLauncher profile={profile} target={normalizedCallTarget} onClose={()=>setCallTarget(null)} />)}}</main></div><MobileBottomNav activePage={activePage} setActivePage={setActivePage}/></div>;
 }
 
 
@@ -9199,7 +9217,11 @@ const APP_STYLES_TAIL = `
 
 `;
 
-const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL;
+const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + `
+/* Refined Settings UI */
+.settings-page{max-width:1100px;margin:0 auto;padding-bottom:40px}.settings-page .page-heading{margin-bottom:18px}.hexa-profile-settings{position:relative;overflow:hidden;background:linear-gradient(135deg,var(--hexa-panel),var(--hexa-panel-2));box-shadow:0 16px 40px rgba(0,0,0,.12)}.hexa-profile-settings:after{content:"";position:absolute;inset:auto -90px -120px auto;width:260px;height:260px;border-radius:50%;background:var(--hexa-accent);opacity:.08;filter:blur(4px);pointer-events:none}.settings-layout-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px}.settings-feature-card{min-height:92px;position:relative;transition:transform .16s ease,border-color .16s ease,background .16s ease;cursor:default}.settings-feature-card.settings-clickable{cursor:pointer}.settings-feature-card:hover{transform:translateY(-2px);border-color:var(--hexa-border-strong);background:var(--hexa-panel-2)}.settings-feature-icon{width:42px;height:42px;flex:0 0 42px;border-radius:13px;display:grid;place-items:center;background:color-mix(in srgb,var(--hexa-accent) 15%,transparent);border:1px solid color-mix(in srgb,var(--hexa-accent) 26%,var(--hexa-border));font-size:19px}.settings-feature-copy{min-width:0;flex:1}.settings-feature-copy strong{display:block;font-size:15px}.settings-feature-copy p{font-size:12px;line-height:1.5}.settings-feature-card>button{white-space:nowrap}.settings-account-footer{margin-top:14px}.settings-account-footer .settings-feature-copy{padding-right:8px}.settings-status{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid var(--hexa-border);border-radius:999px;background:var(--hexa-panel-2);color:var(--hexa-accent-2);font-size:12px;font-weight:700;white-space:nowrap}.settings-danger-button{color:#fff!important;background:var(--hexa-danger)!important;border-color:transparent!important}.settings-footer-avatar{display:grid;place-items:center}.subscription-page .page-heading,.settings-page .page-heading{align-items:center}
+@media (max-width:760px){.settings-layout-grid{grid-template-columns:1fr}.settings-card{padding:14px;border-radius:16px}.settings-feature-card{min-height:80px}.settings-feature-card p{font-size:11px}.settings-account-footer{align-items:center}.settings-account-footer .settings-danger-button{width:100%}.settings-account-footer{display:grid;grid-template-columns:auto 1fr}.settings-account-footer .settings-danger-button{grid-column:1 / -1}.hexa-profile-settings{align-items:center}.settings-page{padding:0 4px 30px}}
+`;
 
 const COMMUNICATION_UI_OVERRIDES = `
 /* ============================================================
