@@ -1,5 +1,5 @@
-const webpush = require("web-push");
-const { createClient } = require("@supabase/supabase-js");
+import webpush from "web-push";
+import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL ||
@@ -18,436 +18,454 @@ const VAPID_SUBJECT =
   process.env.VAPID_SUBJECT ||
   "mailto:admin@hexachi.app";
 
-if (!SUPABASE_URL) {
-  throw new Error(
-    "Missing SUPABASE_URL or VITE_SUPABASE_URL"
+function json(res, status, body) {
+  res.setHeader(
+    "Content-Type",
+    "application/json; charset=utf-8"
   );
+
+  res.setHeader(
+    "Access-Control-Allow-Origin",
+    "*"
+  );
+
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, POST, OPTIONS"
+  );
+
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Authorization, Content-Type"
+  );
+
+  return res.status(status).json(body);
 }
 
-if (!SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error(
-    "Missing SUPABASE_SERVICE_ROLE_KEY"
-  );
+function cleanText(value, fallback) {
+  const text = String(value ?? "").trim();
+  return text || fallback;
 }
 
-if (!VAPID_PUBLIC_KEY) {
-  throw new Error(
-    "Missing VAPID_PUBLIC_KEY"
-  );
-}
-
-if (!VAPID_PRIVATE_KEY) {
-  throw new Error(
-    "Missing VAPID_PRIVATE_KEY"
-  );
-}
-
-const supabaseAdmin = createClient(
-  SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY,
-  {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
+function getConfigError() {
+  if (!SUPABASE_URL) {
+    return "Missing SUPABASE_URL or VITE_SUPABASE_URL";
   }
-);
 
-webpush.setVapidDetails(
-  VAPID_SUBJECT,
-  VAPID_PUBLIC_KEY,
-  VAPID_PRIVATE_KEY
-);
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
+    return "Missing SUPABASE_SERVICE_ROLE_KEY";
+  }
+
+  if (!VAPID_PUBLIC_KEY) {
+    return "Missing VAPID_PUBLIC_KEY";
+  }
+
+  if (!VAPID_PRIVATE_KEY) {
+    return "Missing VAPID_PRIVATE_KEY";
+  }
+
+  return null;
+}
+
+const configError = getConfigError();
+
+const supabaseAdmin = !configError
+  ? createClient(
+      SUPABASE_URL,
+      SUPABASE_SERVICE_ROLE_KEY,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      }
+    )
+  : null;
+
+if (!configError) {
+  webpush.setVapidDetails(
+    VAPID_SUBJECT,
+    VAPID_PUBLIC_KEY,
+    VAPID_PRIVATE_KEY
+  );
+}
+
+async function getAuthenticatedUser(req) {
+  const authHeader = String(
+    req.headers.authorization || ""
+  );
+
+  const token =
+    authHeader.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : "";
+
+  if (!token) {
+    return {
+      user: null,
+      error: "Missing Supabase access token",
+    };
+  }
+
+  const {
+    data,
+    error,
+  } = await supabaseAdmin.auth.getUser(token);
+
+  if (error || !data?.user?.id) {
+    return {
+      user: null,
+      error: "Invalid Supabase session",
+    };
+  }
+
+  return {
+    user: data.user,
+    error: null,
+  };
+}
+
+export default async function handler(req, res) {
+  /*
+   * OPTIONS
+   */
+  if (req.method === "OPTIONS") {
+    return json(res, 204, null);
+  }
 
   /*
-   * ============================================================
-   * HEALTH CHECK
-   * ============================================================
-   *
-   * Visiting:
-   *
-   * /api/hexa-push
-   *
-   * should now return a normal response instead of 405.
+   * GET HEALTH CHECK
    */
-
   if (req.method === "GET") {
-    return json(res, 200, {
-      ok: true,
-      service: "hexachi-push",
-      message:
-        "Push endpoint is online. Use POST to send a notification.",
-    });
+    return json(
+      res,
+      configError ? 500 : 200,
+      {
+        ok: !configError,
+        service: "hexachi-push",
+        message: configError
+          ? "Push endpoint configuration is incomplete."
+          : "Push endpoint is online. Use POST to send a notification.",
+        error:
+          configError || undefined,
+      }
+    );
   }
 
   /*
-   * ============================================================
-   * ONLY POST MAY SEND NOTIFICATIONS
-   * ============================================================
+   * ONLY POST SENDS PUSH
    */
-
   if (req.method !== "POST") {
     return json(res, 405, {
       error: "Method not allowed",
       allowed: [
+        "GET",
         "POST",
         "OPTIONS",
-        "GET",
       ],
     });
   }
 
   /*
-   * ============================================================
-   * AUTHENTICATE THE HEXACHI USER
-   * ============================================================
+   * SERVER CONFIGURATION
    */
-
-  const authHeader = String(
-    req.headers.authorization || ""
-  );
-
-  const token = authHeader.startsWith("Bearer ")
-    ? authHeader.slice(7)
-    : "";
-
-  if (!token) {
-    return json(res, 401, {
-      error:
-        "Missing Supabase access token",
-    });
-  }
-
-  const {
-    data: authData,
-    error: authError,
-  } = await supabaseAdmin.auth.getUser(
-    token
-  );
-
-  if (
-    authError ||
-    !authData?.user?.id
-  ) {
-    return json(res, 401, {
-      error:
-        "Invalid Supabase session",
-    });
-  }
-
-  const actorId =
-    authData.user.id;
-
-  const body =
-    req.body || {};
-
-  const kind =
-    body.kind === "call"
-      ? "call"
-      : "message";
-
-  /*
-   * ============================================================
-   * FIND RECIPIENTS
-   * ============================================================
-   */
-
-  let recipientIds = [];
-
-  /*
-   * INCOMING CALL
-   */
-
-  if (kind === "call") {
-    if (body.callee_id) {
-      recipientIds = [
-        String(body.callee_id),
-      ];
-    }
-  }
-
-  /*
-   * MESSAGE
-   */
-
-  else {
-    if (!body.conversation_id) {
-      return json(res, 400, {
-        error:
-          "conversation_id is required",
-      });
-    }
-
-    const {
-      data: members,
-      error: memberError,
-    } = await supabaseAdmin
-      .from("conversation_members")
-      .select("user_id")
-      .eq(
-        "conversation_id",
-        body.conversation_id
-      )
-      .neq(
-        "user_id",
-        actorId
-      );
-
-    if (memberError) {
-      return json(res, 500, {
-        error:
-          memberError.message,
-      });
-    }
-
-    recipientIds = (
-      members || []
-    )
-      .map(
-        (row) => row.user_id
-      )
-      .filter(Boolean);
-  }
-
-  /*
-   * Remove duplicates.
-   * Never send a notification back
-   * to the person who triggered it.
-   */
-
-  recipientIds = [
-    ...new Set(
-      recipientIds.filter(
-        (id) =>
-          String(id) !==
-          String(actorId)
-      )
-    ),
-  ];
-
-  /*
-   * Nobody to notify.
-   */
-
-  if (!recipientIds.length) {
-    return json(res, 200, {
-      ok: true,
-      sent: 0,
-      recipients: 0,
-    });
-  }
-
-  /*
-   * ============================================================
-   * LOAD SENDER PROFILE
-   * ============================================================
-   */
-
-  const {
-    data: senderProfile,
-  } = await supabaseAdmin
-    .from("profiles")
-    .select(
-      "id,username,full_name,avatar_url"
-    )
-    .eq(
-      "id",
-      actorId
-    )
-    .maybeSingle();
-
-  /*
-   * ============================================================
-   * BUILD NOTIFICATION TEXT
-   * ============================================================
-   */
-
-  const title = cleanText(
-    body.title,
-    senderProfile?.full_name ||
-      senderProfile?.username ||
-      "hexachi"
-  );
-
-  const textBody = cleanText(
-    body.body,
-
-    kind === "call"
-      ? body.call_type === "video"
-        ? "📹 Incoming video call"
-        : "📞 Incoming voice call"
-      : "You have a new message."
-  );
-
-  /*
-   * ============================================================
-   * LOAD DEVICE PUSH SUBSCRIPTIONS
-   * ============================================================
-   */
-
-  const {
-    data: subscriptions,
-    error: subscriptionError,
-  } = await supabaseAdmin
-    .from("push_subscriptions")
-    .select(
-      "id,user_id,subscription"
-    )
-    .in(
-      "user_id",
-      recipientIds
+  if (configError) {
+    console.error(
+      "hexachi push configuration error:",
+      configError
     );
 
-  if (subscriptionError) {
     return json(res, 500, {
-      error:
-        subscriptionError.message,
+      error: configError,
     });
   }
 
-  /*
-   * ============================================================
-   * CREATE PUSH PAYLOAD
-   * ============================================================
-   */
+  try {
+    /*
+     * AUTH
+     */
+    const {
+      user: actor,
+      error: authError,
+    } = await getAuthenticatedUser(req);
 
-  const payload =
-    JSON.stringify({
-      title,
-
-      body: textBody,
-
-      icon:
-        "/favicon.ico",
-
-      badge:
-        "/favicon.ico",
-
-      tag:
-        kind === "call"
-          ? `call-${
-              body.call_id ||
-              Date.now()
-            }`
-          : `message-${
-              body.conversation_id
-            }`,
-
-      /*
-       * Calls stay visible until
-       * the user interacts with them.
-       */
-
-      requireInteraction:
-        kind === "call",
-
-      /*
-       * Used by hexa-sw.js
-       */
-
-      kind,
-
-      data: {
-        kind,
-
-        url:
-          body.url || "/",
-
-        conversation_id:
-          body.conversation_id ||
-          null,
-
-        message_id:
-          body.message_id ||
-          null,
-
-        call_id:
-          body.call_id ||
-          null,
-
-        call_type:
-          body.call_type ||
-          null,
-      },
-    });
-
-  /*
-   * ============================================================
-   * SEND PUSH TO EVERY DEVICE
-   * ============================================================
-   */
-
-  let sent = 0;
-  let removed = 0;
-
-  for (
-    const item of subscriptions || []
-  ) {
-    if (!item?.subscription) {
-      continue;
+    if (authError) {
+      return json(res, 401, {
+        error: authError,
+      });
     }
 
-    try {
-      await webpush.sendNotification(
-        item.subscription,
-        payload
+    const actorId = actor.id;
+    const body = req.body || {};
+
+    const kind =
+      body.kind === "call"
+        ? "call"
+        : "message";
+
+    /*
+     * RECIPIENTS
+     */
+    let recipientIds = [];
+
+    if (kind === "call") {
+      if (body.callee_id) {
+        recipientIds = [
+          String(body.callee_id),
+        ];
+      }
+    } else {
+      if (!body.conversation_id) {
+        return json(res, 400, {
+          error:
+            "conversation_id is required",
+        });
+      }
+
+      const {
+        data: members,
+        error: memberError,
+      } = await supabaseAdmin
+        .from("conversation_members")
+        .select("user_id")
+        .eq(
+          "conversation_id",
+          body.conversation_id
+        )
+        .neq(
+          "user_id",
+          actorId
+        );
+
+      if (memberError) {
+        return json(res, 500, {
+          error:
+            memberError.message,
+        });
+      }
+
+      recipientIds =
+        (members || [])
+          .map(
+            (row) => row.user_id
+          )
+          .filter(Boolean);
+    }
+
+    /*
+     * Remove duplicates and
+     * never notify the sender.
+     */
+    recipientIds = [
+      ...new Set(
+        recipientIds.filter(
+          (id) =>
+            String(id) !==
+            String(actorId)
+        )
+      ),
+    ];
+
+    if (!recipientIds.length) {
+      return json(res, 200, {
+        ok: true,
+        sent: 0,
+        removed: 0,
+        recipients: 0,
+      });
+    }
+
+    /*
+     * SENDER PROFILE
+     */
+    const {
+      data: senderProfile,
+    } = await supabaseAdmin
+      .from("profiles")
+      .select(
+        "id,username,full_name,avatar_url"
+      )
+      .eq(
+        "id",
+        actorId
+      )
+      .maybeSingle();
+
+    /*
+     * NOTIFICATION TEXT
+     */
+    const title = cleanText(
+      body.title,
+      senderProfile?.full_name ||
+        senderProfile?.username ||
+        "hexachi"
+    );
+
+    const textBody = cleanText(
+      body.body,
+      kind === "call"
+        ? body.call_type ===
+          "video"
+          ? "📹 Incoming video call"
+          : "📞 Incoming voice call"
+        : "You have a new message."
+    );
+
+    /*
+     * DEVICE SUBSCRIPTIONS
+     */
+    const {
+      data: subscriptions,
+      error:
+        subscriptionError,
+    } = await supabaseAdmin
+      .from("push_subscriptions")
+      .select(
+        "id,user_id,subscription"
+      )
+      .in(
+        "user_id",
+        recipientIds
       );
 
-      sent += 1;
-    } catch (error) {
-      const status =
-        Number(
-          error?.statusCode || 0
+    if (subscriptionError) {
+      return json(res, 500, {
+        error:
+          subscriptionError.message,
+      });
+    }
+
+    /*
+     * PUSH PAYLOAD
+     */
+    const payload =
+      JSON.stringify({
+        title,
+        body: textBody,
+
+        icon:
+          "/favicon.ico",
+
+        badge:
+          "/favicon.ico",
+
+        tag:
+          kind === "call"
+            ? `call-${
+                body.call_id ||
+                Date.now()
+              }`
+            : `message-${
+                body.conversation_id
+              }`,
+
+        requireInteraction:
+          kind === "call",
+
+        kind,
+
+        data: {
+          kind,
+
+          url:
+            body.url ||
+            "/",
+
+          conversation_id:
+            body.conversation_id ||
+            null,
+
+          message_id:
+            body.message_id ||
+            null,
+
+          call_id:
+            body.call_id ||
+            null,
+
+          call_type:
+            body.call_type ||
+            null,
+        },
+      });
+
+    /*
+     * SEND
+     */
+    let sent = 0;
+    let removed = 0;
+
+    for (
+      const item of
+        subscriptions || []
+    ) {
+      if (
+        !item?.subscription
+      ) {
+        continue;
+      }
+
+      try {
+        await webpush.sendNotification(
+          item.subscription,
+          payload
         );
 
-      /*
-       * 404 / 410 means that
-       * the browser subscription
-       * has expired or disappeared.
-       */
-
-      if (
-        status === 404 ||
-        status === 410
-      ) {
-        await supabaseAdmin
-          .from(
-            "push_subscriptions"
-          )
-          .delete()
-          .eq(
-            "id",
-            item.id
+        sent += 1;
+      } catch (error) {
+        const status =
+          Number(
+            error?.statusCode ||
+              0
           );
 
-        removed += 1;
-      } else {
-        console.warn(
-          "hexachi web push delivery failed:",
-          status,
-          error?.message ||
-            error
-        );
+        /*
+         * Browser subscription
+         * expired or was removed.
+         */
+        if (
+          status === 404 ||
+          status === 410
+        ) {
+          await supabaseAdmin
+            .from(
+              "push_subscriptions"
+            )
+            .delete()
+            .eq(
+              "id",
+              item.id
+            );
+
+          removed += 1;
+        } else {
+          console.warn(
+            "hexachi web push delivery failed:",
+            status,
+            error?.message ||
+              error
+          );
+        }
       }
     }
+
+    return json(res, 200, {
+      ok: true,
+      sent,
+      removed,
+      recipients:
+        recipientIds.length,
+    });
+  } catch (error) {
+    console.error(
+      "hexachi push API error:",
+      error
+    );
+
+    return json(res, 500, {
+      error:
+        error?.message ||
+        "Unable to send push notification.",
+    });
   }
-
-  /*
-   * ============================================================
-   * RESPONSE
-   * ============================================================
-   */
-
-  return json(res, 200, {
-    ok: true,
-
-    sent,
-
-    removed,
-
-    recipients:
-      recipientIds.length,
-  });
-
-                                                    
-module.exports = handler;
+}
