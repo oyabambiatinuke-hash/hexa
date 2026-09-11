@@ -6262,6 +6262,26 @@ class HexaErrorBoundary extends React.Component {
   }
 }
 
+function MobileBottomNav({ activePage, setActivePage }) {
+  const items = [
+    { id: "chat", icon: "💬", label: "Chat" },
+    { id: "groups", icon: "👥", label: "Groups" },
+    { id: "status", icon: "◌", label: "Status" },
+    { id: "calls", icon: "☎", label: "Calls" },
+    { id: "settings", icon: "⚙", label: "Settings" },
+  ];
+  return (
+    <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
+      {items.map((item) => (
+        <button key={item.id} type="button" className={activePage === item.id ? "active" : ""} onClick={() => setActivePage(item.id)} aria-label={item.label}>
+          <span className="mobile-bottom-icon">{item.icon}</span>
+          <span>{item.label}</span>
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 function AuthenticatedHEXA({ session, onSignOut }) {
 
   const [profile,setProfile]=useState(null),[profileLoading,setProfileLoading]=useState(true),[activePage,setActivePage]=useState("chat"),[search,setSearch]=useState(""),[notifications,setNotifications]=useState([]),[showNotifications,setShowNotifications]=useState(false),[chatTarget,setChatTarget]=useState(null),[callTarget,setCallTarget]=useState(null);
@@ -6281,7 +6301,7 @@ function AuthenticatedHEXA({ session, onSignOut }) {
     case "developer":page=<WorkspacePlaceholder title="Developer Hub" description="Build and connect with HEXA." icon="</>"/>;break;
     default:page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type)=>setCallTarget({conversation:c,type})} onOpenChatWithUser={()=>setSearch("")}/>;
   }
-  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div></div>;
+  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div><MobileBottomNav activePage={activePage} setActivePage={setActivePage}/></div>;
 }
 
 
@@ -8367,6 +8387,90 @@ const COMMUNICATION_UI_OVERRIDES = `
   .chat-composer button{width:36px;height:36px;border-radius:10px;}
   .chat-composer textarea{min-height:38px;max-height:96px;border-radius:18px;font-size:14px;padding:8px 12px;}
   .sidebar-item{padding:12px 11px;}
+}
+
+
+/* ============================================================
+   HEXACHI MOBILE-FIRST POLISH
+   ============================================================ */
+.mobile-bottom-nav{display:none;}
+@media (max-width:760px){
+  :root{--mobile-nav-h:68px;--mobile-top-h:58px;}
+  html,body,#root{width:100%;min-width:0;max-width:100%;overflow:hidden;}
+  .hexa-app{width:100%;height:100dvh;min-height:100dvh;overflow:hidden;}
+  .hexa-main{min-width:0;width:100%;height:100%;overflow:hidden;}
+  .hexa-content{height:calc(100dvh - var(--mobile-top-h));min-height:0;padding-bottom:var(--mobile-nav-h);box-sizing:border-box;overflow:hidden;}
+  .hexa-topbar{position:relative;height:var(--mobile-top-h);min-height:var(--mobile-top-h);padding:0 8px;box-sizing:border-box;gap:6px;}
+  .mobile-menu-button{left:8px;top:10px;width:38px;height:38px;border-radius:12px;z-index:95;}
+  .mobile-page-title{margin-left:48px;min-width:58px;white-space:nowrap;}
+  .topbar-search{flex:1;min-width:0;}
+  .topbar-search input{width:100%;height:38px;padding:0 10px 0 32px;font-size:12px;border-radius:12px;box-sizing:border-box;}
+  .chat-layout{height:calc(100dvh - var(--mobile-top-h) - var(--mobile-nav-h));min-height:0;}
+  .chat-main{height:100%;min-height:0;display:flex;flex-direction:column;}
+  .chat-header{flex:0 0 58px;height:58px;min-height:58px;padding:0 8px;gap:7px;box-sizing:border-box;}
+  .chat-header-copy{min-width:0;flex:1;}
+  .chat-header-copy strong,.chat-header-copy span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .chat-header-copy strong{font-size:13px;}
+  .chat-header-copy span{font-size:10px;}
+  .chat-header-actions{display:flex;gap:3px;flex:0 0 auto;}
+  .chat-header-actions button{width:34px;height:34px;border-radius:10px;}
+  .chat-header-actions button:nth-child(n+4){display:none;}
+  .messages-area{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:10px 8px 8px;scroll-padding-bottom:90px;-webkit-overflow-scrolling:touch;}
+  .hexa-message-row{width:100%;display:flex;align-items:flex-end;gap:5px;margin:3px 0;}
+  .hexa-message-row.mine{justify-content:flex-end;}
+  .hexa-message-row.incoming{justify-content:flex-start;}
+  .hexa-message-row .message-bubble-wrap{min-width:0;max-width:calc(100vw - 54px);}
+  .hexa-message-row .message-bubble{max-width:100%;padding:8px 10px;font-size:14px;line-height:1.35;border-radius:15px;overflow-wrap:anywhere;word-break:break-word;}
+  .hexa-message-row.mine .message-bubble{border-bottom-right-radius:5px;}
+  .hexa-message-row.incoming .message-bubble{border-bottom-left-radius:5px;}
+  .message-media{max-width:min(72vw,280px);height:auto;}
+  .composer-stack{position:relative;flex:0 0 auto;z-index:45;}
+  .chat-composer{min-height:56px;padding:6px 7px calc(6px + env(safe-area-inset-bottom));gap:4px;align-items:flex-end;}
+  .chat-composer .composer-left,.chat-composer .composer-right{gap:2px;}
+  .chat-composer button{width:35px;height:35px;min-width:35px;border-radius:11px;font-size:15px;}
+  .chat-composer textarea{min-height:37px;max-height:88px;padding:9px 11px;border-radius:18px;font-size:14px;line-height:1.3;}
+  .composer-send{width:36px!important;height:36px!important;min-width:36px!important;border-radius:50%!important;}
+  .voice-recorder-panel,.voice-preview-panel{min-height:58px;padding:7px 8px;gap:6px;flex-wrap:nowrap;}
+  .voice-recorder-live,.voice-preview-heading{min-width:0;flex:1;}
+  .voice-recorder-live strong{font-size:11px;}
+  .voice-waveform{display:flex;min-width:34px;gap:2px;height:22px;}
+  .voice-waveform i{width:2px;}
+  .voice-recorder-actions{gap:4px;}
+  .voice-recorder-actions button{padding:8px 9px;font-size:10px;white-space:nowrap;}
+  .voice-preview-panel{flex-wrap:wrap;}
+  .voice-preview-panel audio{width:100%;order:4;height:32px;}
+  .emoji-panel,.sticker-panel,.feature-popover,.gif-panel{position:fixed;left:8px;right:8px;bottom:calc(var(--mobile-nav-h) + 58px + env(safe-area-inset-bottom));width:auto;max-height:56dvh;overflow:auto;z-index:120;}
+  .emoji-grid{max-height:38dvh;}
+  .mobile-bottom-nav{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);left:0;right:0;bottom:0;height:var(--mobile-nav-h);padding:5px 4px calc(5px + env(safe-area-inset-bottom));box-sizing:border-box;background:rgba(7,10,14,.96);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border-top:1px solid var(--hexa-border-strong);z-index:100;}
+  .mobile-bottom-nav button{border:0;background:transparent;color:var(--hexa-muted);display:grid;place-items:center;align-content:center;gap:3px;border-radius:13px;font-size:9px;min-width:0;}
+  .mobile-bottom-nav button.active{color:var(--hexa-text);background:rgba(124,92,255,.15);}
+  .mobile-bottom-icon{font-size:20px;line-height:1;}
+  .workspace-page,.page{padding:14px 10px 20px;}
+  .status-row{overflow-x:auto;padding-bottom:5px;-webkit-overflow-scrolling:touch;}
+  .status-card{flex:0 0 118px;}
+  .entity-grid,.feature-grid{grid-template-columns:1fr!important;}
+  .entity-card{padding:15px;}
+  .notifications-panel{position:fixed;left:8px;right:8px;top:62px;width:auto;max-height:60dvh;overflow:auto;}
+  .hexa-modal-overlay{padding:8px;align-items:end;}
+  .hexa-modal,.entity-modal,.status-modal{width:100%;max-width:none;max-height:86dvh;border-radius:20px 20px 12px 12px;padding:16px;}
+  .call-shell{width:100vw;height:100dvh;max-height:none;border-radius:0;}
+}
+@media (max-width:420px){
+  .mobile-page-title{display:none;}
+  .mobile-menu-button{top:10px;left:7px;width:36px;height:36px;}
+  .topbar-search{margin-left:43px;}
+  .chat-header-copy strong{font-size:12px;}
+  .chat-header-actions button{width:31px;height:31px;}
+  .chat-composer button{width:33px;height:33px;min-width:33px;}
+  .composer-send{width:35px!important;height:35px!important;min-width:35px!important;}
+  .chat-composer textarea{font-size:13px;padding:8px 10px;}
+  .hexa-message-row .message-bubble-wrap{max-width:calc(100vw - 42px);}
+  .hexa-message-row .message-bubble{font-size:13px;padding:7px 9px;}
+  .hexa-message-row .hexa-avatar{display:none;}
+  .voice-waveform{display:none;}
+  .voice-recorder-actions button{padding:7px 8px;font-size:10px;}
+  .mobile-bottom-nav{height:64px;}
+  .mobile-bottom-icon{font-size:18px;}
 }
 `;
 
