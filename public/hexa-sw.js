@@ -1,174 +1,128 @@
-/* public/hexa-sw.js */
+const CACHE = "hexachi-shell-v2";
 
-const CACHE_NAME = "hexa-v1";
-
-self.addEventListener("install", () => {
-  self.skipWaiting();
+self.addEventListener("install", (event) => {
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-/*
- * Push notification received from the HEXA push server.
- */
 self.addEventListener("push", (event) => {
+  let data = {};
+
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = {
+      body: event.data?.text?.() || "",
+    };
+  }
+
+  const title = data.title || "hexachi";
+
+  const notificationData = {
+    url: data.data?.url || data.url || "/",
+    conversation_id:
+      data.data?.conversation_id ||
+      data.conversation_id ||
+      null,
+    message_id:
+      data.data?.message_id ||
+      data.message_id ||
+      null,
+    call_id:
+      data.data?.call_id ||
+      data.call_id ||
+      null,
+    kind:
+      data.data?.kind ||
+      data.kind ||
+      "message",
+    call_type:
+      data.data?.call_type ||
+      data.call_type ||
+      null,
+  };
+
+  const options = {
+    body: data.body || "You have a new message.",
+    icon: data.icon || "/favicon.ico",
+    badge: data.badge || "/favicon.ico",
+
+    tag:
+      data.tag ||
+      (
+        notificationData.call_id
+          ? `call-${notificationData.call_id}`
+          : "hexachi-notification"
+      ),
+
+    renotify: true,
+
+    requireInteraction:
+      Boolean(data.requireInteraction) ||
+      notificationData.kind === "call",
+
+    data: notificationData,
+
+    vibrate:
+      data.vibrate ||
+      [120, 60, 120],
+
+    timestamp: Date.now(),
+  };
+
   event.waitUntil(
-    (async () => {
-      let data = {};
-
-      try {
-        data = event.data ? event.data.json() : {};
-      } catch {
-        data = {
-          title: "HEXA",
-          body: event.data?.text?.() || "You have a new notification.",
-        };
-      }
-
-      const type = data.type || "message";
-
-      let title = data.title || "HEXA";
-      let body = data.body || "";
-      let icon = data.icon || "/pwa-192.png";
-      let badge = data.badge || "/pwa-192.png";
-
-      if (type === "voice_call") {
-        title = data.title || "Incoming voice call";
-        body = data.body || "Someone is calling you on HEXA";
-      }
-
-      if (type === "video_call") {
-        title = data.title || "Incoming video call";
-        body = data.body || "Someone is calling you on HEXA";
-      }
-
-      const notificationOptions = {
-        body,
-        icon,
-        badge,
-        tag: data.tag || `hexa-${type}-${data.id || Date.now()}`,
-        renotify: true,
-        requireInteraction:
-          type === "voice_call" || type === "video_call",
-
-        vibrate:
-          type === "voice_call" || type === "video_call"
-            ? [250, 100, 250, 100, 500]
-            : [120, 80, 120],
-
-        data: {
-          type,
-          id: data.id || null,
-          conversationId: data.conversationId || null,
-          callId: data.callId || null,
-          url: data.url || "/",
-        },
-
-        actions:
-          type === "voice_call" || type === "video_call"
-            ? [
-                {
-                  action: "open-call",
-                  title: "Open call",
-                },
-                {
-                  action: "dismiss",
-                  title: "Dismiss",
-                },
-              ]
-            : [
-                {
-                  action: "open",
-                  title: "Open HEXA",
-                },
-              ],
-      };
-
-      await self.registration.showNotification(
-        title,
-        notificationOptions
-      );
-    })()
+    self.registration.showNotification(
+      title,
+      options
+    )
   );
 });
 
-/*
- * Notification clicked.
- */
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
-  if (event.action === "dismiss") {
-    return;
-  }
+  const notification = event.notification;
+  const data = notification.data || {};
+
+  const target =
+    data.url ||
+    "/";
 
   event.waitUntil(
     (async () => {
-      const data = event.notification.data || {};
+      const clients =
+        await self.clients.matchAll({
+          type: "window",
+          includeUncontrolled: true,
+        });
 
-      let targetUrl = data.url || "/";
-
-      if (data.type === "message" && data.conversationId) {
-        targetUrl = `/?chat=${encodeURIComponent(
-          data.conversationId
-        )}`;
-      }
-
-      if (
-        (data.type === "voice_call" ||
-          data.type === "video_call") &&
-        data.callId
-      ) {
-        targetUrl = `/?call=${encodeURIComponent(data.callId)}`;
-      }
-
-      const absoluteUrl = new URL(
-        targetUrl,
-        self.location.origin
-      ).href;
-
-      const clientsList = await self.clients.matchAll({
-        type: "window",
-        includeUncontrolled: true,
-      });
-
-      /*
-       * Reuse an existing HEXA tab.
-       */
-      for (const client of clientsList) {
-        if ("focus" in client) {
+      for (const client of clients) {
+        try {
           await client.focus();
 
-          if ("navigate" in client) {
-            await client.navigate(absoluteUrl);
+          if (
+            "navigate" in client &&
+            target
+          ) {
+            await client.navigate(target);
           }
 
           return;
+        } catch {
+          // Try the next open client.
         }
       }
 
-      /*
-       * No HEXA tab exists, so create one.
-       */
       if (self.clients.openWindow) {
-        await self.clients.openWindow(absoluteUrl);
+        await self.clients.openWindow(target);
       }
     })()
   );
 });
 
-/*
- * Optional message channel.
- * The React app can tell the service worker which chat is currently open.
- */
-self.addEventListener("message", (event) => {
-  if (!event.data) return;
-
-  if (event.data.type === "HEXA_READY") {
-    event.source?.postMessage({
-      type: "HEXA_SW_READY",
-    });
-  }
+self.addEventListener("notificationclose", () => {
+  // Reserved for analytics/notification cleanup.
 });
