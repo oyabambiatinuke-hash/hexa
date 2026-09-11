@@ -416,6 +416,7 @@ const NAV_ITEMS = [
   { id: "status", label: "Status", icon: "◌" },
   { id: "calls", label: "Calls", icon: "☎" },
   { id: "kora", label: "Kora", icon: "✦" },
+  { id: "subscription", label: "Subscription", icon: "★" },
   { id: "settings", label: "Settings", icon: "⚙" },
 ];
 
@@ -568,114 +569,6 @@ function readJsonStorage(key, fallback) {
 }
 function writeJsonStorage(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
-}
-
-
-/* ============================================================
-   REAL WEB PUSH NOTIFICATIONS
-   ============================================================ */
-const HEXA_PUSH_PUBLIC_KEY = import.meta.env.VITE_HEXA_VAPID_PUBLIC_KEY || "";
-
-function urlBase64ToUint8Array(base64String) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = window.atob(base64);
-  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
-}
-
-async function registerHexaServiceWorker() {
-  if (typeof window === "undefined" || !("serviceWorker" in navigator)) return null;
-  try {
-    await navigator.serviceWorker.register("/hexa-sw.js", {
-      scope: "/",
-      updateViaCache: "none",
-    });
-    // PushManager.subscribe() requires an active service worker.
-    // navigator.serviceWorker.ready waits until activation has completed.
-    return await navigator.serviceWorker.ready;
-  } catch (error) {
-    console.warn("hexachi service worker registration:", error);
-    return null;
-  }
-}
-
-async function getHexaPushSubscription() {
-  if (typeof window === "undefined" || !("PushManager" in window)) return null;
-  if (!HEXA_PUSH_PUBLIC_KEY) {
-    console.warn("hexachi push: VITE_HEXA_VAPID_PUBLIC_KEY is not configured.");
-    return null;
-  }
-  const registration = await registerHexaServiceWorker();
-  if (!registration) return null;
-  let subscription = await registration.pushManager.getSubscription();
-  if (!subscription) {
-    subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(HEXA_PUSH_PUBLIC_KEY),
-    });
-  }
-  return subscription;
-}
-
-async function saveHexaPushSubscription(profileId, { requestPermission = false } = {}) {
-  if (!profileId || typeof window === "undefined") return { ok: false, reason: "missing-profile" };
-  if (!("Notification" in window) || !("PushManager" in window)) {
-    return { ok: false, reason: "unsupported" };
-  }
-
-  let permission = Notification.permission;
-  if (permission === "default" && requestPermission) {
-    try {
-      permission = await Notification.requestPermission();
-    } catch {
-      permission = "denied";
-    }
-  }
-  if (permission !== "granted") return { ok: false, reason: permission };
-
-  try {
-    const subscription = await getHexaPushSubscription();
-    if (!subscription) return { ok: false, reason: "subscription-unavailable" };
-    const json = subscription.toJSON();
-    const { error } = await supabase.from("push_subscriptions").upsert({
-      user_id: profileId,
-      endpoint: subscription.endpoint,
-      p256dh: json.keys?.p256dh || null,
-      auth: json.keys?.auth || null,
-      subscription: json,
-      user_agent: navigator.userAgent,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "endpoint" });
-    if (error) throw error;
-    return { ok: true, subscription };
-  } catch (error) {
-    console.warn("hexachi push subscription:", error);
-    return { ok: false, reason: error?.message || "save-failed" };
-  }
-}
-
-async function sendHexaPush(payload) {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) return { ok: false, reason: "no-session" };
-    const response = await fetch("/api/hexa-push", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify(payload),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      console.warn("hexachi push send:", data?.error || response.statusText);
-      return { ok: false, reason: data?.error || response.statusText };
-    }
-    return { ok: true, data };
-  } catch (error) {
-    console.warn("hexachi push request:", error);
-    return { ok: false, reason: error?.message || "request-failed" };
-  }
 }
 
 function readLocalQueue() {
@@ -2729,19 +2622,6 @@ function ChatPage({
 
       setMessages((current) => current.map((item) => item.id === optimisticId ? data : item));
       updateConversationPreview(selected, data);
-
-      // The sender's browser asks the server to deliver a true Web Push
-      // notification to the other members' devices. The server verifies
-      // the session and resolves conversation_members itself.
-      void sendHexaPush({
-        kind: "message",
-        conversation_id: conversationId,
-        message_id: data.id,
-        sender_id: profile.id,
-        title: profile.full_name || profile.username || "hexachi",
-        body: data.content || (messageType === "voice" ? "🎙️ Voice message" : "You sent a message"),
-        url: `${window.location.origin}/?chat=${encodeURIComponent(conversationId)}`,
-      });
     } catch (error) {
       console.error("HEXA send message:", error);
       // Files cannot safely be serialized into localStorage; text messages can.
@@ -3683,33 +3563,43 @@ function ChatPage({
 
             {!isSystem &&
               !isSelf && (
-                <>
-                  <button
-                    type="button"
-                    title="Voice call"
-                    onClick={() =>
-                      onStartCall?.(
-                        selected,
-                        "voice"
-                      )
-                    }
-                  >
-                    ☎
-                  </button>
+                String(selected?.kind || selected?.type || "").toLowerCase() === "group" ? (
+                  <>
+                    <button
+                      type="button"
+                      title="Group voice call"
+                      onClick={() => onStartCall?.(selected, "voice", "group-voice")}
+                    >
+                      ☎
+                    </button>
 
-                  <button
-                    type="button"
-                    title="Video call"
-                    onClick={() =>
-                      onStartCall?.(
-                        selected,
-                        "video"
-                      )
-                    }
-                  >
-                    ▣
-                  </button>
-                </>
+                    <button
+                      type="button"
+                      title="Group video call"
+                      onClick={() => onStartCall?.(selected, "video", "group-video")}
+                    >
+                      ▣
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      title="Voice call"
+                      onClick={() => onStartCall?.(selected, "voice")}
+                    >
+                      ☎
+                    </button>
+
+                    <button
+                      type="button"
+                      title="Video call"
+                      onClick={() => onStartCall?.(selected, "video")}
+                    >
+                      ▣
+                    </button>
+                  </>
+                )
               )}
 
             <button
@@ -5794,6 +5684,435 @@ function WebRTCCall({ profile, call, type, peer, onEnd }) {
   );
 }
 
+function GroupWebRTCCall({ profile, roomId, conversation, callType, callRecordIds = [], participants = [], onEnd }) {
+  const localVideo = useRef(null);
+  const participantKey = participants.map((p) => p.id).sort().join(",");
+  const peersRef = useRef(new Map());
+  const pendingIceRef = useRef(new Map());
+  const localStreamRef = useRef(null);
+  const channelRef = useRef(null);
+  const [remoteStreams, setRemoteStreams] = useState({});
+  const [connectedIds, setConnectedIds] = useState([]);
+  const [muted, setMuted] = useState(false);
+  const [cameraEnabled, setCameraEnabled] = useState(callType === "video");
+  const [error, setError] = useState("");
+  const [ending, setEnding] = useState(false);
+
+  const isVideo = callType === "video";
+  const displayParticipants = participants.filter((p) => String(p.id) !== String(profile.id));
+
+  useEffect(() => {
+    let stopped = false;
+
+    async function start() {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error("Camera/microphone access is not available in this browser.");
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: isVideo,
+        });
+        if (stopped) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        localStreamRef.current = stream;
+        if (localVideo.current && isVideo) {
+          localVideo.current.srcObject = stream;
+        }
+
+        const channel = supabase.channel(`hexa-group-call-${roomId}`, {
+          config: { broadcast: { self: true } },
+        });
+        channelRef.current = channel;
+
+        const send = async (event, payload) => {
+          try {
+            await channel.send({
+              type: "broadcast",
+              event,
+              payload,
+            });
+          } catch (broadcastError) {
+            console.warn("HEXA group call broadcast:", broadcastError?.message || broadcastError);
+          }
+        };
+
+        function keyFor(userId) {
+          return String(userId);
+        }
+
+        async function flushIce(userId, pc) {
+          const queued = pendingIceRef.current.get(keyFor(userId)) || [];
+          pendingIceRef.current.delete(keyFor(userId));
+          for (const candidate of queued) {
+            try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
+          }
+        }
+
+        async function ensurePeer(peerId, createOffer = false) {
+          const id = keyFor(peerId);
+          if (id === keyFor(profile.id)) return null;
+
+          const existing = peersRef.current.get(id);
+          if (existing) {
+            if (createOffer && existing.signalingState === "stable" && !existing.currentRemoteDescription) {
+              try {
+                const offer = await existing.createOffer();
+                await existing.setLocalDescription(offer);
+                await send("offer", {
+                  from: profile.id,
+                  to: peerId,
+                  description: offer,
+                });
+              } catch (offerError) {
+                console.warn("HEXA group call re-offer:", offerError?.message || offerError);
+              }
+            }
+            return existing;
+          }
+
+          const cfg = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+          if (import.meta.env.VITE_TURN_URL && import.meta.env.VITE_TURN_USERNAME && import.meta.env.VITE_TURN_CREDENTIAL) {
+            cfg.iceServers.push({
+              urls: import.meta.env.VITE_TURN_URL,
+              username: import.meta.env.VITE_TURN_USERNAME,
+              credential: import.meta.env.VITE_TURN_CREDENTIAL,
+            });
+          }
+
+          const pc = new RTCPeerConnection(cfg);
+          peersRef.current.set(id, pc);
+
+          stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+          pc.ontrack = (event) => {
+            const remote = event.streams?.[0];
+            if (!remote || stopped) return;
+            setRemoteStreams((current) => ({ ...current, [id]: remote }));
+            setConnectedIds((current) => current.includes(id) ? current : [...current, id]);
+          };
+
+          pc.onicecandidate = (event) => {
+            if (event.candidate) {
+              send("ice", {
+                from: profile.id,
+                to: peerId,
+                candidate: event.candidate.toJSON(),
+              });
+            }
+          };
+
+          pc.onconnectionstatechange = () => {
+            if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
+              setConnectedIds((current) => current.filter((connectedId) => connectedId !== id));
+            }
+          };
+
+          if (createOffer) {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            await send("offer", {
+              from: profile.id,
+              to: peerId,
+              description: offer,
+            });
+          }
+
+          return pc;
+        }
+
+        channel
+          .on("broadcast", { event: "join" }, async ({ payload }) => {
+            if (!payload?.from || String(payload.from) === String(profile.id)) return;
+            // Deterministic initiator prevents offer glare: lexicographically smaller ID offers.
+            const shouldOffer = String(profile.id) < String(payload.from);
+            await ensurePeer(payload.from, shouldOffer);
+          })
+          .on("broadcast", { event: "offer" }, async ({ payload }) => {
+            if (!payload?.from || String(payload.to) !== String(profile.id)) return;
+            const pc = await ensurePeer(payload.from, false);
+            if (!pc) return;
+            try {
+              await pc.setRemoteDescription(new RTCSessionDescription(payload.description));
+              await flushIce(payload.from, pc);
+              const answer = await pc.createAnswer();
+              await pc.setLocalDescription(answer);
+              await send("answer", {
+                from: profile.id,
+                to: payload.from,
+                description: answer,
+              });
+            } catch (signalError) {
+              console.warn("HEXA group offer handling:", signalError?.message || signalError);
+            }
+          })
+          .on("broadcast", { event: "answer" }, async ({ payload }) => {
+            if (!payload?.from || String(payload.to) !== String(profile.id)) return;
+            const pc = peersRef.current.get(keyFor(payload.from));
+            if (!pc) return;
+            try {
+              await pc.setRemoteDescription(new RTCSessionDescription(payload.description));
+              await flushIce(payload.from, pc);
+            } catch (signalError) {
+              console.warn("HEXA group answer handling:", signalError?.message || signalError);
+            }
+          })
+          .on("broadcast", { event: "ice" }, async ({ payload }) => {
+            if (!payload?.from || String(payload.to) !== String(profile.id) || !payload.candidate) return;
+            const peerId = keyFor(payload.from);
+            const pc = peersRef.current.get(peerId);
+            if (!pc || !pc.remoteDescription) {
+              const queued = pendingIceRef.current.get(peerId) || [];
+              queued.push(payload.candidate);
+              pendingIceRef.current.set(peerId, queued);
+              return;
+            }
+            try { await pc.addIceCandidate(new RTCIceCandidate(payload.candidate)); } catch {}
+          })
+          .on("broadcast", { event: "leave" }, ({ payload }) => {
+            const peerId = keyFor(payload?.from);
+            const pc = peersRef.current.get(peerId);
+            pc?.close();
+            peersRef.current.delete(peerId);
+            setRemoteStreams((current) => {
+              const next = { ...current };
+              delete next[peerId];
+              return next;
+            });
+            setConnectedIds((current) => current.filter((id) => id !== peerId));
+          });
+
+        await channel.subscribe();
+
+        const memberIds = displayParticipants.map((p) => String(p.id)).filter(Boolean);
+        for (const participantId of memberIds) {
+          const shouldOffer = String(profile.id) < String(participantId);
+          await ensurePeer(participantId, shouldOffer);
+        }
+
+        await send("join", { from: profile.id });
+      } catch (startError) {
+        console.error("HEXA group WebRTC start:", startError);
+        if (!stopped) setError(startError?.message || "Unable to start the group call.");
+      }
+    }
+
+    start();
+
+    return () => {
+      stopped = true;
+      try { channelRef.current?.send({ type: "broadcast", event: "leave", payload: { from: profile.id } }); } catch {}
+      peersRef.current.forEach((pc) => pc.close());
+      peersRef.current.clear();
+      localStreamRef.current?.getTracks?.().forEach((track) => track.stop());
+      localStreamRef.current = null;
+      if (channelRef.current) supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    };
+  }, [roomId, profile?.id, participantKey]);
+
+  function toggleMute() {
+    const track = localStreamRef.current?.getAudioTracks?.()[0];
+    if (!track) return;
+    track.enabled = !track.enabled;
+    setMuted(!track.enabled);
+  }
+
+  function toggleCamera() {
+    const track = localStreamRef.current?.getVideoTracks?.()[0];
+    if (!track) return;
+    track.enabled = !track.enabled;
+    setCameraEnabled(track.enabled);
+  }
+
+  async function end() {
+    if (ending) return;
+    setEnding(true);
+    try {
+      const ids = Array.isArray(callRecordIds) ? callRecordIds : [];
+      for (const id of ids) {
+        await supabase.rpc("finalize_hexa_call", {
+          p_call_id: id,
+          p_ended_reason: "user",
+        }).catch(() => {});
+      }
+    } finally {
+      onEnd?.();
+    }
+  }
+
+  return (
+    <div className="story-viewer" style={{ zIndex: 820 }}>
+      <div className="call-shell">
+        <div className="call-header">
+          <div>
+            <strong>{conversation?.name || "Group Call"}</strong>
+            <span>{connectedIds.length ? `${connectedIds.length} participant${connectedIds.length === 1 ? "" : "s"} connected` : "Waiting for participants…"}</span>
+          </div>
+        </div>
+
+        {isVideo && (
+          <div className="call-video-grid">
+            <video ref={localVideo} autoPlay muted playsInline className={`call-local-video ${cameraEnabled ? "" : "camera-off"}`} />
+            {Object.entries(remoteStreams).map(([id, stream]) => {
+              const person = participants.find((p) => String(p.id) === String(id));
+              return <video key={id} autoPlay playsInline className="call-remote-video" ref={(node) => { if (node && node.srcObject !== stream) node.srcObject = stream; }} title={person?.full_name || person?.username || "Participant"} />;
+            })}
+          </div>
+        )}
+
+        {!isVideo && (
+          <div className="call-audio-stage">
+            <div className="call-avatar"><Avatar src={profile?.avatar_url} name={profile?.full_name || profile?.username || "hexachi"} size={86} online /></div>
+            <h2>{conversation?.name || "Group Call"}</h2>
+            <p>{error || (connectedIds.length ? "Connected" : "Waiting for participants…")}</p>
+            {Object.entries(remoteStreams).map(([id, stream]) => (
+              <audio key={id} autoPlay playsInline ref={(node) => { if (node && node.srcObject !== stream) node.srcObject = stream; }} />
+            ))}
+          </div>
+        )}
+
+        {error && <p className="call-error">{error}</p>}
+        <div className="call-controls">
+          <button type="button" className={`call-control-button ${muted ? "active" : ""}`} onClick={toggleMute}>{muted ? "🔇 Unmute" : "🎙 Mute"}</button>
+          {isVideo && <button type="button" className={`call-control-button ${!cameraEnabled ? "active" : ""}`} onClick={toggleCamera}>{cameraEnabled ? "📹 Camera" : "🚫 Camera"}</button>}
+          <button type="button" className="danger-button" onClick={end}>{ending ? "Ending…" : "End call"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GroupCallLauncher({ profile, target, onClose }) {
+  const [state, setState] = useState({ loading: true, error: "", roomId: "", callIds: [], participants: [] });
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const conversation = target?.conversation;
+        const conversationId = conversation?.realConversationId || conversation?.id;
+        if (!conversationId || !isHexaUuid(conversationId)) {
+          throw new Error("This group is not ready for calling.");
+        }
+
+        const { data: members, error: memberError } = await supabase
+          .from("conversation_members")
+          .select("user_id")
+          .eq("conversation_id", conversationId);
+        if (memberError) throw memberError;
+
+        const memberIds = [...new Set((members || []).map((m) => m.user_id).filter((id) => isHexaUuid(id) && String(id) !== String(profile.id)))];
+        if (!memberIds.length) throw new Error("This group has no other members to call.");
+
+        const { data: people, error: peopleError } = await supabase
+          .from("profiles")
+          .select("id,username,full_name,avatar_url")
+          .in("id", [profile.id, ...memberIds]);
+        if (peopleError) throw peopleError;
+
+        const roomId = crypto.randomUUID ? crypto.randomUUID() : `group-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const modeType = target.type === "video" ? "video" : "voice";
+
+        const rows = memberIds.map((calleeId) => ({
+          conversation_id: conversationId,
+          caller_id: profile.id,
+          callee_id: calleeId,
+          type: modeType,
+          status: "ringing",
+          started_at: null,
+          ended_at: null,
+          rate_kobo_per_second: 30,
+          currency: "NGN",
+          metadata: {
+            ...(target.mode ? { mode: target.mode } : {}),
+            group_call: true,
+            room_id: roomId,
+            group_name: conversation.name || "Group Call",
+            conversation_id: conversationId,
+            participant_ids: [profile.id, ...memberIds],
+          },
+        }));
+
+        const { data: calls, error: callError } = await supabase
+          .from("calls")
+          .insert(rows)
+          .select("id,conversation_id,caller_id,callee_id,type,status,metadata");
+        if (callError) throw callError;
+
+        if (!active) return;
+
+        const participantProfiles = people || memberIds.map((id) => ({ id }));
+        setState({
+          loading: false,
+          error: "",
+          roomId,
+          callIds: (calls || []).map((c) => c.id),
+          participants: participantProfiles,
+        });
+
+        const sessionResult = await supabase.auth.getSession();
+        const token = sessionResult?.data?.session?.access_token;
+        if (token) {
+          for (const call of calls || []) {
+            fetch("/api/hexa-push", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                kind: "call",
+                callee_id: call.callee_id,
+                call_id: call.id,
+                call_type: modeType,
+                url: `${window.location.origin}/?groupCall=${encodeURIComponent(roomId)}&conversation=${encodeURIComponent(conversationId)}`,
+                title: conversation.name || "hexachi group call",
+                body: modeType === "video" ? "📹 Incoming group video call" : "📞 Incoming group voice call",
+              }),
+            }).catch(() => {});
+          }
+        }
+      } catch (error) {
+        if (active) setState({ loading: false, error: error?.message || "Unable to start the group call.", roomId: "", callIds: [], participants: [] });
+      }
+    })();
+
+    return () => { active = false; };
+  }, [profile?.id, target?.conversation?.id, target?.conversation?.realConversationId, target?.type]);
+
+  if (state.error) {
+    return <div className="story-viewer"><div className="coming-card"><h2>Group call unavailable</h2><p>{state.error}</p><button onClick={onClose}>Close</button></div></div>;
+  }
+
+  if (state.loading) {
+    return <div className="story-viewer"><div className="coming-card"><h2>Starting group call…</h2><p>Calling the current group members.</p></div></div>;
+  }
+
+  return <GroupWebRTCCall profile={profile} roomId={state.roomId} conversation={target.conversation} callType={target.type} callRecordIds={state.callIds} participants={state.participants} onEnd={onClose} />;
+}
+
+function GroupIncomingCallRoom({ profile, call, roomId, participantIds, onEnd }) {
+  const [participants, setParticipants] = useState([]);
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const ids = [...new Set((participantIds || []).filter((id) => isHexaUuid(id)))];
+      if (!ids.length) return;
+      const { data } = await supabase.from("profiles").select("id,username,full_name,avatar_url").in("id", ids);
+      if (active) setParticipants(data || []);
+    })();
+    return () => { active = false; };
+  }, [participantIds.join(",")]);
+  if (!roomId) return <div className="story-viewer"><div className="coming-card"><h2>Group call unavailable</h2><p>The group call room is missing.</p><button onClick={onEnd}>Close</button></div></div>;
+  return <GroupWebRTCCall profile={profile} roomId={roomId} conversation={{ name: call?.metadata?.group_name || "Group Call" }} callType={call?.type || "voice"} callRecordIds={[call.id]} participants={participants} onEnd={onEnd} />;
+}
+
 function WebRTCCallLauncher({ profile, target, onClose }) {
   const [call, setCall] = useState(null);
   const [error, setError] = useState("");
@@ -5821,18 +6140,6 @@ function WebRTCCallLauncher({ profile, target, onClose }) {
         setError(callError.message);
         return;
       }
-
-      const callId = data?.id || data?.[0]?.id || null;
-      void sendHexaPush({
-        kind: "call",
-        call_id: callId,
-        callee_id: user,
-        caller_id: profile.id,
-        call_type: target.type,
-        title: profile.full_name || profile.username || "Incoming call",
-        body: target.type === "video" ? "📹 Incoming video call" : "📞 Incoming voice call",
-        url: `${window.location.origin}/?call=${encodeURIComponent(callId || "")}`,
-      });
 
       const { data: peer } = await supabase.from("profiles")
         .select("id,username,full_name,avatar_url")
@@ -5911,7 +6218,14 @@ function IncomingCallWatcher({ profile }) {
     if (error) safeAlert(error.message);
     setIncoming(null);
   };
-  if (incoming.accepted) return <WebRTCCall profile={profile} call={incoming.call} type={incoming.call.type} peer={{ id: incoming.call.caller_id }} onEnd={() => setIncoming(null)} />;
+  if (incoming.accepted) {
+    if (incoming.call?.metadata?.group_call) {
+      const participantIds = incoming.call?.metadata?.participant_ids || [];
+      const roomId = incoming.call?.metadata?.room_id;
+      return <GroupIncomingCallRoom profile={profile} call={incoming.call} roomId={roomId} participantIds={participantIds} onEnd={() => setIncoming(null)} />;
+    }
+    return <WebRTCCall profile={profile} call={incoming.call} type={incoming.call.type} peer={{ id: incoming.call.caller_id }} onEnd={() => setIncoming(null)} />;
+  }
   return <div className="story-viewer" style={{ zIndex: 700 }}>
     <div className="coming-card" style={{ width: "min(420px, 92vw)", textAlign: "center" }}>
       <Avatar src={incoming.peer?.avatar_url} name={incoming.peer?.full_name || incoming.peer?.username} size={82} />
@@ -6132,6 +6446,324 @@ function UniversalSearch({ search, profile, onMessage }) {
    HEXA SETTINGS
    ============================================================ */
 
+
+const HEXA_SUBSCRIPTION_PLANS = [
+  {
+    id: "plus",
+    name: "HEXA Plus",
+    description: "For people who want more room to communicate.",
+    features: [
+      "More storage",
+      "Advanced chat organization",
+      "Premium themes",
+      "Higher media limits",
+      "Expanded Kora usage",
+    ],
+    prices: {
+      ngn: { monthly: 3500, yearly: 33600 },
+      usd: { monthly: 2.99, yearly: 28.70 },
+    },
+  },
+  {
+    id: "pro",
+    name: "HEXA Pro",
+    description: "For power users, creators and growing communities.",
+    features: [
+      "Everything in Plus",
+      "Higher media limits",
+      "Creator tools",
+      "Advanced communities",
+      "More Kora credits",
+    ],
+    prices: {
+      ngn: { monthly: 8000, yearly: 76800 },
+      usd: { monthly: 6.99, yearly: 67.10 },
+    },
+  },
+  {
+    id: "ultra",
+    name: "HEXA Ultra",
+    description: "Maximum HEXA access for advanced users and businesses.",
+    features: [
+      "Everything in Pro",
+      "Maximum limits",
+      "Priority features",
+      "Advanced business tools",
+      "Highest Kora allowance",
+    ],
+    prices: {
+      ngn: { monthly: 18000, yearly: 172800 },
+      usd: { monthly: 14.99, yearly: 143.90 },
+    },
+  },
+];
+
+function SubscriptionPage({ profile }) {
+  const [subscription, setSubscription] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState("");
+  const [message, setMessage] = useState("");
+  const [billingCurrency, setBillingCurrency] = useState("ngn");
+  const [billingCycle, setBillingCycle] = useState("monthly");
+
+  async function getSessionToken() {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) throw error;
+    const token = data?.session?.access_token;
+    if (!token) throw new Error("Your HEXA session has expired. Please sign in again.");
+    return token;
+  }
+
+  async function loadSubscription() {
+    if (!profile?.id) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("hexa_subscriptions")
+        .select("*")
+        .eq("user_id", profile.id)
+        .maybeSingle();
+      if (error) throw error;
+      setSubscription(data || null);
+    } catch (error) {
+      console.warn("HEXA subscription load:", error?.message || error);
+      setMessage(error?.message || "Unable to load your subscription.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadSubscription();
+
+    const channel = supabase
+      .channel(`hexa-subscription-${profile?.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "hexa_subscriptions",
+          filter: `user_id=eq.${profile?.id}`,
+        },
+        (payload) => {
+          if (payload.new) setSubscription(payload.new);
+          else loadSubscription();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.id]);
+
+  async function startCheckout(planId) {
+    if (!profile?.id) return;
+    setBusy(planId);
+    setMessage("");
+
+    try {
+      const token = await getSessionToken();
+      const endpoint =
+        import.meta.env.VITE_HEXA_SUBSCRIPTION_CHECKOUT_URL ||
+        "/api/hexa-subscription-checkout";
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          plan_id: planId,
+          currency: billingCurrency,
+          billingCycle,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.url) {
+        throw new Error(
+          data?.error ||
+            "Unable to start Stripe checkout."
+        );
+      }
+
+      window.location.assign(data.url);
+    } catch (error) {
+      setMessage(error?.message || "Unable to start Stripe checkout.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function manageSubscription() {
+    setBusy("manage");
+    setMessage("");
+
+    try {
+      const token = await getSessionToken();
+      const response = await fetch("/api/hexa-subscription-portal", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.url) {
+        throw new Error(
+          data?.error ||
+            "Unable to open subscription management."
+        );
+      }
+      window.location.assign(data.url);
+    } catch (error) {
+      setMessage(error?.message || "Unable to open subscription management.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  const isActive = ["active", "trialing"].includes(subscription?.status);
+
+  return (
+    <section className="workspace-page subscription-page">
+      <div className="page-heading">
+        <div className="page-heading-icon">★</div>
+        <div>
+          <h1>Subscription</h1>
+          <p>Upgrade your hexachi account securely through Stripe.</p>
+        </div>
+      </div>
+
+      {subscription && (
+        <div className="settings-card subscription-current">
+          <div>
+            <strong>
+              {subscription.plan_name || subscription.plan_id || "Free"}
+            </strong>
+            <p>
+              {subscription.status || "active"}
+              {subscription.current_period_end
+                ? ` · Renews ${new Date(subscription.current_period_end).toLocaleDateString()}`
+                : ""}
+            </p>
+          </div>
+          <button
+            className="settings-secondary-button"
+            type="button"
+            disabled={busy === "manage"}
+            onClick={manageSubscription}
+          >
+            {busy === "manage" ? "Opening…" : "Manage subscription"}
+          </button>
+        </div>
+      )}
+
+      {message && (
+        <div className="subscription-message">
+          {message}
+        </div>
+      )}
+
+      <div className="subscription-controls settings-card">
+        <div>
+          <strong>Billing</strong>
+          <p>Choose your currency and billing frequency before checkout.</p>
+        </div>
+        <div className="subscription-control-row">
+          <label>
+            <span>Currency</span>
+            <select value={billingCurrency} onChange={(e) => setBillingCurrency(e.target.value)}>
+              <option value="ngn">NGN ₦</option>
+              <option value="usd">USD $</option>
+            </select>
+          </label>
+          <label>
+            <span>Billing cycle</span>
+            <select value={billingCycle} onChange={(e) => setBillingCycle(e.target.value)}>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="coming-card">
+          <div className="loading-spinner" />
+          <h2>Loading subscription…</h2>
+        </div>
+      ) : (
+        <div className="subscription-grid">
+          {HEXA_SUBSCRIPTION_PLANS.map((plan) => {
+            const current =
+              isActive &&
+              subscription?.plan_id === plan.id;
+
+            return (
+              <article
+                key={plan.id}
+                className={`subscription-card ${
+                  current ? "current" : ""
+                } ${plan.id === "pro" ? "featured" : ""}`}
+              >
+                {plan.id === "pro" && (
+                  <span className="popular">POPULAR</span>
+                )}
+
+                <span className="eyebrow">HEXACHI MEMBERSHIP</span>
+                <h2>{plan.name}</h2>
+                <div className="subscription-price">
+                  <strong>
+                    {billingCurrency === "ngn" ? "₦" : "$"}
+                    {plan.prices[billingCurrency][billingCycle].toLocaleString(undefined, {
+                      minimumFractionDigits: billingCurrency === "usd" ? 2 : 0,
+                      maximumFractionDigits: 2,
+                    })}
+                  </strong>
+                  <span>/{billingCycle === "monthly" ? "month" : "year"}</span>
+                </div>
+                <p>{plan.description}</p>
+
+                <div className="subscription-features">
+                  {plan.features.map((feature) => (
+                    <span key={feature}>✓ {feature}</span>
+                  ))}
+                </div>
+
+                <button
+                  className="hero-primary"
+                  type="button"
+                  disabled={current || Boolean(busy)}
+                  onClick={() => startCheckout(plan.id)}
+                >
+                  {busy === plan.id
+                    ? "Opening Stripe…"
+                    : current
+                      ? "Current plan"
+                      : `Choose ${plan.name.replace("HEXA ", "")}`}
+                </button>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="billing-footer">
+        <div>
+          <strong>🔒 Secure Stripe billing</strong>
+          <span>
+            Stripe handles payment details. hexachi stores only the subscription status and Stripe identifiers needed to provide your plan.
+          </span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function SettingsPage({ profile, onSignOut }) {
   const [theme, setTheme] = useState(getSavedHexaTheme());
   const [showThemes, setShowThemes] = useState(true);
@@ -6146,22 +6778,6 @@ function SettingsPage({ profile, onSignOut }) {
   }
 
   const activeTheme = HEXA_THEMES[theme] || HEXA_THEMES.midnight;
-  const pushSupported = typeof window !== "undefined" && "Notification" in window && "PushManager" in window;
-  const pushPermission = typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported";
-  const [pushBusy, setPushBusy] = useState(false);
-  const [pushStatus, setPushStatus] = useState("");
-
-  async function enablePushNotifications() {
-    if (!profile?.id) return;
-    setPushBusy(true);
-    setPushStatus("");
-    const result = await saveHexaPushSubscription(profile.id, { requestPermission: true });
-    setPushBusy(false);
-    if (result.ok) setPushStatus("Real device notifications are enabled on this device.");
-    else if (result.reason === "denied") setPushStatus("Notifications are blocked. Allow notifications for this site in your browser settings.");
-    else if (result.reason === "unsupported") setPushStatus("This browser does not support Web Push notifications.");
-    else setPushStatus("Notification setup could not be completed. Check your VAPID configuration and try again.");
-  }
 
   return (
     <section className="workspace-page settings-page">
@@ -6357,19 +6973,6 @@ function SettingsPage({ profile, onSignOut }) {
 
         <div className="settings-card">
           <div>
-            <strong>Real notifications</strong>
-            <p>
-              Receive new-message and incoming-call notifications even when hexachi is in the background.
-            </p>
-            {pushStatus && <span className="settings-status">{pushStatus}</span>}
-          </div>
-          <button className="hero-primary" type="button" onClick={enablePushNotifications} disabled={pushBusy || !pushSupported}>
-            {pushBusy ? "Enabling…" : pushPermission === "granted" ? "Notifications enabled" : "Enable notifications"}
-          </button>
-        </div>
-
-        <div className="settings-card">
-          <div>
             <strong>Account</strong>
             <p>
               Manage your HEXA session.
@@ -6448,51 +7051,37 @@ function AuthenticatedHEXA({ session, onSignOut }) {
 
   const [profile,setProfile]=useState(null),[profileLoading,setProfileLoading]=useState(true),[activePage,setActivePage]=useState("chat"),[search,setSearch]=useState(""),[notifications,setNotifications]=useState([]),[showNotifications,setShowNotifications]=useState(false),[chatTarget,setChatTarget]=useState(null),[callTarget,setCallTarget]=useState(null);
   useEffect(()=>{let cancelled=false;(async()=>{const result=await ensureHexaProfile(session?.user);if(!cancelled){setProfile(result);setProfileLoading(false)}})();return()=>{cancelled=true}},[session?.user?.id]);
-
-  // Restore an already-granted push subscription silently. The explicit
-  // permission request is exposed in Settings so the browser prompt occurs
-  // from a user gesture rather than unexpectedly on login.
-  useEffect(()=>{
-    if(!profile?.id)return;
-    if(typeof Notification !== "undefined" && Notification.permission === "granted"){
-      void saveHexaPushSubscription(profile.id);
-    }
-  },[profile?.id]);
-
-  useEffect(()=>{if(!profile?.id)return;const channel=supabase.channel(`hexa-notifications-${profile.id}`).on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},p=>{
-    if(p.new?.sender_id===profile.id)return;
-    setNotifications(x=>[{id:p.new?.id||`${Date.now()}`,title:"New message",body:p.new?.content||"New message",created_at:p.new?.created_at||new Date().toISOString(),conversation_id:p.new?.conversation_id},...x].slice(0,50));
-  }).subscribe();return()=>supabase.removeChannel(channel)},[profile?.id]);
-
-  // A real push notification opens the app with ?chat=<conversation-id>.
-  // Resolve that deep link into the existing chat pane and clean the URL.
-  useEffect(()=>{
-    const chatId = new URLSearchParams(window.location.search).get("chat");
-    if(!chatId) return;
-    setChatTarget({ id: chatId, realConversationId: chatId });
-    setActivePage("chat");
-    const clean = new URL(window.location.href);
-    clean.searchParams.delete("chat");
-    clean.searchParams.delete("call");
-    window.history.replaceState({}, document.title, `${clean.pathname}${clean.search}${clean.hash}`);
-  },[]);
+  useEffect(()=>{if(!profile?.id)return;const channel=supabase.channel(`hexa-notifications-${profile.id}`).on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},p=>{if(p.new?.sender_id===profile.id)return;setNotifications(x=>[{id:Date.now(),title:"New message",body:p.new?.content||"New message",created_at:new Date().toISOString()},...x].slice(0,50))}).subscribe();return()=>supabase.removeChannel(channel)},[profile?.id]);
   if(profileLoading)return <div className="hexa-loading-screen"><div className="loading-logo">H</div><div className="loading-spinner"/><strong>Opening HEXA…</strong><span>Preparing your workspace</span></div>;
   let page; switch(activePage){
-        case "chat":page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type)=>setCallTarget({conversation:c,type})} onOpenChatWithUser={()=>setSearch("")}/>;break;
+        case "chat":page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type,mode)=>setCallTarget({conversation:c,type,mode: mode || (type === "video" ? "video-call" : "voice-call")})} onOpenChatWithUser={()=>setSearch("")}/>;break;
     case "groups":page=<GroupsPage profile={profile} onOpenChat={c=>{setChatTarget(c);setActivePage("chat")}}/>;break;
     case "communities":page=<CommunitiesPage profile={profile}/>;break;
     case "channels":page=<ChannelsPage profile={profile}/>;break;
     case "status":page=<StatusPage profile={profile}/>;break;
     case "calls":page=<CallsPage profile={profile}/>;break;
     case "kora":page=<KoraPage profile={profile}/>;break;
+    case "subscription":page=<SubscriptionPage profile={profile}/>;break;
     case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut}/>;break;
     case "projects":page=<WorkspacePlaceholder title="Projects" description="Organize collaborative work." icon="◆"/>;break;
     case "developer":page=<WorkspacePlaceholder title="Developer Hub" description="Build and connect with HEXA." icon="</>"/>;break;
-    default:page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type)=>setCallTarget({conversation:c,type})} onOpenChatWithUser={()=>setSearch("")}/>;
+    default:page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type,mode)=>setCallTarget({conversation:c,type,mode: mode || (type === "video" ? "video-call" : "voice-call")})} onOpenChatWithUser={()=>setSearch("")}/>;
   }
-  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div><MobileBottomNav activePage={activePage} setActivePage={setActivePage}/></div>;
-}
+  const callConversation = callTarget?.conversation;
+  const callConversationKind = String(callConversation?.kind || callConversation?.type || "").toLowerCase();
+  const isGroupCallTarget = String(callTarget?.mode || "").startsWith("group-") || callConversationKind === "group" || callConversationKind === "system_group";
+  const normalizedCallTarget = callTarget
+    ? {
+        ...callTarget,
+        mode: isGroupCallTarget
+          ? (String(callTarget.mode || "").startsWith("group-")
+              ? callTarget.mode
+              : callTarget.type === "video" ? "group-video" : "group-voice")
+          : callTarget.mode,
+      }
+    : null;
 
+  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{normalizedCallTarget && (isGroupCallTarget ? <GroupCallLauncher profile={profile} target={normalizedCallTarget} onClose={()=>setCallTarget(null)} /> : <WebRTCCallLauncher profile={profile} target={normalizedCallTarget} onClose={()=>setCallTarget(null)} />)}</main></div><MobileBottomNav activePage={activePage} setActivePage={setActivePage}/></div>;}
 
 /* ============================================================
    AUTH BOOTSTRAP
