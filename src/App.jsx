@@ -1511,6 +1511,7 @@ function ChatPage({
   );
 
   const [messages, setMessages] = useState([]);
+  const [messageSenderProfiles, setMessageSenderProfiles] = useState({});
   const [message, setMessage] = useState("");
 
   const [loading, setLoading] = useState(false);
@@ -2006,6 +2007,29 @@ function ChatPage({
       });
 
       setMessages(visible);
+
+      // In group chats, each message needs the actual sender profile
+      // rather than the group profile.
+      const senderIds = [...new Set(
+        visible
+          .map((row) => String(row.sender_id || ""))
+          .filter(Boolean)
+      )];
+      if (senderIds.length) {
+        const { data: senderRows, error: senderError } = await supabase
+          .from("profiles")
+          .select("id,username,full_name,avatar_url")
+          .in("id", senderIds);
+        if (!senderError) {
+          const nextProfiles = {};
+          (senderRows || []).forEach((row) => {
+            nextProfiles[String(row.id)] = row;
+          });
+          setMessageSenderProfiles(nextProfiles);
+        }
+      } else {
+        setMessageSenderProfiles({});
+      }
 
       const myActions = (data || [])
         .flatMap((row) => row.message_user_actions || [])
@@ -3143,6 +3167,19 @@ function ChatPage({
       item.message_reactions ||
       [];
 
+    const isGroupChat =
+      String(selected?.kind || selected?.type || "").toLowerCase() === "group" ||
+      String(selected?.type || "").toLowerCase() === "system_group";
+    const senderProfile =
+      messageSenderProfiles[String(item.sender_id)] || {};
+    const senderName =
+      senderProfile.full_name ||
+      senderProfile.username ||
+      (mine ? profile?.full_name || profile?.username : "hexachi User");
+    const senderAvatar =
+      senderProfile.avatar_url ||
+      (mine ? profile?.avatar_url : "");
+
     return (
       <div
         key={item.id}
@@ -3180,10 +3217,10 @@ function ChatPage({
         {!mine && (
           <Avatar
             src={
-              selected.avatar_url
+              isGroupChat ? senderAvatar : selected.avatar_url
             }
             name={
-              selected.name
+              isGroupChat ? senderName : selected.name
             }
             size={30}
           />
@@ -3198,6 +3235,12 @@ function ChatPage({
             }`
           }
         >
+          {isGroupChat && !mine && (
+            <div className="group-message-sender">
+              {senderName}
+            </div>
+          )}
+
           {item.forwarded && (
             <div className="forwarded-label">
               ↪ Forwarded
@@ -8407,6 +8450,14 @@ button:disabled {
 .hexa-message-row .message-bubble {
   max-width: min(72%, 560px);
   min-width: 0;
+}
+
+.group-message-sender {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--hexa-accent-2);
+  margin: 0 0 4px 1px;
+  line-height: 1.2;
 }
 
 .hexa-message-row.mine .message-bubble {
