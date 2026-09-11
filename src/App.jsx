@@ -409,17 +409,13 @@ if (typeof window !== "undefined") {
 }
 
 const NAV_ITEMS = [
-  { id: "nexus", label: "Nexus", icon: "⌂" },
   { id: "chat", label: "Chat", icon: "💬" },
   { id: "groups", label: "Groups", icon: "👥" },
   { id: "communities", label: "Communities", icon: "◉" },
   { id: "channels", label: "Channels", icon: "▣" },
   { id: "status", label: "Status", icon: "◌" },
   { id: "calls", label: "Calls", icon: "☎" },
-  { id: "wallet", label: "Wallet", icon: "₦" },
-  { id: "projects", label: "Projects", icon: "◆" },
   { id: "kora", label: "Kora", icon: "✦" },
-  { id: "developer", label: "Developer Hub", icon: "</>" },
   { id: "settings", label: "Settings", icon: "⚙" },
 ];
 
@@ -1033,7 +1029,7 @@ function AuthScreen() {
           <div className="hexa-logo">H</div>
 
           <div>
-            <strong>HEXA</strong>
+            <strong>hexachi</strong>
             <span>Communication, connected.</span>
           </div>
         </div>
@@ -1259,8 +1255,8 @@ function Sidebar({
           <div className="small-logo">H</div>
 
           <div>
-            <strong>HEXA</strong>
-            <span>NEXUS</span>
+            <strong>hexachi</strong>
+            <span>COMMUNICATION</span>
           </div>
 
           <button
@@ -1297,7 +1293,7 @@ function Sidebar({
               name={
                 profile?.full_name ||
                 profile?.username ||
-                "HEXA User"
+                "hexachi User"
               }
               size={38}
               online
@@ -1307,7 +1303,7 @@ function Sidebar({
               <strong>
                 {profile?.full_name ||
                   profile?.username ||
-                  "HEXA User"}
+                  "hexachi User"}
               </strong>
 
               <span>
@@ -1328,7 +1324,7 @@ function Sidebar({
 function Topbar({ profile, search, setSearch, activePage, onNotifications, notificationCount, onSettings }) {
   return (
     <header className="hexa-topbar">
-      <div className="mobile-page-title"><strong>HEXA</strong></div>
+      <div className="mobile-page-title"><strong>hexachi</strong></div>
       <div className="topbar-search">
         <span>⌕</span>
         <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search people, chats and HEXA..." />
@@ -2378,7 +2374,7 @@ function ChatPage({
         name:
           person.full_name ||
           person.username ||
-          "HEXA User",
+          "hexachi User",
         username:
           person.username ||
           "",
@@ -3552,7 +3548,7 @@ function ChatPage({
 
             <span>
               {isSystem
-                ? (isSystemAdmin ? "Official HEXA · administrator" : "Official HEXA · read only")
+                ? (isSystemAdmin ? "Official hexachi · administrator" : "Official hexachi · read only")
                 : isKora
                   ? "Kora AI"
                   : selected?.online
@@ -3837,7 +3833,7 @@ function ChatPage({
                   ? "THE HEXA GROUP"
                   : `Chat with ${
                       selected?.name ||
-                      "HEXA User"
+                      "hexachi User"
                     }`}
               </h3>
 
@@ -4379,7 +4375,7 @@ function ChatPage({
                         {
                           person.full_name ||
                           person.username ||
-                          "HEXA User"
+                          "hexachi User"
                         }
                       </strong>
 
@@ -4844,7 +4840,7 @@ async function loadHexaConversations(profile) {
           const displayName =
             person?.full_name ||
             person?.username ||
-            "HEXA User";
+            "hexachi User";
 
           return {
             ...conversation,
@@ -5455,7 +5451,7 @@ function CallsPage({ profile }) {
           {people.map((person) => (
             <button key={person.id} className="person-result" type="button" onClick={() => { setPeer(person); setSearch(person.username ? `@${person.username}` : person.full_name || ""); setPeople([]); setStatus(""); }}>
               <Avatar src={person.avatar_url} name={person.full_name || person.username} size={42} />
-              <div><strong>{person.full_name || person.username || "HEXA User"}</strong><span>{person.username ? `@${person.username}` : "HEXA account"}</span></div>
+              <div><strong>{person.full_name || person.username || "hexachi User"}</strong><span>{person.username ? `@${person.username}` : "HEXA account"}</span></div>
             </button>
           ))}
         </div>
@@ -5643,7 +5639,7 @@ function WebRTCCall({ profile, call, type, peer, onEnd }) {
     onEnd?.();
   }
 
-  const displayName = peer?.name || peer?.full_name || peer?.username || "HEXA User";
+  const displayName = peer?.name || peer?.full_name || peer?.username || "hexachi User";
   return (
     <div className="story-viewer" style={{ zIndex: 800 }}>
       <div className="call-shell">
@@ -5709,7 +5705,7 @@ function WebRTCCallLauncher({ profile, target, onClose }) {
         .select("id,username,full_name,avatar_url")
         .eq("id", user)
         .maybeSingle();
-      if (mounted) setCall({ data, peer: peer || { id: user, full_name: "HEXA User" } });
+      if (mounted) setCall({ data, peer: peer || { id: user, full_name: "hexachi User" } });
     })();
     return () => { mounted = false; };
   }, [profile?.id, target?.conversation?.id, target?.type]);
@@ -5744,7 +5740,7 @@ function IncomingCallWatcher({ profile }) {
           .select("id,username,full_name,avatar_url")
           .eq("id", call.caller_id)
           .maybeSingle();
-        if (active) setIncoming({ call, peer: peer || { id: call.caller_id, full_name: "HEXA User" } });
+        if (active) setIncoming({ call, peer: peer || { id: call.caller_id, full_name: "hexachi User" } });
       }
     })();
 
@@ -5753,7 +5749,7 @@ function IncomingCallWatcher({ profile }) {
         const call = payload.new;
         if (!active || call.status !== "ringing") return;
         const { data: peer } = await supabase.from("profiles").select("id,username,full_name,avatar_url").eq("id", call.caller_id).maybeSingle();
-        if (active) setIncoming({ call, peer: peer || { id: call.caller_id, full_name: "HEXA User" } });
+        if (active) setIncoming({ call, peer: peer || { id: call.caller_id, full_name: "hexachi User" } });
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "calls", filter: `callee_id=eq.${profile.id}` }, (payload) => {
         if (["ended", "declined", "rejected", "missed"].includes(payload.new?.status)) {
@@ -5786,7 +5782,7 @@ function IncomingCallWatcher({ profile }) {
   return <div className="story-viewer" style={{ zIndex: 700 }}>
     <div className="coming-card" style={{ width: "min(420px, 92vw)", textAlign: "center" }}>
       <Avatar src={incoming.peer?.avatar_url} name={incoming.peer?.full_name || incoming.peer?.username} size={82} />
-      <h2>{incoming.peer?.full_name || incoming.peer?.username || "HEXA User"}</h2>
+      <h2>{incoming.peer?.full_name || incoming.peer?.username || "hexachi User"}</h2>
       <p>Incoming {incoming.call.type === "video" ? "video" : "voice"} call</p>
       <div className="hero-actions">
         <button className="hero-secondary" onClick={decline}>Decline</button>
@@ -5960,7 +5956,7 @@ function WalletPage({ profile }) {
           <div><h2>Buy HEXA Credits</h2><p>Simple phone-style payment. Verify your HEXA account, then complete payment securely.</p></div>
           <button className="hero-secondary" onClick={() => { setShowBuyCredits(false); setPassword(""); setError(""); }}>Close</button>
         </div>
-        <label className="wallet-security-field"><span>HEXA Username</span><input className="modal-input" value={username} onChange={e => setUsername(e.target.value)} placeholder="@yourusername" autoComplete="username" /></label>
+        <label className="wallet-security-field"><span>hexachi Username</span><input className="modal-input" value={username} onChange={e => setUsername(e.target.value)} placeholder="@yourusername" autoComplete="username" /></label>
         <label className="wallet-security-field"><span>Phone Number</span><input className="modal-input" value={phone} onChange={e => setPhone(e.target.value)} placeholder="080XXXXXXXX" inputMode="tel" autoComplete="tel" /></label>
         <label className="wallet-security-field"><span>HEXA Password</span><input className="modal-input" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your HEXA password" autoComplete="current-password" /></label>
         <label className="wallet-security-field"><span>Amount (₦)</span><input className="modal-input" type="number" min="100" step="100" value={amount} onChange={e => setAmount(e.target.value)} /></label>
@@ -5990,7 +5986,7 @@ function UniversalSearch({ search, profile, onMessage }) {
       supabase.from("statuses").select("id,user_id,text,description,media_type,created_at").or(`text.ilike.${pattern},description.ilike.${pattern}`).gt("expires_at",new Date().toISOString()).limit(8)
     ]);
     if(cancelled)return;const out=[];
-    (peopleR.data||[]).forEach(x=>out.push({kind:"person",id:`p-${x.id}`,title:x.full_name||x.username||"HEXA User",subtitle:x.username?`@${x.username}`:"Contact",data:x}));
+    (peopleR.data||[]).forEach(x=>out.push({kind:"person",id:`p-${x.id}`,title:x.full_name||x.username||"hexachi User",subtitle:x.username?`@${x.username}`:"Contact",data:x}));
     (chatsR.data||[]).filter(x=>x.type!=="direct").forEach(x=>out.push({kind:x.name?.toLowerCase().startsWith("channel:")?"channel":x.type==="group"?"group":"chat",id:`c-${x.id}`,title:String(x.name||"").replace(/^channel:/i,""),subtitle:x.type==="group"?"Group":"Chat",data:x}));
     (msgsR.data||[]).forEach(x=>out.push({kind:"message",id:`m-${x.id}`,title:x.content||x.message_type||"Message",subtitle:`Message · ${new Date(x.created_at).toLocaleString()}`,data:x}));
     (communitiesR.data||[]).forEach(x=>out.push({kind:"community",id:`co-${x.id}`,title:x.name,subtitle:"Community",data:x}));
@@ -6040,7 +6036,7 @@ function SettingsPage({ profile, onSignOut }) {
           name={
             profile?.full_name ||
             profile?.username ||
-            "HEXA User"
+            "hexachi User"
           }
           size={64}
         />
@@ -6049,7 +6045,7 @@ function SettingsPage({ profile, onSignOut }) {
           <strong>
             {profile?.full_name ||
               profile?.username ||
-              "HEXA User"}
+              "hexachi User"}
           </strong>
 
           <p>
@@ -6268,24 +6264,22 @@ class HexaErrorBoundary extends React.Component {
 
 function AuthenticatedHEXA({ session, onSignOut }) {
 
-  const [profile,setProfile]=useState(null),[profileLoading,setProfileLoading]=useState(true),[activePage,setActivePage]=useState("nexus"),[search,setSearch]=useState(""),[notifications,setNotifications]=useState([]),[showNotifications,setShowNotifications]=useState(false),[chatTarget,setChatTarget]=useState(null),[callTarget,setCallTarget]=useState(null);
+  const [profile,setProfile]=useState(null),[profileLoading,setProfileLoading]=useState(true),[activePage,setActivePage]=useState("chat"),[search,setSearch]=useState(""),[notifications,setNotifications]=useState([]),[showNotifications,setShowNotifications]=useState(false),[chatTarget,setChatTarget]=useState(null),[callTarget,setCallTarget]=useState(null);
   useEffect(()=>{let cancelled=false;(async()=>{const result=await ensureHexaProfile(session?.user);if(!cancelled){setProfile(result);setProfileLoading(false)}})();return()=>{cancelled=true}},[session?.user?.id]);
   useEffect(()=>{if(!profile?.id)return;const channel=supabase.channel(`hexa-notifications-${profile.id}`).on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},p=>{if(p.new?.sender_id===profile.id)return;setNotifications(x=>[{id:Date.now(),title:"New message",body:p.new?.content||"New message",created_at:new Date().toISOString()},...x].slice(0,50))}).subscribe();return()=>supabase.removeChannel(channel)},[profile?.id]);
   if(profileLoading)return <div className="hexa-loading-screen"><div className="loading-logo">H</div><div className="loading-spinner"/><strong>Opening HEXA…</strong><span>Preparing your workspace</span></div>;
   let page; switch(activePage){
-    case "nexus":page=<NexusHome profile={profile} setActivePage={setActivePage}/>;break;
-    case "chat":page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type)=>setCallTarget({conversation:c,type})} onOpenChatWithUser={()=>setSearch("")}/>;break;
+        case "chat":page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type)=>setCallTarget({conversation:c,type})} onOpenChatWithUser={()=>setSearch("")}/>;break;
     case "groups":page=<GroupsPage profile={profile} onOpenChat={c=>{setChatTarget(c);setActivePage("chat")}}/>;break;
     case "communities":page=<CommunitiesPage profile={profile}/>;break;
     case "channels":page=<ChannelsPage profile={profile}/>;break;
     case "status":page=<StatusPage profile={profile}/>;break;
     case "calls":page=<CallsPage profile={profile}/>;break;
-    case "wallet":page=<WalletPage profile={profile}/>;break;
     case "kora":page=<KoraPage profile={profile}/>;break;
     case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut}/>;break;
     case "projects":page=<WorkspacePlaceholder title="Projects" description="Organize collaborative work." icon="◆"/>;break;
     case "developer":page=<WorkspacePlaceholder title="Developer Hub" description="Build and connect with HEXA." icon="</>"/>;break;
-    default:page=<NexusHome profile={profile} setActivePage={setActivePage}/>;
+    default:page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type)=>setCallTarget({conversation:c,type})} onOpenChatWithUser={()=>setSearch("")}/>;
   }
   return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div></div>;
 }
@@ -6475,7 +6469,7 @@ export default function App() {
         <style>{APP_STYLES}</style>
         <div className="hexa-error-screen">
           <div className="loading-logo">H</div>
-          <h1>HEXA configuration required</h1>
+          <h1>hexachi configuration required</h1>
           <p>{HEXA_CONFIG_ERROR}</p>
           <small>Vercel: Project → Settings → Environment Variables → add the required VITE_ variables, then redeploy.</small>
         </div>
@@ -6491,8 +6485,8 @@ export default function App() {
         <div className="hexa-loading-screen">
           <div className="loading-logo">H</div>
           <div className="loading-spinner" />
-          <strong>HEXA</strong>
-          <span>Starting HEXA securely…</span>
+          <strong>hexachi</strong>
+          <span>Starting hexachi securely…</span>
         </div>
       </>
     );
@@ -6506,7 +6500,7 @@ export default function App() {
         <div className="hexa-error-screen">
           <div className="loading-logo">H</div>
 
-          <h1>HEXA couldn't start</h1>
+          <h1>hexachi couldn't start</h1>
 
           <p>{authError}</p>
 
@@ -6523,7 +6517,7 @@ export default function App() {
 
   return (
     <HexaErrorBoundary>
-      <style>{APP_STYLES}</style>
+      <style>{APP_STYLES + COMMUNICATION_UI_OVERRIDES}</style>
 
       {session ? (
         <AuthenticatedHEXA
@@ -8323,3 +8317,57 @@ const APP_STYLES_TAIL = `
 `;
 
 const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL;
+
+const COMMUNICATION_UI_OVERRIDES = `
+/* ============================================================
+   HEXACHI COMMUNICATION-FIRST UI OVERRIDES
+   ============================================================ */
+.hexa-app{background:radial-gradient(circle at 72% -10%,rgba(124,92,255,.08),transparent 28%),var(--hexa-bg);}
+.hexa-sidebar{width:226px;min-width:226px;padding:16px 11px;background:rgba(8,11,16,.94);backdrop-filter:blur(20px);}
+.sidebar-brand{padding:5px 8px 18px;}
+.sidebar-brand strong{font-size:15px;letter-spacing:.12em;}
+.sidebar-brand span{font-size:8px;letter-spacing:.14em;color:var(--hexa-accent-2);}
+.sidebar-section-label{padding:7px 10px 8px;font-size:8px;color:#606b7b;}
+.sidebar-nav{display:grid;gap:2px;}
+.sidebar-item{padding:10px 11px;border-radius:12px;font-size:12px;}
+.sidebar-item.active{background:linear-gradient(90deg,rgba(124,92,255,.2),rgba(124,92,255,.05));box-shadow:inset 2px 0 0 var(--hexa-accent);}
+.sidebar-bottom{padding-top:11px;}
+.hexa-topbar{height:62px;min-height:62px;padding:0 18px;background:rgba(6,9,13,.78);}
+.topbar-search{max-width:720px;}
+.topbar-search input{height:41px;border-radius:13px;background:rgba(255,255,255,.035);border-color:var(--hexa-border-strong);}
+.hexa-content{overflow:auto;background:linear-gradient(180deg,rgba(255,255,255,.008),transparent 24%);}
+.workspace-page{max-width:1280px;padding:24px;}
+.chat-layout{height:calc(100dvh - 62px);grid-template-columns:340px minmax(0,1fr);}
+.chat-list-panel{background:rgba(7,10,14,.72);backdrop-filter:blur(16px);}
+.chat-list-header{padding:18px 17px 14px;}
+.chat-list-header h2{font-size:20px;letter-spacing:-.02em;}
+.chat-search{margin:0 13px 12px;}
+.chat-search input{height:42px;border-radius:12px;background:rgba(255,255,255,.035);}
+.conversation{padding:11px 10px;min-height:66px;}
+.conversation-content strong{font-size:12px;}
+.chat-main{background:radial-gradient(circle at 50% 0,rgba(124,92,255,.055),transparent 42%),rgba(6,9,13,.45);}
+.chat-header{height:64px;min-height:64px;padding:0 15px;background:rgba(8,11,16,.68);backdrop-filter:blur(16px);}
+.messages-area{padding:18px 20px 12px;}
+.message-bubble{border-radius:15px;box-shadow:0 4px 20px rgba(0,0,0,.08);}
+.chat-composer{padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:rgba(7,10,14,.78);backdrop-filter:blur(18px);border-top:1px solid var(--hexa-border);}
+.chat-composer textarea{background:rgba(255,255,255,.045);border-color:var(--hexa-border-strong);min-height:42px;padding:10px 15px;}
+.chat-composer button{background:transparent;border:1px solid transparent;}
+.chat-composer button:hover{background:rgba(124,92,255,.16);color:var(--hexa-text);border-color:rgba(124,92,255,.25);}
+@media(max-width:760px){
+  .hexa-topbar{height:58px;min-height:58px;padding:0 9px 0 8px;gap:7px;}
+  .mobile-page-title{font-size:12px;letter-spacing:.14em;}
+  .topbar-search{margin-left:0;}
+  .topbar-search input{height:38px;font-size:12px;border-radius:12px;padding-left:35px;padding-right:10px;}
+  .chat-layout{height:calc(100dvh - 58px);grid-template-columns:1fr;}
+  .chat-list-panel{display:none;}
+  .chat-header{height:58px;min-height:58px;padding:0 9px;}
+  .messages-area{padding:10px 8px 8px;}
+  .chat-composer{padding:6px 6px calc(6px + env(safe-area-inset-bottom));gap:4px;}
+  .chat-composer .composer-left,.chat-composer .composer-right{gap:2px;}
+  .chat-composer button{width:36px;height:36px;border-radius:10px;}
+  .chat-composer textarea{min-height:38px;max-height:96px;border-radius:18px;font-size:14px;padding:8px 12px;}
+  .sidebar-item{padding:12px 11px;}
+}
+`;
+
+
