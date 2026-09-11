@@ -2105,8 +2105,8 @@ function ChatPage({
             );
 
             if (String(row.sender_id) !== String(profile.id) && row.id) {
-              supabase.rpc("hexa_mark_delivered", { p_message_ids: [row.id] }).catch(() => {});
-              supabase.rpc("hexa_mark_read", { p_message_ids: [row.id] }).catch(() => {});
+              void (async () => { try { await supabase.rpc("hexa_mark_delivered", { p_message_ids: [row.id] }); } catch {} })();
+              void (async () => { try { await supabase.rpc("hexa_mark_read", { p_message_ids: [row.id] }); } catch {} })();
             }
 
             updateConversationPreview(
