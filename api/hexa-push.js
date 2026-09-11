@@ -1,9 +1,50 @@
 const webpush = require("web-push");
 const { createClient } = require("@supabase/supabase-js");
 
+const SUPABASE_URL =
+  process.env.SUPABASE_URL ||
+  process.env.VITE_SUPABASE_URL;
+
+const SUPABASE_SERVICE_ROLE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+const VAPID_PUBLIC_KEY =
+  process.env.VAPID_PUBLIC_KEY;
+
+const VAPID_PRIVATE_KEY =
+  process.env.VAPID_PRIVATE_KEY;
+
+const VAPID_SUBJECT =
+  process.env.VAPID_SUBJECT ||
+  "mailto:admin@hexachi.app";
+
+if (!SUPABASE_URL) {
+  throw new Error(
+    "Missing SUPABASE_URL or VITE_SUPABASE_URL"
+  );
+}
+
+if (!SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error(
+    "Missing SUPABASE_SERVICE_ROLE_KEY"
+  );
+}
+
+if (!VAPID_PUBLIC_KEY) {
+  throw new Error(
+    "Missing VAPID_PUBLIC_KEY"
+  );
+}
+
+if (!VAPID_PRIVATE_KEY) {
+  throw new Error(
+    "Missing VAPID_PRIVATE_KEY"
+  );
+}
+
 const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY,
   {
     auth: {
       persistSession: false,
@@ -13,50 +54,10 @@ const supabaseAdmin = createClient(
 );
 
 webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || "mailto:admin@hexachi.app",
-  process.env.VAPID_PUBLIC_KEY,
-  process.env.VAPID_PRIVATE_KEY
+  VAPID_SUBJECT,
+  VAPID_PUBLIC_KEY,
+  VAPID_PRIVATE_KEY
 );
-
-function json(res, status, body) {
-  res.setHeader(
-    "Content-Type",
-    "application/json; charset=utf-8"
-  );
-
-  res.status(status).json(body);
-}
-
-function cleanText(value, fallback) {
-  const text = String(value ?? "").trim();
-  return text || fallback;
-}
-
-async function handler(req, res) {
-  /*
-   * ============================================================
-   * CORS / PREFLIGHT
-   * ============================================================
-   */
-
-  if (req.method === "OPTIONS") {
-    res.setHeader(
-      "Access-Control-Allow-Origin",
-      "*"
-    );
-
-    res.setHeader(
-      "Access-Control-Allow-Methods",
-      "POST, OPTIONS, GET"
-    );
-
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Authorization, Content-Type"
-    );
-
-    return res.status(204).end();
-  }
 
   /*
    * ============================================================
@@ -447,6 +448,6 @@ async function handler(req, res) {
     recipients:
       recipientIds.length,
   });
-}
 
+                                                    
 module.exports = handler;
