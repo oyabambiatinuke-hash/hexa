@@ -27,6 +27,11 @@ import "./App.css";
   VITE_TURN_CREDENTIAL
 */
 
+// Accept only canonical UUID strings where Supabase expects a user/conversation UUID.
+function isHexaUuid(value) {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
@@ -7081,7 +7086,9 @@ function AuthenticatedHEXA({ session, onSignOut }) {
       }
     : null;
 
-  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{normalizedCallTarget && (isGroupCallTarget ? <GroupCallLauncher profile={profile} target={normalizedCallTarget} onClose={()=>setCallTarget(null)} /> : <WebRTCCallLauncher profile={profile} target={normalizedCallTarget} onClose={()=>setCallTarget(null)} />)}</main></div><MobileBottomNav activePage={activePage} setActivePage={setActivePage}/></div>;}
+  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{normalizedCallTarget && (isGroupCallTarget ? <GroupCallLauncher profile={profile} target={normalizedCallTarget} onClose={()=>setCallTarget(null)} /> : <WebRTCCallLauncher profile={profile} target={normalizedCallTarget} onClose={()=>setCallTarget(null)} />)}</main></div><MobileBottomNav activePage={activePage} setActivePage={setActivePage}/></div>;
+}
+
 
 /* ============================================================
    AUTH BOOTSTRAP
