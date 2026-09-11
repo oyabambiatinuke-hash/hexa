@@ -6006,14 +6006,41 @@ function GroupCallLauncher({ profile, target, onClose }) {
           throw new Error("This group is not ready for calling.");
         }
 
-        const { data: members, error: memberError } = await supabase
-          .from("conversation_members")
-          .select("user_id")
-          .eq("conversation_id", conversationId);
+        // Read the full member list through the secure RPC first.
+        // Direct browser reads can be limited by conversation_members RLS and
+        // otherwise make a perfectly valid group appear to contain only the caller.
+        let members = null;
+        let memberError = null;
+
+        const rpcResult = await supabase.rpc("hexa_get_group_members", {
+          p_conversation_id: conversationId,
+        });
+
+        if (!rpcResult.error) {
+          members = rpcResult.data || [];
+        } else {
+          // Backward-compatible fallback for projects that have not run the RPC SQL yet.
+          const directResult = await supabase
+            .from("conversation_members")
+            .select("user_id,is_admin")
+            .eq("conversation_id", conversationId);
+          members = directResult.data || [];
+          memberError = directResult.error;
+        }
+
         if (memberError) throw memberError;
 
-        const memberIds = [...new Set((members || []).map((m) => m.user_id).filter((id) => isHexaUuid(id) && String(id) !== String(profile.id)))];
-        if (!memberIds.length) throw new Error("This group has no other members to call.");
+        const memberIds = [...new Set(
+          (members || [])
+            .map((m) => m.user_id)
+            .filter((id) => isHexaUuid(id) && String(id) !== String(profile.id))
+        )];
+
+        if (!memberIds.length) {
+          throw new Error(
+            "This group has no other members to call. Add at least one member to the group, then try again."
+          );
+        }
 
         const { data: people, error: peopleError } = await supabase
           .from("profiles")
@@ -7086,7 +7113,7 @@ function AuthenticatedHEXA({ session, onSignOut }) {
       }
     : null;
 
-  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{normalizedCallTarget && (isGroupCallTarget ? <GroupCallLauncher profile={profile} target={normalizedCallTarget} onClose={()=>setCallTarget(null)} /> : <WebRTCCallLauncher profile={profile} target={normalizedCallTarget} onClose={()=>setCallTarget(null)} />)}</main></div><MobileBottomNav activePage={activePage} setActivePage={setActivePage}/></div>;
+  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{normalizedCallTarget && (isGroupCallTarget ? <GroupCallLauncher profile={profile} target={normalizedCallTarget} onClose={()=>setCallTarget(null)} /> : <WebRTCCallLauncher profile={profile} target={normalizedCallTarget} onClose={()=>setCallTarget(null)} />)}}</main></div><MobileBottomNav activePage={activePage} setActivePage={setActivePage}/></div>;
 }
 
 
