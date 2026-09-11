@@ -1587,6 +1587,9 @@ function ChatPage({
   const [locationOpen, setLocationOpen] = useState(false);
 
   const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordingError, setRecordingError] = useState("");
+  const [recordedVoice, setRecordedVoice] = useState(null);
   const [attachment, setAttachment] = useState(null);
 
   const [chatSettingsOpen, setChatSettingsOpen] =
@@ -1644,7 +1647,9 @@ function ChatPage({
   const mediaRef = useRef(null);
   const cameraRef = useRef(null);
   const recorderRef = useRef(null);
+  const recorderStreamRef = useRef(null);
   const chunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
   const bottomRef = useRef(null);
 
   const isSystem =
@@ -1658,6 +1663,96 @@ function ChatPage({
 
   const isKora =
     selected?.id === "kora";
+
+  function cleanupVoiceRecorder() {
+    if (recordingTimerRef.current) {
+      window.clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    recorderStreamRef.current?.getTracks?.().forEach(track => track.stop());
+    recorderStreamRef.current = null;
+    recorderRef.current = null;
+  }
+
+  async function startVoiceRecording() {
+    if (recording || recordedVoice) return;
+    setRecordingError("");
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setRecordingError("Voice recording is not supported by this browser.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recorderStreamRef.current = stream;
+      chunksRef.current = [];
+      const mimeCandidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
+      const mimeType = mimeCandidates.find(type => MediaRecorder.isTypeSupported?.(type)) || "";
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      recorderRef.current = recorder;
+      recorder.ondataavailable = event => { if (event.data?.size) chunksRef.current.push(event.data); };
+      recorder.onerror = () => { setRecordingError("The microphone recorder stopped unexpectedly."); cleanupVoiceRecorder(); setRecording(false); };
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || mimeType || "audio/webm" });
+        cleanupVoiceRecorder();
+        if (!blob.size) {
+          setRecording(false);
+          setRecordingError("No voice audio was captured. Please try again.");
+          return;
+        }
+        const ext = blob.type.includes("ogg") ? "ogg" : "webm";
+        const url = URL.createObjectURL(blob);
+        setRecordedVoice({ blob, url, mimeType: blob.type, duration: recordingSeconds, name: `hexa-voice-${Date.now()}.${ext}` });
+        setRecording(false);
+      };
+      recorder.start(150);
+      setRecording(true);
+      setRecordingSeconds(0);
+      recordingTimerRef.current = window.setInterval(() => setRecordingSeconds(value => value + 1), 1000);
+    } catch (error) {
+      cleanupVoiceRecorder();
+      setRecording(false);
+      setRecordingError(error?.name === "NotAllowedError" ? "Microphone permission was denied. Allow microphone access and try again." : (error?.message || "Unable to start voice recording."));
+    }
+  }
+
+  function stopVoiceRecording() {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
+    recorder.stop();
+  }
+
+  function cancelVoiceRecording() {
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.onstop = null;
+      try { recorderRef.current.stop(); } catch {}
+    }
+    cleanupVoiceRecorder();
+    if (recordedVoice?.url) URL.revokeObjectURL(recordedVoice.url);
+    setRecordedVoice(null);
+    setRecording(false);
+    setRecordingSeconds(0);
+    setRecordingError("");
+  }
+
+  function discardRecordedVoice() {
+    if (recordedVoice?.url) URL.revokeObjectURL(recordedVoice.url);
+    setRecordedVoice(null);
+    setRecordingSeconds(0);
+    setRecordingError("");
+  }
+
+  function sendRecordedVoice() {
+    if (!recordedVoice?.blob) return;
+    const file = new File([recordedVoice.blob], recordedVoice.name || `hexa-voice-${Date.now()}.webm`, { type: recordedVoice.mimeType || recordedVoice.blob.type || "audio/webm" });
+    setRecordedVoice(null);
+    setMessage("");
+    sendMessage(null, { name: file.name, type: "voice", file });
+  }
+
+  useEffect(() => () => {
+    cleanupVoiceRecorder();
+    if (recordedVoice?.url) URL.revokeObjectURL(recordedVoice.url);
+  }, []);
 
   /* ============================================================
      STORAGE
@@ -2374,13 +2469,14 @@ function ChatPage({
     };
   }
 
-  async function sendMessage(event) {
+  async function sendMessage(event, attachmentOverride = null) {
     event?.preventDefault();
 
+    const activeAttachment = attachmentOverride || attachment;
     const text = message.trim();
-    if (!text && !attachment) return;
+    if (!text && !activeAttachment) return;
 
-    const inputError = validateMessageInput(text, attachment?.file || attachment);
+    const inputError = validateMessageInput(text, activeAttachment?.file || activeAttachment);
     if (inputError) {
       safeAlert(inputError);
       return;
@@ -2435,12 +2531,12 @@ function ChatPage({
     const clientMessageId = `hexa-${crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
     const optimisticId = `local-${clientMessageId}`;
     let upload = null;
-    let messageType = attachment?.type || "text";
+    let messageType = activeAttachment?.type || "text";
 
-    if (attachment?.file) {
-      messageType = attachment.type || "file";
+    if (activeAttachment?.file) {
+      messageType = activeAttachment.type || "file";
       try {
-        upload = await uploadChatAttachment(attachment.file);
+        upload = await uploadChatAttachment(activeAttachment.file);
       } catch (error) {
         console.error("HEXA attachment upload:", error);
         safeAlert(error?.message || "Unable to upload this attachment.");
@@ -2452,7 +2548,7 @@ function ChatPage({
       id: optimisticId,
       conversation_id: conversationId,
       sender_id: profile.id,
-      content: text || attachment?.name || "",
+      content: text || activeAttachment?.name || "",
       message_type: messageType,
       created_at: new Date().toISOString(),
       reply_to_id: replyTo?.id || null,
@@ -2460,11 +2556,11 @@ function ChatPage({
       status: "sending",
       metadata: upload ? { storage_bucket: upload.bucket, storage_path: upload.path, file_url: upload.url } : {},
       message_attachments: upload ? [{
-        file_name: attachment.name,
+        file_name: activeAttachment.name,
         file_path: upload.path,
         file_url: upload.url,
-        mime_type: attachment.file.type || "application/octet-stream",
-        file_size: attachment.file.size || 0,
+        mime_type: activeAttachment.file.type || "application/octet-stream",
+        file_size: activeAttachment.file.size || 0,
       }] : [],
       pending: true,
     };
@@ -2485,7 +2581,7 @@ function ChatPage({
       const payload = {
         conversation_id: conversationId,
         sender_id: profile.id,
-        content: text || attachment?.name || "",
+        content: text || activeAttachment?.name || "",
         message_type: messageType,
         reply_to_id: replyTo?.id || null,
         client_message_id: clientMessageId,
@@ -2493,9 +2589,9 @@ function ChatPage({
           storage_bucket: upload.bucket,
           storage_path: upload.path,
           file_url: upload.url,
-          mime_type: attachment?.file?.type || null,
-          file_name: attachment?.name || null,
-          file_size: attachment?.file?.size || null,
+          mime_type: activeAttachment?.file?.type || null,
+          file_name: activeAttachment?.name || null,
+          file_size: activeAttachment?.file?.size || null,
         } : {},
         status: "sent",
       };
@@ -2513,14 +2609,14 @@ function ChatPage({
           .insert({
             message_id: data.id,
             user_id: profile.id,
-            file_name: attachment.name,
+            file_name: activeAttachment.name,
             file_path: upload.path,
             file_url: upload.url,
-            mime_type: attachment.file.type || "application/octet-stream",
-            file_size: attachment.file.size || 0,
-            width: attachment.file.width || null,
-            height: attachment.file.height || null,
-            duration: attachment.file.duration || null,
+            mime_type: activeAttachment.file.type || "application/octet-stream",
+            file_size: activeAttachment.file.size || 0,
+            width: activeAttachment.file.width || null,
+            height: activeAttachment.file.height || null,
+            duration: activeAttachment.file.duration || null,
           });
         if (attachmentError) {
           console.warn("HEXA attachment record:", attachmentError.message);
@@ -2532,7 +2628,7 @@ function ChatPage({
     } catch (error) {
       console.error("HEXA send message:", error);
       // Files cannot safely be serialized into localStorage; text messages can.
-      if (!attachment?.file) {
+      if (!activeAttachment?.file) {
         try {
           const queue = readLocalQueue();
           queue.push({ ...optimisticMessage, pending: true, failed: true });
@@ -3861,114 +3957,78 @@ function ChatPage({
         {/* COMPOSER */}
 
         {!isSystem && (
-          <form
-            className="chat-composer"
-            onSubmit={
-              editing
-                ? event => {
-                    event.preventDefault();
-                    saveEditedMessage();
-                  }
-                : sendMessage
-            }
-          >
+          <div className="composer-stack">
+            {recording && (
+              <div className="voice-recorder-panel">
+                <div className="voice-recorder-live">
+                  <span className="voice-recording-dot" />
+                  <strong>Recording voice message</strong>
+                  <span className="voice-recording-time">{String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:{String(recordingSeconds % 60).padStart(2, "0")}</span>
+                </div>
+                <div className="voice-waveform" aria-hidden="true">
+                  {Array.from({ length: 28 }).map((_, index) => <i key={index} style={{ height: `${12 + ((index * 17 + recordingSeconds * 7) % 25)}px` }} />)}
+                </div>
+                <div className="voice-recorder-actions">
+                  <button type="button" className="voice-cancel" onClick={cancelVoiceRecording}>Cancel</button>
+                  <button type="button" className="voice-stop" onClick={stopVoiceRecording}>■ Stop</button>
+                </div>
+              </div>
+            )}
 
-            <div className="composer-left">
+            {recordedVoice && !recording && (
+              <div className="voice-preview-panel">
+                <div className="voice-preview-heading"><strong>Voice message preview</strong><span>{String(Math.floor(recordedVoice.duration / 60)).padStart(2, "0")}:{String(recordedVoice.duration % 60).padStart(2, "0")}</span></div>
+                <audio controls preload="metadata" src={recordedVoice.url} />
+                <div className="voice-recorder-actions">
+                  <button type="button" className="voice-cancel" onClick={discardRecordedVoice}>Discard</button>
+                  <button type="button" className="voice-send" onClick={sendRecordedVoice}>➤ Send voice</button>
+                </div>
+              </div>
+            )}
 
-              <button
-                type="button"
-                title="Emoji"
-                onClick={() =>
-                  setEmojiOpen(
-                    value =>
-                      !value
-                  )
-                }
+            {recordingError && <div className="composer-error">{recordingError}</div>}
+
+            {!recording && !recordedVoice && (
+              <form
+                className="chat-composer"
+                onSubmit={editing ? event => { event.preventDefault(); saveEditedMessage(); } : sendMessage}
               >
-                😊
-              </button>
+                <div className="composer-left">
+                  <button type="button" title="Emoji" onClick={() => setEmojiOpen(value => !value)}>😊</button>
+                  <button type="button" title="Attachments" onClick={() => setAttachmentOpen(value => !value)}>📎</button>
+                </div>
 
-              <button
-                type="button"
-                title="Attachments"
-                onClick={() =>
-                  setAttachmentOpen(
-                    value =>
-                      !value
-                  )
-                }
-              >
-                📎
-              </button>
+                <textarea
+                  value={message}
+                  onChange={event => saveDraft(event.target.value)}
+                  placeholder={editing ? "Edit message…" : "Type a message"}
+                  rows={1}
+                  onInput={event => { event.target.style.height = "auto"; event.target.style.height = `${Math.min(event.target.scrollHeight, 120)}px`; }}
+                  onKeyDown={event => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      editing ? saveEditedMessage() : sendMessage(event);
+                    }
+                  }}
+                />
 
-            </div>
+                <div className="composer-right">
+                  {!message.trim() && !attachment ? (
+                    <button type="button" className="composer-mic" title="Record voice message" onClick={startVoiceRecording}>🎙</button>
+                  ) : (
+                    <button type="submit" className="composer-send" title={editing ? "Save edit" : "Send"}>➤</button>
+                  )}
+                </div>
+              </form>
+            )}
 
-            <input
-              value={
-                message
-              }
-              onChange={event =>
-                saveDraft(
-                  event.target
-                    .value
-                )
-              }
-              placeholder={
-                recording
-                  ? "Recording voice message…"
-                  : "Type a message"
-              }
-              onKeyDown={event => {
-                if (
-                  event.key ===
-                    "Enter" &&
-                  !event.shiftKey
-                ) {
-                  event.preventDefault();
-
-                  if (editing) {
-                    saveEditedMessage();
-                  } else {
-                    sendMessage(
-                      event
-                    );
-                  }
-                }
-              }}
-            />
-
-            <div className="composer-right">
-
-              {!message.trim() &&
-                !attachment ? (
-                <button
-                  type="button"
-                  title="Voice message"
-                  onClick={() =>
-                    setRecording(
-                      value =>
-                        !value
-                    )
-                  }
-                >
-                  🎙
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  title={
-                    editing
-                      ? "Save edit"
-                      : "Send"
-                  }
-                >
-                  ➤
-                </button>
-              )}
-
-            </div>
-
-          </form>
+            {attachment && !recording && !recordedVoice && (
+              <div className="attachment-preview-bar">
+                <span>📎 {attachment.name}</span>
+                <button type="button" onClick={() => setAttachment(null)}>×</button>
+              </div>
+            )}
+          </div>
         )}
 
         {/* ==================================================
@@ -5385,7 +5445,7 @@ function CallsPage({ profile }) {
     <section className="workspace-page">
       <div className="page-heading">
         <div className="page-heading-icon">☎</div>
-        <div><h1>Calls</h1><p>Private HEXA-to-HEXA voice and video calls. External calling can be billed server-side at ₦0.50/second.</p></div>
+        <div><h1>Calls</h1><p>Private HEXA-to-HEXA voice and video calls. External calling can be billed server-side at ₦0.30/second.</p></div>
       </div>
 
       <div className="settings-card">
@@ -5418,10 +5478,16 @@ function CallsPage({ profile }) {
 function WebRTCCall({ profile, call, type, peer, onEnd }) {
   const localVideo = useRef(null);
   const remoteVideo = useRef(null);
+  const remoteAudio = useRef(null);
   const pcRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const audioContextRef = useRef(null);
   const channelRef = useRef(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
+  const [muted, setMuted] = useState(false);
+  const [cameraEnabled, setCameraEnabled] = useState(type === "video");
+  const [speakerOn, setSpeakerOn] = useState(true);
   const endedRef = useRef(false);
 
   useEffect(() => {
@@ -5474,10 +5540,18 @@ function WebRTCCall({ profile, call, type, peer, onEnd }) {
         pc = new RTCPeerConnection(cfg);
         pcRef.current = pc;
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === "video" });
+        localStreamRef.current = stream;
         if (localVideo.current) localVideo.current.srcObject = stream;
         stream.getTracks().forEach((track) => pc.addTrack(track, stream));
         pc.ontrack = (event) => {
-          if (remoteVideo.current && event.streams[0]) remoteVideo.current.srcObject = event.streams[0];
+          const remoteStream = event.streams[0];
+          if (!remoteStream) return;
+          if (remoteVideo.current && type === "video") remoteVideo.current.srcObject = remoteStream;
+          if (remoteAudio.current) {
+            remoteAudio.current.srcObject = remoteStream;
+            remoteAudio.current.muted = !speakerOn;
+            remoteAudio.current.play?.().catch(() => {});
+          }
         };
         pc.onicecandidate = (event) => {
           if (event.candidate) insertSignal("ice", event.candidate.toJSON());
@@ -5521,11 +5595,35 @@ function WebRTCCall({ profile, call, type, peer, onEnd }) {
 
     return () => {
       stopped = true;
+      localStreamRef.current?.getTracks?.().forEach((track) => track.stop());
+      localStreamRef.current = null;
       pc?.getSenders().forEach((sender) => sender.track?.stop());
       pc?.close();
       if (channelRef.current) supabase.removeChannel(channelRef.current);
     };
   }, [call?.id, call?.caller_id, peer?.id, profile?.id, type]);
+
+  function toggleMute() {
+    const track = localStreamRef.current?.getAudioTracks?.()[0];
+    if (!track) return;
+    track.enabled = !track.enabled;
+    setMuted(!track.enabled);
+  }
+
+  function toggleCamera() {
+    const track = localStreamRef.current?.getVideoTracks?.()[0];
+    if (!track) return;
+    track.enabled = !track.enabled;
+    setCameraEnabled(track.enabled);
+  }
+
+  function toggleSpeaker() {
+    setSpeakerOn(value => {
+      const next = !value;
+      if (remoteAudio.current) remoteAudio.current.muted = !next;
+      return next;
+    });
+  }
 
   async function end() {
     if (endedRef.current) return;
@@ -5539,7 +5637,8 @@ function WebRTCCall({ profile, call, type, peer, onEnd }) {
       endedRef.current = false;
       return;
     }
-    pcRef.current?.getSenders().forEach((sender) => sender.track?.stop());
+    localStreamRef.current?.getTracks?.().forEach((track) => track.stop());
+    localStreamRef.current = null;
     pcRef.current?.close();
     onEnd?.();
   }
@@ -5555,16 +5654,24 @@ function WebRTCCall({ profile, call, type, peer, onEnd }) {
         {type === "video" ? (
           <div className="call-video-grid">
             <video ref={remoteVideo} autoPlay playsInline className="call-remote-video" />
-            <video ref={localVideo} autoPlay muted playsInline className="call-local-video" />
+            <video ref={localVideo} autoPlay muted playsInline className={`call-local-video ${cameraEnabled ? "" : "camera-off"}`} />
+            {!cameraEnabled && <div className="camera-off-label"><Avatar src={profile?.avatar_url} name={profile?.full_name || profile?.username} size={62} /><span>Camera off</span></div>}
+            <audio ref={remoteAudio} autoPlay playsInline />
           </div>
         ) : (
           <div className="call-audio-stage">
-            <div className="call-avatar"><Avatar src={peer?.avatar_url} name={displayName} size={82} /></div>
-            <p>{error || (connected ? "Connected" : "Calling…")}</p>
+            <div className="call-avatar"><Avatar src={peer?.avatar_url} name={displayName} size={82} online={connected} /></div>
+            <p>{error || (connected ? "Connected" : call?.status === "ringing" ? "Ringing…" : "Connecting…")}</p>
+            <audio ref={remoteAudio} autoPlay playsInline />
           </div>
         )}
         {error && <p className="call-error">{error}</p>}
-        <div className="call-controls"><button className="danger-button" onClick={end}>End call</button></div>
+        <div className="call-controls">
+          <button type="button" className={`call-control-button ${muted ? "active" : ""}`} onClick={toggleMute}>{muted ? "🔇 Unmute" : "🎙 Mute"}</button>
+          {type === "video" && <button type="button" className={`call-control-button ${!cameraEnabled ? "active" : ""}`} onClick={toggleCamera}>{cameraEnabled ? "📹 Camera" : "🚫 Camera"}</button>}
+          <button type="button" className={`call-control-button ${!speakerOn ? "active" : ""}`} onClick={toggleSpeaker}>{speakerOn ? "🔊 Speaker" : "🔇 Speaker"}</button>
+          <button type="button" className="danger-button" onClick={end}>End call</button>
+        </div>
       </div>
     </div>
   );
@@ -5839,7 +5946,7 @@ function WalletPage({ profile }) {
       <div className="wallet-balance-card">
         <span>Available HEXA Credits</span>
         <strong>{loading ? "Loading…" : displayCredits}</strong>
-        <small>1 HEXA Credit = ₦1.00 · External call rate: 50 kobo/second</small>
+        <small>1 HEXA Credit = ₦1.00 · External call rate: 30 kobo/second</small>
       </div>
       <div className="settings-card wallet-fund-card">
         <div><strong>Buy HEXA Credits</strong><p>Secure account verification + server-side payment verification.</p></div>
@@ -7935,6 +8042,48 @@ const APP_STYLES_TAIL = `
 }
 
 /* ============================================================
+   HEXA CHAT COMPOSER + VOICE RECORDING
+   ============================================================ */
+.chat-main { position: relative; min-height: 0; }
+.composer-stack { flex: 0 0 auto; border-top: 1px solid var(--hexa-border); background: rgba(9,12,17,.96); position: relative; z-index: 35; }
+.chat-composer { display: flex; align-items: flex-end; gap: 8px; padding: 10px 12px; min-height: 62px; width: 100%; box-sizing: border-box; }
+.chat-composer .composer-left, .chat-composer .composer-right { display:flex; align-items:center; gap:4px; flex:0 0 auto; }
+.chat-composer button { width: 38px; height: 38px; border: 0; border-radius: 11px; background: var(--hexa-panel-2); color: var(--hexa-text); cursor:pointer; }
+.chat-composer button:hover { background: var(--hexa-accent); color:#fff; }
+.chat-composer textarea { flex:1; min-width:0; min-height:40px; max-height:120px; resize:none; border:1px solid var(--hexa-border-strong); border-radius:20px; background:var(--hexa-panel-2); color:var(--hexa-text); padding:10px 14px; line-height:1.35; outline:none; box-sizing:border-box; font:inherit; }
+.chat-composer textarea:focus { border-color: var(--hexa-accent); box-shadow: 0 0 0 2px rgba(124,92,255,.12); }
+.composer-send { background: var(--hexa-accent) !important; color:#fff !important; }
+.voice-recorder-panel, .voice-preview-panel { display:flex; align-items:center; gap:12px; padding:10px 12px; min-height:64px; background:var(--hexa-panel-2); border-bottom:1px solid var(--hexa-border); }
+.voice-recorder-live, .voice-preview-heading { display:flex; align-items:center; gap:8px; flex:0 0 auto; white-space:nowrap; }
+.voice-recording-dot { width:9px; height:9px; border-radius:50%; background:var(--hexa-danger); box-shadow:0 0 0 0 rgba(255,77,103,.6); animation:hexa-record-pulse 1.3s infinite; }
+.voice-recording-time { color:var(--hexa-muted); font-variant-numeric:tabular-nums; }
+.voice-waveform { flex:1; min-width:40px; height:32px; display:flex; align-items:center; justify-content:center; gap:3px; overflow:hidden; }
+.voice-waveform i { display:block; width:3px; border-radius:999px; background:linear-gradient(180deg,var(--hexa-accent-2),var(--hexa-accent)); opacity:.85; }
+.voice-recorder-actions { display:flex; gap:7px; align-items:center; flex:0 0 auto; }
+.voice-recorder-actions button { border:1px solid var(--hexa-border); border-radius:999px; padding:9px 13px; background:var(--hexa-panel); color:var(--hexa-text); }
+.voice-stop, .voice-send { background:var(--hexa-accent) !important; color:#fff !important; border-color:transparent !important; }
+.voice-preview-panel { flex-wrap:wrap; }
+.voice-preview-panel audio { width:min(320px,40vw); max-width:100%; height:34px; }
+.voice-preview-heading { min-width:150px; }
+.voice-preview-heading span { color:var(--hexa-muted); font-size:11px; }
+.composer-error { padding:7px 14px; color:#ff9aac; font-size:11px; border-bottom:1px solid var(--hexa-border); }
+.attachment-preview-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 12px; border-top:1px solid var(--hexa-border); color:var(--hexa-muted); font-size:11px; }
+.attachment-preview-bar button { width:28px; height:28px; border:0; border-radius:50%; background:var(--hexa-panel-3); color:var(--hexa-text); }
+@keyframes hexa-record-pulse { 0%,100%{ box-shadow:0 0 0 0 rgba(255,77,103,.45); } 50%{ box-shadow:0 0 0 7px rgba(255,77,103,0); } }
+
+/* ============================================================
+   CALL CONTROLS / RESPONSIVE CALL STAGE
+   ============================================================ */
+.call-controls { flex-wrap:wrap; gap:8px; align-items:center; }
+.call-control-button { min-width:102px; padding:10px 13px; border-radius:999px; border:1px solid var(--hexa-border); background:var(--hexa-panel-2); color:var(--hexa-text); font-weight:700; }
+.call-control-button.active { background:rgba(255,77,103,.14); border-color:rgba(255,77,103,.35); color:#ff9aac; }
+.call-video-grid { min-height:0; overflow:hidden; }
+.call-video-grid > audio, .call-audio-stage > audio { display:none; }
+.call-local-video.camera-off { opacity:0; pointer-events:none; }
+.camera-off-label { position:absolute; inset:0; display:grid; place-items:center; align-content:center; gap:9px; color:#fff; background:radial-gradient(circle at center,rgba(124,92,255,.14),transparent 45%); pointer-events:none; }
+.call-avatar .hexa-avatar { margin:0 auto; }
+
+/* ============================================================
    MOBILE
    ============================================================ */
 
@@ -8081,6 +8230,34 @@ const APP_STYLES_TAIL = `
   }
 }
 
+@media (max-width: 760px) {
+  .chat-layout { height: calc(100dvh - 68px); min-height: 0; }
+  .chat-main { width:100%; min-width:0; }
+  .messages-area { padding: 12px 9px 10px; }
+  .hexa-message-row { gap:5px; margin:5px 0; }
+  .hexa-message-row .message-bubble { max-width: min(84vw, 420px); }
+  .message-bubble { max-width: min(84vw,420px); }
+  .chat-header { padding:0 10px; gap:7px; }
+  .chat-header-actions button { width:34px; height:34px; }
+  .composer-stack { padding-bottom: env(safe-area-inset-bottom); }
+  .chat-composer { padding:7px 8px; gap:5px; }
+  .chat-composer textarea { min-height:38px; padding:9px 12px; border-radius:18px; font-size:14px; }
+  .chat-composer button { width:36px; height:36px; }
+  .voice-recorder-panel, .voice-preview-panel { padding:8px; gap:7px; }
+  .voice-waveform { display:none; }
+  .voice-recorder-live { min-width:0; flex:1; }
+  .voice-recorder-live strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }
+  .voice-recorder-actions button { padding:8px 10px; }
+  .voice-preview-panel audio { width:100%; flex:1 1 100%; order:3; }
+  .voice-preview-heading { flex:1; }
+  .attachment-preview-bar { font-size:10px; }
+  .call-shell { width:100vw; height:100dvh; max-height:none; border-radius:0; border-left:0; border-right:0; }
+  .call-header { padding:12px 14px; }
+  .call-local-video { width:30vw; max-width:150px; right:10px; bottom:10px; }
+  .call-controls { padding:10px; padding-bottom:calc(10px + env(safe-area-inset-bottom)); }
+  .call-control-button, .danger-button { min-width:0; flex:1 1 42%; padding:10px 8px; font-size:11px; }
+}
+
 @media (max-width: 520px) {
   .hexa-auth-page {
     padding: 12px;
@@ -8116,17 +8293,6 @@ const APP_STYLES_TAIL = `
     display: none;
   }
 
-  .composer-action {
-    display: none !important;
-  }
-
-  .message-composer {
-    padding: 8px;
-  }
-
-  .message-composer > button:first-child {
-    display: none;
-  }
 
   .status-row {
     margin-right: -14px;
