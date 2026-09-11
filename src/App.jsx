@@ -586,7 +586,13 @@ function urlBase64ToUint8Array(base64String) {
 async function registerHexaServiceWorker() {
   if (typeof window === "undefined" || !("serviceWorker" in navigator)) return null;
   try {
-    return await navigator.serviceWorker.register("/hexa-sw.js", { scope: "/" });
+    await navigator.serviceWorker.register("/hexa-sw.js", {
+      scope: "/",
+      updateViaCache: "none",
+    });
+    // PushManager.subscribe() requires an active service worker.
+    // navigator.serviceWorker.ready waits until activation has completed.
+    return await navigator.serviceWorker.ready;
   } catch (error) {
     console.warn("hexachi service worker registration:", error);
     return null;
