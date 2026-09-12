@@ -1,48 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 
-const PLANS = {
-  plus: {
-    name: "HEXA Plus",
-    prices: {
-      ngn: {
-        monthly: "STRIPE_PLUS_NGN_MONTHLY",
-        yearly: "STRIPE_PLUS_NGN_YEARLY",
-      },
-      usd: {
-        monthly: "STRIPE_PLUS_USD_MONTHLY",
-        yearly: "STRIPE_PLUS_USD_YEARLY",
-      },
-    },
-  },
-
-  pro: {
-    name: "HEXA Pro",
-    prices: {
-      ngn: {
-        monthly: "STRIPE_PRO_NGN_MONTHLY",
-        yearly: "STRIPE_PRO_NGN_YEARLY",
-      },
-      usd: {
-        monthly: "STRIPE_PRO_USD_MONTHLY",
-        yearly: "STRIPE_PRO_USD_YEARLY",
-      },
-    },
-  },
-
-  ultra: {
-    name: "HEXA Ultra",
-    prices: {
-      ngn: {
-        monthly: "STRIPE_ULTRA_NGN_MONTHLY",
-        yearly: "STRIPE_ULTRA_NGN_YEARLY",
-      },
-      usd: {
-        monthly: "STRIPE_ULTRA_USD_MONTHLY",
-        yearly: "STRIPE_ULTRA_USD_YEARLY",
-      },
-    },
-  },
-};
+/*
+|--------------------------------------------------------------------------
+| HEXA / Stripe configuration
+|--------------------------------------------------------------------------
+*/
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL ||
@@ -58,8 +20,66 @@ const PUBLIC_APP_URL =
   process.env.PUBLIC_APP_URL ||
   "https://hexa-chi.vercel.app";
 
+/*
+|--------------------------------------------------------------------------
+| EXACT STRIPE PRICE IDS
+|--------------------------------------------------------------------------
+| These are the 12 prices from your Stripe catalog.
+*/
+
+const STRIPE_PRICES = {
+  plus: {
+    ngn: {
+      monthly: "price_1UAZwkB6RxaFC26qMui5gRBO", // ₦3,500
+      yearly: "price_1UAZoOB6RxaFC26qaRSzm7Hj",  // ₦33,600
+    },
+    usd: {
+      monthly: "price_1UAZvdB6RxaFC26qJy3L1IMF", // $2.99
+      yearly: "price_1UAZnoB6RxaFC26qNrJMybGu",  // $28.70
+    },
+  },
+
+  pro: {
+    ngn: {
+      monthly: "price_1UAZtwB6RxaFC26qcBZ8ltsY", // ₦8,000
+      yearly: "price_1UAZn6B6RxaFC26qIBFtL7e0",  // ₦76,800
+    },
+    usd: {
+      monthly: "price_1UAZuaB6RxaFC26qf2cuu4xH", // $6.99
+      yearly: "price_1UAZmHB6RxaFC26qpJ8Izod8",  // $67.10
+    },
+  },
+
+  ultra: {
+    ngn: {
+      monthly: "price_1UAZqnB6RxaFC26qCjELRzXs", // ₦18,000
+      yearly: "price_1UAZkuB6RxaFC26qq0AkCkaQ",  // ₦172,800
+    },
+    usd: {
+      monthly: "price_1UAZrrB6RxaFC26qhruqMGjm", // $14.99
+      yearly: "price_1UAZjcB6RxaFC26qCms49NVm",  // $143.90
+    },
+  },
+};
+
+const PLAN_NAMES = {
+  plus: "HEXA Plus",
+  pro: "HEXA Pro",
+  ultra: "HEXA Ultra",
+};
+
+const ALLOWED_CURRENCIES = ["ngn", "usd"];
+const ALLOWED_CYCLES = ["monthly", "yearly"];
+
+/*
+|--------------------------------------------------------------------------
+| Supabase admin client
+|--------------------------------------------------------------------------
+*/
+
 const supabaseAdmin =
-  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+  SUPABASE_URL &&
+  SUPABASE_SERVICE_ROLE_KEY
     ? createClient(
         SUPABASE_URL,
         SUPABASE_SERVICE_ROLE_KEY,
@@ -72,7 +92,13 @@ const supabaseAdmin =
       )
     : null;
 
-function json(res, status, body) {
+/*
+|--------------------------------------------------------------------------
+| JSON response helper
+|--------------------------------------------------------------------------
+*/
+
+function sendJson(res, status, body) {
   res.setHeader(
     "Content-Type",
     "application/json; charset=utf-8"
@@ -96,6 +122,12 @@ function json(res, status, body) {
   return res.status(status).json(body);
 }
 
+/*
+|--------------------------------------------------------------------------
+| Authenticate the Supabase user
+|--------------------------------------------------------------------------
+*/
+
 async function getAuthenticatedUser(req) {
   if (!supabaseAdmin) {
     return {
@@ -108,14 +140,22 @@ async function getAuthenticatedUser(req) {
   const authorization =
     String(
       req.headers.authorization || ""
-    );
+    ).trim();
 
-  const token =
-    authorization.startsWith("Bearer ")
-      ? authorization.slice(7).trim()
-      : "";
+  if (!authorization.startsWith("Bearer ")) {
+    return {
+      user: null,
+      error:
+        "Missing Supabase access token. Please sign in again.",
+    };
+  }
 
-  if (!token) {
+  const accessToken =
+    authorization
+      .slice(7)
+      .trim();
+
+  if (!accessToken) {
     return {
       user: null,
       error:
@@ -126,7 +166,10 @@ async function getAuthenticatedUser(req) {
   const {
     data,
     error,
-  } = await supabaseAdmin.auth.getUser(token);
+  } =
+    await supabaseAdmin.auth.getUser(
+      accessToken
+    );
 
   if (
     error ||
@@ -135,7 +178,7 @@ async function getAuthenticatedUser(req) {
     return {
       user: null,
       error:
-        "Invalid or expired Supabase session.",
+        "Your HEXA session is invalid or expired. Please sign in again.",
     };
   }
 
@@ -145,24 +188,48 @@ async function getAuthenticatedUser(req) {
   };
 }
 
+/*
+|--------------------------------------------------------------------------
+| Main Vercel function
+|--------------------------------------------------------------------------
+*/
+
 export default async function handler(
   req,
   res
 ) {
+  /*
+  |--------------------------------------------------------------------------
+  | CORS preflight
+  |--------------------------------------------------------------------------
+  */
+
   if (req.method === "OPTIONS") {
-    return json(res, 204, null);
+    return sendJson(res, 204, {});
   }
 
+  /*
+  |--------------------------------------------------------------------------
+  | Only POST is allowed
+  |--------------------------------------------------------------------------
+  */
+
   if (req.method !== "POST") {
-    return json(res, 405, {
+    return sendJson(res, 405, {
       error: "Method not allowed.",
     });
   }
 
+  /*
+  |--------------------------------------------------------------------------
+  | Required environment variables
+  |--------------------------------------------------------------------------
+  */
+
   if (!STRIPE_SECRET_KEY) {
-    return json(res, 500, {
+    return sendJson(res, 500, {
       error:
-        "STRIPE_SECRET_KEY is not configured in Vercel.",
+        "STRIPE_SECRET_KEY is not configured.",
     });
   }
 
@@ -170,7 +237,7 @@ export default async function handler(
     !SUPABASE_URL ||
     !SUPABASE_SERVICE_ROLE_KEY
   ) {
-    return json(res, 500, {
+    return sendJson(res, 500, {
       error:
         "Supabase server credentials are not configured.",
     });
@@ -178,243 +245,296 @@ export default async function handler(
 
   try {
     /*
-     * IMPORTANT:
-     * Never trust the HEXA user ID supplied by the browser.
-     * The authenticated Supabase user's UUID is the source of truth.
-     */
+    |--------------------------------------------------------------------------
+    | Verify the signed-in Supabase user.
+    |--------------------------------------------------------------------------
+    */
+
     const {
       user,
       error: authError,
-    } = await getAuthenticatedUser(req);
+    } =
+      await getAuthenticatedUser(req);
 
     if (authError) {
-      return json(res, 401, {
+      return sendJson(res, 401, {
         error: authError,
       });
     }
 
-    const hexaUserId = user.id;
+    const hexaUserId =
+      user.id;
 
     if (!hexaUserId) {
-      return json(res, 401, {
+      return sendJson(res, 401, {
         error:
-          "Missing HEXA user ID. Please sign in again.",
+          "Missing HEXA user ID.",
       });
     }
 
     /*
-     * Optional client-supplied ID.
-     * If the frontend sends one, verify it matches
-     * the authenticated Supabase account.
-     */
-    const requestedHexaUserId =
-      String(
-        req.body?.hexa_user_id || ""
-      ).trim();
+    |--------------------------------------------------------------------------
+    | Read request
+    |--------------------------------------------------------------------------
+    */
 
-    if (
-      requestedHexaUserId &&
-      requestedHexaUserId !== hexaUserId
-    ) {
-      return json(res, 403, {
-        error:
-          "The HEXA user ID does not match the signed-in account.",
-      });
-    }
+    const body =
+      req.body || {};
 
     const planId =
       String(
-        req.body?.plan_id || ""
+        body.plan_id ||
+          body.plan ||
+          ""
       )
         .trim()
         .toLowerCase();
 
-    const plan =
-      PLANS[planId];
-
-    if (!plan) {
-      return json(res, 400, {
-        error:
-          "Choose a valid HEXA plan: plus, pro or ultra.",
-      });
-    }
-
     const currency =
       String(
-        req.body?.currency || "ngn"
+        body.currency ||
+          "ngn"
       )
         .trim()
         .toLowerCase();
 
     const billingCycle =
       String(
-        req.body?.billingCycle ||
-          req.body?.billing_cycle ||
+        body.billingCycle ||
+          body.billing_cycle ||
           "monthly"
       )
         .trim()
         .toLowerCase();
 
+    /*
+    |--------------------------------------------------------------------------
+    | Validate plan
+    |--------------------------------------------------------------------------
+    */
+
     if (
-      !["ngn", "usd"].includes(
+      !Object.prototype.hasOwnProperty.call(
+        STRIPE_PRICES,
+        planId
+      )
+    ) {
+      return sendJson(res, 400, {
+        error:
+          "Invalid HEXA plan. Use plus, pro or ultra.",
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Validate currency
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      !ALLOWED_CURRENCIES.includes(
         currency
       )
     ) {
-      return json(res, 400, {
+      return sendJson(res, 400, {
         error:
-          "Currency must be NGN or USD.",
+          "Invalid currency. Use ngn or usd.",
       });
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Validate billing cycle
+    |--------------------------------------------------------------------------
+    */
+
     if (
-      !["monthly", "yearly"].includes(
+      !ALLOWED_CYCLES.includes(
         billingCycle
       )
     ) {
-      return json(res, 400, {
+      return sendJson(res, 400, {
         error:
-          "Billing cycle must be monthly or yearly.",
+          "Invalid billing cycle. Use monthly or yearly.",
       });
     }
 
-    const priceEnv =
-      plan.prices?.[
+    /*
+    |--------------------------------------------------------------------------
+    | Get exact Stripe Price ID
+    |--------------------------------------------------------------------------
+    */
+
+    const priceId =
+      STRIPE_PRICES?.[
+        planId
+      ]?.[
         currency
       ]?.[
         billingCycle
       ];
 
-    const priceId =
-      priceEnv
-        ? process.env[priceEnv]
-        : "";
-
     if (!priceId) {
-      return json(res, 500, {
+      return sendJson(res, 500, {
         error:
-          `${
-            priceEnv || "Stripe price"
-          } is not configured in Vercel.`,
+          "No Stripe Price ID is configured for this plan, currency and billing cycle.",
       });
     }
 
     /*
-     * Stripe success/cancel URLs.
-     */
-    const origin =
+    |--------------------------------------------------------------------------
+    | Determine public application URL
+    |--------------------------------------------------------------------------
+    */
+
+    const appUrl =
       String(
         PUBLIC_APP_URL ||
           req.headers.origin ||
           "https://hexa-chi.vercel.app"
-      ).replace(/\/$/, "");
+      )
+        .replace(/\/+$/, "");
 
     /*
-     * Create Stripe Checkout Session.
-     *
-     * Stripe expects application/x-www-form-urlencoded
-     * for this endpoint.
-     */
-    const body =
+    |--------------------------------------------------------------------------
+    | Create Stripe Checkout Session
+    |--------------------------------------------------------------------------
+    */
+
+    const stripeBody =
       new URLSearchParams();
 
-    body.set(
+    stripeBody.set(
       "mode",
       "subscription"
     );
 
-    body.set(
+    stripeBody.set(
       "line_items[0][price]",
       priceId
     );
 
-    body.set(
+    stripeBody.set(
       "line_items[0][quantity]",
       "1"
     );
 
-    body.set(
-      "success_url",
-      `${origin}/?subscription=success&session_id={CHECKOUT_SESSION_ID}`
-    );
+    /*
+    |--------------------------------------------------------------------------
+    | Managed Payments is already configured on the products.
+    |
+    | Keep it enabled so Stripe uses the SaaS business-use
+    | tax category you configured on the products.
+    |--------------------------------------------------------------------------
+    */
 
-    body.set(
-      "cancel_url",
-      `${origin}/?subscription=cancelled`
+    stripeBody.set(
+      "managed_payments[enabled]",
+      "true"
     );
 
     /*
-     * Store HEXA's authenticated UUID
-     * directly on the Checkout Session.
-     */
-    body.set(
+    |--------------------------------------------------------------------------
+    | Stripe redirect URLs
+    |--------------------------------------------------------------------------
+    */
+
+    stripeBody.set(
+      "success_url",
+      `${appUrl}/?subscription=success&session_id={CHECKOUT_SESSION_ID}`
+    );
+
+    stripeBody.set(
+      "cancel_url",
+      `${appUrl}/?subscription=cancelled`
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Stripe customer/account identification
+    |--------------------------------------------------------------------------
+    */
+
+    stripeBody.set(
       "client_reference_id",
       hexaUserId
     );
 
-    /*
-     * Pre-fill Stripe Checkout with the
-     * authenticated user's email.
-     */
     if (user.email) {
-      body.set(
+      stripeBody.set(
         "customer_email",
         user.email
       );
     }
 
     /*
-     * Checkout Session metadata.
-     */
-    body.set(
-      "metadata[user_id]",
+    |--------------------------------------------------------------------------
+    | Checkout metadata
+    |--------------------------------------------------------------------------
+    */
+
+    stripeBody.set(
+      "metadata[hexa_user_id]",
       hexaUserId
     );
 
-    body.set(
+    stripeBody.set(
       "metadata[plan_id]",
       planId
     );
 
-    body.set(
+    stripeBody.set(
+      "metadata[plan_name]",
+      PLAN_NAMES[planId]
+    );
+
+    stripeBody.set(
       "metadata[currency]",
       currency
     );
 
-    body.set(
+    stripeBody.set(
       "metadata[billing_cycle]",
       billingCycle
     );
 
     /*
-     * Subscription metadata.
-     *
-     * This is important because later Stripe
-     * subscription.updated / subscription.deleted
-     * webhooks operate on the Subscription object.
-     */
-    body.set(
-      "subscription_data[metadata][user_id]",
+    |--------------------------------------------------------------------------
+    | Subscription metadata
+    |--------------------------------------------------------------------------
+    */
+
+    stripeBody.set(
+      "subscription_data[metadata][hexa_user_id]",
       hexaUserId
     );
 
-    body.set(
+    stripeBody.set(
       "subscription_data[metadata][plan_id]",
       planId
     );
 
-    body.set(
+    stripeBody.set(
+      "subscription_data[metadata][plan_name]",
+      PLAN_NAMES[planId]
+    );
+
+    stripeBody.set(
       "subscription_data[metadata][currency]",
       currency
     );
 
-    body.set(
+    stripeBody.set(
       "subscription_data[metadata][billing_cycle]",
       billingCycle
     );
 
     /*
-     * Create Checkout Session.
-     */
+    |--------------------------------------------------------------------------
+    | Create Stripe session
+    |--------------------------------------------------------------------------
+    */
+
     const stripeResponse =
       await fetch(
         "https://api.stripe.com/v1/checkout/sessions",
@@ -429,7 +549,7 @@ export default async function handler(
               "application/x-www-form-urlencoded",
           },
 
-          body,
+          body: stripeBody,
         }
       );
 
@@ -438,31 +558,57 @@ export default async function handler(
         .json()
         .catch(() => ({}));
 
+    /*
+    |--------------------------------------------------------------------------
+    | Stripe error
+    |--------------------------------------------------------------------------
+    */
+
     if (!stripeResponse.ok) {
       console.error(
-        "Stripe Checkout error:",
+        "HEXA Stripe Checkout error:",
         stripeData
       );
 
-      return json(
+      return sendJson(
         res,
         stripeResponse.status,
         {
           error:
             stripeData?.error?.message ||
-            "Stripe checkout creation failed.",
+            "Stripe Checkout could not be created.",
+
+          stripe_error:
+            stripeData?.error?.type ||
+            null,
+
+          stripe_code:
+            stripeData?.error?.code ||
+            null,
         }
       );
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Confirm Checkout URL
+    |--------------------------------------------------------------------------
+    */
+
     if (!stripeData?.url) {
-      return json(res, 500, {
+      return sendJson(res, 500, {
         error:
-          "Stripe created the checkout session but did not return a checkout URL.",
+          "Stripe created the session but did not return a Checkout URL.",
       });
     }
 
-    return json(res, 200, {
+    /*
+    |--------------------------------------------------------------------------
+    | Success
+    |--------------------------------------------------------------------------
+    */
+
+    return sendJson(res, 200, {
       ok: true,
 
       url:
@@ -478,23 +624,26 @@ export default async function handler(
         planId,
 
       plan_name:
-        plan.name,
+        PLAN_NAMES[planId],
 
       currency,
 
       billing_cycle:
         billingCycle,
+
+      stripe_price_id:
+        priceId,
     });
   } catch (error) {
     console.error(
-      "HEXACHI Stripe checkout error:",
+      "HEXA subscription checkout exception:",
       error
     );
 
-    return json(res, 500, {
+    return sendJson(res, 500, {
       error:
         error?.message ||
-        "Unable to create Stripe checkout.",
+        "Unable to create HEXA Stripe Checkout.",
     });
   }
 }
