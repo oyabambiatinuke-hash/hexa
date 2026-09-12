@@ -6526,13 +6526,12 @@ const HEXA_SUBSCRIPTION_PLANS = [
   {
     id: "plus",
     name: "HEXA Plus",
-    description: "For people who want more room to communicate.",
+    description: "More features for everyday hexachi users.",
     features: [
-      "More storage",
-      "Advanced chat organization",
+      "More messaging features",
+      "Expanded file and media limits",
+      "More Kora credits",
       "Premium themes",
-      "Higher media limits",
-      "Expanded Kora usage",
     ],
     prices: {
       ngn: { monthly: 3500, yearly: 33600 },
@@ -6542,13 +6541,13 @@ const HEXA_SUBSCRIPTION_PLANS = [
   {
     id: "pro",
     name: "HEXA Pro",
-    description: "For power users, creators and growing communities.",
+    description: "Advanced hexachi access for power users.",
     features: [
       "Everything in Plus",
-      "Higher media limits",
-      "Creator tools",
       "Advanced communities",
       "More Kora credits",
+      "Higher limits",
+      "Priority features",
     ],
     prices: {
       ngn: { monthly: 8000, yearly: 76800 },
@@ -6558,7 +6557,7 @@ const HEXA_SUBSCRIPTION_PLANS = [
   {
     id: "ultra",
     name: "HEXA Ultra",
-    description: "Maximum HEXA access for advanced users and businesses.",
+    description: "Maximum hexachi access for advanced users and businesses.",
     features: [
       "Everything in Pro",
       "Maximum limits",
@@ -6583,26 +6582,44 @@ function SubscriptionPage({ profile }) {
 
   async function getSessionToken() {
     const { data, error } = await supabase.auth.getSession();
+
     if (error) throw error;
+
     const token = data?.session?.access_token;
-    if (!token) throw new Error("Your HEXA session has expired. Please sign in again.");
+
+    if (!token) {
+      throw new Error(
+        "Your HEXA session has expired. Please sign in again."
+      );
+    }
+
     return token;
   }
 
   async function loadSubscription() {
     if (!profile?.id) return;
+
     setLoading(true);
+
     try {
       const { data, error } = await supabase
         .from("hexa_subscriptions")
         .select("*")
         .eq("user_id", profile.id)
         .maybeSingle();
+
       if (error) throw error;
+
       setSubscription(data || null);
     } catch (error) {
-      console.warn("HEXA subscription load:", error?.message || error);
-      setMessage(error?.message || "Unable to load your subscription.");
+      console.warn(
+        "HEXA subscription load:",
+        error?.message || error
+      );
+
+      setMessage(
+        error?.message || "Unable to load your subscription."
+      );
     } finally {
       setLoading(false);
     }
@@ -6622,8 +6639,11 @@ function SubscriptionPage({ profile }) {
           filter: `user_id=eq.${profile?.id}`,
         },
         (payload) => {
-          if (payload.new) setSubscription(payload.new);
-          else loadSubscription();
+          if (payload.new) {
+            setSubscription(payload.new);
+          } else {
+            loadSubscription();
+          }
         }
       )
       .subscribe();
@@ -6634,14 +6654,31 @@ function SubscriptionPage({ profile }) {
   }, [profile?.id]);
 
   async function startCheckout(planId) {
-    if (!profile?.id) return;
     setBusy(planId);
     setMessage("");
 
     try {
+      const {
+        data: sessionData,
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) throw sessionError;
+
+      const sessionUserId =
+        sessionData?.session?.user?.id;
+
+      if (!sessionUserId) {
+        throw new Error(
+          "Your HEXA session is missing. Please sign in again."
+        );
+      }
+
       const token = await getSessionToken();
+
       const endpoint =
-        import.meta.env.VITE_HEXA_SUBSCRIPTION_CHECKOUT_URL ||
+        import.meta.env
+          .VITE_HEXA_SUBSCRIPTION_CHECKOUT_URL ||
         "/api/hexa-subscription-checkout";
 
       const response = await fetch(endpoint, {
@@ -6654,10 +6691,14 @@ function SubscriptionPage({ profile }) {
           plan_id: planId,
           currency: billingCurrency,
           billingCycle,
+          hexa_user_id: sessionUserId,
         }),
       });
 
-      const data = await response.json().catch(() => ({}));
+      const data = await response
+        .json()
+        .catch(() => ({}));
+
       if (!response.ok || !data?.url) {
         throw new Error(
           data?.error ||
@@ -6667,7 +6708,10 @@ function SubscriptionPage({ profile }) {
 
       window.location.assign(data.url);
     } catch (error) {
-      setMessage(error?.message || "Unable to start Stripe checkout.");
+      setMessage(
+        error?.message ||
+          "Unable to start Stripe checkout."
+      );
     } finally {
       setBusy("");
     }
@@ -6679,37 +6723,56 @@ function SubscriptionPage({ profile }) {
 
     try {
       const token = await getSessionToken();
-      const response = await fetch("/api/hexa-subscription-portal", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const data = await response.json().catch(() => ({}));
+
+      const response = await fetch(
+        "/api/hexa-subscription-portal",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = await response
+        .json()
+        .catch(() => ({}));
+
       if (!response.ok || !data?.url) {
         throw new Error(
           data?.error ||
             "Unable to open subscription management."
         );
       }
+
       window.location.assign(data.url);
     } catch (error) {
-      setMessage(error?.message || "Unable to open subscription management.");
+      setMessage(
+        error?.message ||
+          "Unable to open subscription management."
+      );
     } finally {
       setBusy("");
     }
   }
 
-  const isActive = ["active", "trialing"].includes(subscription?.status);
+  const isActive = [
+    "active",
+    "trialing",
+  ].includes(subscription?.status);
 
   return (
     <section className="workspace-page subscription-page">
       <div className="page-heading">
         <div className="page-heading-icon">★</div>
+
         <div>
           <h1>Subscription</h1>
-          <p>Upgrade your hexachi account securely through Stripe.</p>
+          <p>
+            Upgrade your hexachi account securely
+            through Stripe.
+          </p>
         </div>
       </div>
 
@@ -6717,22 +6780,31 @@ function SubscriptionPage({ profile }) {
         <div className="settings-card subscription-current">
           <div>
             <strong>
-              {subscription.plan_name || subscription.plan_id || "Free"}
+              {subscription.plan_name ||
+                subscription.plan_id ||
+                "Free"}
             </strong>
+
             <p>
               {subscription.status || "active"}
+
               {subscription.current_period_end
-                ? ` · Renews ${new Date(subscription.current_period_end).toLocaleDateString()}`
+                ? ` · Renews ${new Date(
+                    subscription.current_period_end
+                  ).toLocaleDateString()}`
                 : ""}
             </p>
           </div>
+
           <button
             className="settings-secondary-button"
             type="button"
             disabled={busy === "manage"}
             onClick={manageSubscription}
           >
-            {busy === "manage" ? "Opening…" : "Manage subscription"}
+            {busy === "manage"
+              ? "Opening…"
+              : "Manage subscription"}
           </button>
         </div>
       )}
@@ -6746,21 +6818,44 @@ function SubscriptionPage({ profile }) {
       <div className="subscription-controls settings-card">
         <div>
           <strong>Billing</strong>
-          <p>Choose your currency and billing frequency before checkout.</p>
+
+          <p>
+            Choose your currency and billing
+            frequency before checkout.
+          </p>
         </div>
+
         <div className="subscription-control-row">
           <label>
             <span>Currency</span>
-            <select value={billingCurrency} onChange={(e) => setBillingCurrency(e.target.value)}>
+
+            <select
+              value={billingCurrency}
+              onChange={(e) =>
+                setBillingCurrency(e.target.value)
+              }
+            >
               <option value="ngn">NGN ₦</option>
               <option value="usd">USD $</option>
             </select>
           </label>
+
           <label>
             <span>Billing cycle</span>
-            <select value={billingCycle} onChange={(e) => setBillingCycle(e.target.value)}>
-              <option value="monthly">Monthly</option>
-              <option value="yearly">Yearly</option>
+
+            <select
+              value={billingCycle}
+              onChange={(e) =>
+                setBillingCycle(e.target.value)
+              }
+            >
+              <option value="monthly">
+                Monthly
+              </option>
+
+              <option value="yearly">
+                Yearly
+              </option>
             </select>
           </label>
         </div>
@@ -6769,76 +6864,139 @@ function SubscriptionPage({ profile }) {
       {loading ? (
         <div className="coming-card">
           <div className="loading-spinner" />
-          <h2>Loading subscription…</h2>
+
+          <h2>
+            Loading subscription…
+          </h2>
         </div>
       ) : (
         <div className="subscription-grid">
-          {HEXA_SUBSCRIPTION_PLANS.map((plan) => {
-            const current =
-              isActive &&
-              subscription?.plan_id === plan.id;
+          {HEXA_SUBSCRIPTION_PLANS.map(
+            (plan) => {
+              const current =
+                isActive &&
+                subscription?.plan_id ===
+                  plan.id;
 
-            return (
-              <article
-                key={plan.id}
-                className={`subscription-card ${
-                  current ? "current" : ""
-                } ${plan.id === "pro" ? "featured" : ""}`}
-              >
-                {plan.id === "pro" && (
-                  <span className="popular">POPULAR</span>
-                )}
-
-                <span className="eyebrow">HEXACHI MEMBERSHIP</span>
-                <h2>{plan.name}</h2>
-                <div className="subscription-price">
-                  <strong>
-                    {billingCurrency === "ngn" ? "₦" : "$"}
-                    {plan.prices[billingCurrency][billingCycle].toLocaleString(undefined, {
-                      minimumFractionDigits: billingCurrency === "usd" ? 2 : 0,
-                      maximumFractionDigits: 2,
-                    })}
-                  </strong>
-                  <span>/{billingCycle === "monthly" ? "month" : "year"}</span>
-                </div>
-                <p>{plan.description}</p>
-
-                <div className="subscription-features">
-                  {plan.features.map((feature) => (
-                    <span key={feature}>✓ {feature}</span>
-                  ))}
-                </div>
-
-                <button
-                  className="hero-primary"
-                  type="button"
-                  disabled={current || Boolean(busy)}
-                  onClick={() => startCheckout(plan.id)}
+              return (
+                <article
+                  key={plan.id}
+                  className={`subscription-card ${
+                    current
+                      ? "current"
+                      : ""
+                  } ${
+                    plan.id === "pro"
+                      ? "featured"
+                      : ""
+                  }`}
                 >
-                  {busy === plan.id
-                    ? "Opening Stripe…"
-                    : current
+                  {plan.id === "pro" && (
+                    <span className="popular">
+                      POPULAR
+                    </span>
+                  )}
+
+                  <span className="eyebrow">
+                    HEXACHI MEMBERSHIP
+                  </span>
+
+                  <h2>
+                    {plan.name}
+                  </h2>
+
+                  <div className="subscription-price">
+                    <strong>
+                      {billingCurrency === "ngn"
+                        ? "₦"
+                        : "$"}
+
+                      {plan.prices[
+                        billingCurrency
+                      ][
+                        billingCycle
+                      ].toLocaleString(
+                        undefined,
+                        {
+                          minimumFractionDigits:
+                            billingCurrency ===
+                            "usd"
+                              ? 2
+                              : 0,
+                          maximumFractionDigits: 2,
+                        }
+                      )}
+                    </strong>
+
+                    <span>
+                      /
+                      {billingCycle ===
+                      "monthly"
+                        ? "month"
+                        : "year"}
+                    </span>
+                  </div>
+
+                  <p>
+                    {plan.description}
+                  </p>
+
+                  <div className="subscription-features">
+                    {plan.features.map(
+                      (feature) => (
+                        <span key={feature}>
+                          ✓ {feature}
+                        </span>
+                      )
+                    )}
+                  </div>
+
+                  <button
+                    className="hero-primary"
+                    type="button"
+                    disabled={
+                      current ||
+                      Boolean(busy)
+                    }
+                    onClick={() =>
+                      startCheckout(
+                        plan.id
+                      )
+                    }
+                  >
+                    {busy === plan.id
+                      ? "Opening Stripe…"
+                      : current
                       ? "Current plan"
-                      : `Choose ${plan.name.replace("HEXA ", "")}`}
-                </button>
-              </article>
-            );
-          })}
+                      : `Choose ${plan.name.replace(
+                          "HEXA ",
+                          ""
+                        )}`}
+                  </button>
+                </article>
+              );
+            }
+          )}
         </div>
       )}
 
       <div className="billing-footer">
         <div>
-          <strong>🔒 Secure Stripe billing</strong>
+          <strong>
+            🔒 Secure Stripe billing
+          </strong>
+
           <span>
-            Stripe handles payment details. hexachi stores only the subscription status and Stripe identifiers needed to provide your plan.
+            Stripe handles payment details.
+            hexachi stores only the subscription
+            status and Stripe identifiers needed
+            to provide your plan.
           </span>
         </div>
       </div>
     </section>
   );
 }
-
 function SettingsPage({ profile, onSignOut, onNavigate }) {
   const [theme, setTheme] = useState(getSavedHexaTheme());
   const [showThemes, setShowThemes] = useState(true);
@@ -7234,6 +7392,8 @@ export default function App() {
             );
           }
 
+
+          
           /*
             Handle password-reset callbacks.
           */
