@@ -11746,14 +11746,4 @@ document.head.appendChild(
   style
 );
 
-/* =========================================================
-   MOUNT
-   ========================================================= */
-
-createRoot(
-  document.getElementById(
-    "root"
-  )
-).render(
-  <Root />
-);
+export default Root;
