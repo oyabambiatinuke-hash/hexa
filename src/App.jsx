@@ -2190,146 +2190,224 @@ function HexaApp({
       ]
     );
 
-  /* =======================================================
-     SEND MESSAGE
-     ======================================================= */
+  const sendMessage = useCallback(
+  async ({
+    content = "",
+    messageType = "text",
+    replyToId = null,
+    metadata = {},
+    attachment = null,
+    forwardedFromId = null,
+    expiresAt = null,
+    viewOnce = false,
+  }) => {
+    if (
+      !userId ||
+      !activeConversationId
+    ) {
+      return null;
+    }
 
-  const sendMessage =
-    useCallback(
-      async ({
-        content = "",
-        messageType = "text",
-        replyToId = null,
-        metadata = {},
-        attachment = null,
-        forwardedFromId = null,
-        expiresAt = null,
-        viewOnce = false,
-      }) => {
-        if (
-          !userId ||
-          !activeConversationId
+    const typeDefaults = {
+      text: "",
+      image: "📷 Photo",
+      video: "🎥 Video",
+      audio: "🎵 Audio",
+      voice: "🎙 Voice message",
+      file: "📎 File",
+      gif: "GIF",
+      poll: "📊 Poll",
+      system: "System message",
+      location: "📍 Location",
+      contact: "👤 Contact",
+    };
+
+    /*
+      IMPORTANT:
+      messages.content is NOT NULL in your database.
+      Therefore every message MUST receive a string.
+      The actual media remains in message_attachments
+      and metadata.url.
+    */
+    let safeContent =
+      typeof content === "string"
+        ? content.trim()
+        : "";
+
+    if (!safeContent) {
+      safeContent =
+        typeDefaults[
+          messageType
+        ] ||
+        "Message";
+    }
+
+    const messageId =
+      makeId();
+
+    const clientMessageId =
+      makeId();
+
+    const payload = {
+      id: messageId,
+
+      sender_id:
+        userId,
+
+      conversation_id:
+        activeConversationId,
+
+      /*
+        NEVER null because your
+        messages.content column is NOT NULL.
+      */
+      content:
+        safeContent,
+
+      message_type:
+        messageType,
+
+      status:
+        "sent",
+
+      client_message_id:
+        clientMessageId,
+
+      reply_to_id:
+        replyToId ||
+        null,
+
+      forwarded_from_id:
+        forwardedFromId ||
+        null,
+
+      metadata:
+        metadata || {},
+
+      expires_at:
+        expiresAt ||
+        null,
+
+      view_once:
+        !!viewOnce,
+
+      delivered_at:
+        now(),
+    };
+
+    const {
+      data: message,
+      error,
+    } = await supabase
+      .from("messages")
+      .insert(payload)
+      .select()
+      .single();
+
+    if (error) {
+      console.error(
+        "HEXA sendMessage error:",
+        error
+      );
+
+      flash(
+        error.message
+      );
+
+      return null;
+    }
+
+    /*
+      Save the REAL uploaded media separately.
+      This is especially important for voice notes.
+    */
+    if (attachment) {
+      const {
+        error:
+          attachmentError,
+      } = await supabase
+        .from(
+          "message_attachments"
         )
-          return null;
+        .insert({
+          id: makeId(),
 
-        if (
-          messageType ===
-            "text" &&
-          !String(
-            content
-          ).trim()
-        ) {
-          return null;
-        }
+          message_id:
+            message.id,
 
-        const payload = {
-          id:
-            makeId(),
-          sender_id:
+          user_id:
             userId,
-          conversation_id:
-            activeConversationId,
-          content:
-            content ||
-            null,
-          message_type:
-            messageType,
-          status:
-            "sent",
-          client_message_id:
-            makeId(),
-          reply_to_id:
-            replyToId ||
-            null,
-          forwarded_from_id:
-            forwardedFromId ||
-            null,
-          metadata:
-            metadata || {},
-          expires_at:
-            expiresAt ||
-            null,
-          view_once:
-            !!viewOnce,
-          delivered_at:
-            now(),
-        };
 
-        const {
-          data: message,
-          error,
-        } =
-          await supabase
-            .from(
-              "messages"
-            )
-            .insert(
-              payload
-            )
-            .select()
-            .single();
+          file_name:
+            attachment.fileName ||
+            "attachment",
 
-        if (error) {
-          flash(
-            error.message
-          );
-          return null;
-        }
+          file_path:
+            attachment.filePath ||
+            null,
 
-        if (attachment) {
-          await supabase
-            .from(
-              "message_attachments"
-            )
-            .insert({
-              id:
-                makeId(),
-              message_id:
-                message.id,
-              user_id:
-                userId,
-              file_name:
-                attachment.fileName,
-              file_path:
-                attachment.filePath,
-              file_url:
-                attachment.fileUrl,
-              mime_type:
-                attachment.mimeType,
-              file_size:
-                attachment.fileSize,
-              width:
-                attachment.width ||
-                null,
-              height:
-                attachment.height ||
-                null,
-              duration:
-                attachment.duration ||
-                null,
-              thumbnail_url:
-                attachment.thumbnailUrl ||
-                null,
-            });
-        }
+          file_url:
+            attachment.fileUrl ||
+            null,
 
-        await loadMessages(
-          activeConversationId
+          mime_type:
+            attachment.mimeType ||
+            "application/octet-stream",
+
+          file_size:
+            attachment.fileSize ||
+            0,
+
+          width:
+            attachment.width ||
+            null,
+
+          height:
+            attachment.height ||
+            null,
+
+          duration:
+            attachment.duration ||
+            null,
+
+          thumbnail_url:
+            attachment.thumbnailUrl ||
+            null,
+        });
+
+      if (attachmentError) {
+        console.error(
+          "HEXA attachment error:",
+          attachmentError
         );
 
-        await loadConversations();
+        flash(
+          `Message sent, but attachment metadata failed: ${attachmentError.message}`
+        );
+      }
+    }
 
-        return message;
-      },
-      [
-        userId,
-        activeConversationId,
-        loadMessages,
-        loadConversations,
-        flash,
-      ]
+    /*
+      Refresh the active conversation
+      so the actual voice/audio/media
+      immediately appears.
+    */
+    await loadMessages(
+      activeConversationId
     );
 
+    await loadConversations();
+
+    return message;
+  },
+  [
+    userId,
+    activeConversationId,
+    loadMessages,
+    loadConversations,
+    flash,
+  ]
+);
   /* =======================================================
      UPLOAD
      ======================================================= */
