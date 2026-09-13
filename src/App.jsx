@@ -1380,143 +1380,354 @@ function HexaApp({
      MESSAGES
      ======================================================= */
 
-  const loadMessages =
-    useCallback(
-      async (
-        conversationId
-      ) => {
-        if (
-          !conversationId ||
-          !userId
-        ) {
-          setMessages([]);
-          return;
-        }
+ const loadMessages = useCallback(
+  async (conversationId) => {
+    if (!conversationId || !userId) {
+      setMessages([]);
+      return;
+    }
 
-        const {
-          data,
-          error,
-        } =
-          await supabase
-            .from(
-              "messages"
-            )
-            .select(
-              `
-                *,
-                sender:sender_id (
-                  id,
-                  username,
-                  full_name,
-                  display_name,
-                  avatar_url
-                ),
-                reply_to:reply_to_id (
-                  id,
-                  sender_id,
-                  content,
-                  message_type,
-                  metadata,
-                  sender:sender_id (
-                    id,
-                    username,
-                    full_name,
-                    display_name,
-                    avatar_url
-                  )
-                ),
-                attachments:message_attachments (
-                  id,
-                  file_name,
-                  file_path,
-                  file_url,
-                  mime_type,
-                  file_size,
-                  width,
-                  height,
-                  duration,
-                  thumbnail_url
-                ),
-                reactions:message_reactions (
-                  user_id,
-                  reaction
-                )
-              `
-            )
-            .eq(
-              "conversation_id",
-              conversationId
-            )
-            .order(
-              "created_at",
-              {
-                ascending:
-                  true,
-              }
-            );
+    try {
+      /*
+       * IMPORTANT:
+       * Do NOT use the large nested:
+       *
+       * reply_to:reply_to_id(...)
+       * attachments:message_attachments(...)
+       * reactions:message_reactions(...)
+       *
+       * query here.
+       *
+       * One broken FK/relation can cause the ENTIRE
+       * messages request to fail.
+       */
 
-        if (error) {
-          console.error(
-            "Messages:",
-            error
-          );
-          setMessages([]);
-          return;
-        }
-
-        setMessages(
-          data || []
+      const {
+        data: messageRows,
+        error: messageError,
+      } = await supabase
+        .from("messages")
+        .select("*")
+        .eq(
+          "conversation_id",
+          conversationId
+        )
+        .order(
+          "created_at",
+          { ascending: true }
         );
 
-        const unread =
-          (data || []).filter(
-            (message) =>
-              message.sender_id !==
-              userId
-          );
+      if (messageError) {
+        console.error(
+          "HEXA messages load error:",
+          messageError
+        );
 
-        if (
-          unread.length
-        ) {
-          await Promise.allSettled(
-            unread.map(
+        flash(
+          `Could not load messages: ${messageError.message}`
+        );
+
+        setMessages([]);
+        return;
+      }
+
+      const rows = messageRows || [];
+
+      if (!rows.length) {
+        setMessages([]);
+        return;
+      }
+
+      /*
+       * Load senders separately.
+       */
+      const senderIds = [
+        ...new Set(
+          rows
+            .map(
               (message) =>
-                supabase
-                  .from(
-                    "message_reads"
-                  )
-                  .upsert({
-                    message_id:
-                      message.id,
-                    user_id:
-                      userId,
-                    read_at:
-                      now(),
-                  })
+                message.sender_id
             )
+            .filter(Boolean)
+        ),
+      ];
+
+      let profileMap = {};
+
+      if (senderIds.length) {
+        const {
+          data: senderProfiles,
+          error: senderError,
+        } = await supabase
+          .from("profiles")
+          .select(
+            `
+              id,
+              username,
+              full_name,
+              display_name,
+              avatar_url
+            `
+          )
+          .in(
+            "id",
+            senderIds
           );
 
-          await supabase
-            .from(
-              "messages"
-            )
-            .update({
-              read_at:
-                now(),
-              status:
-                "read",
-            })
-            .in(
-              "id",
-              unread.map(
-                (message) =>
-                  message.id
+        if (!senderError) {
+          profileMap =
+            Object.fromEntries(
+              (senderProfiles ||
+                []).map(
+                (profile) => [
+                  profile.id,
+                  profile,
+                ]
               )
             );
         }
-      },
-      [userId]
-    );
+      }
+
+      /*
+       * Load attachments separately.
+       */
+      const messageIds =
+        rows.map(
+          (message) =>
+            message.id
+        );
+
+      let attachmentMap = {};
+
+      const {
+        data: attachments,
+        error: attachmentsError,
+      } = await supabase
+        .from(
+          "message_attachments"
+        )
+        .select("*")
+        .in(
+          "message_id",
+          messageIds
+        );
+
+      if (!attachmentsError) {
+        for (const attachment of
+          attachments || []) {
+          if (
+            !attachmentMap[
+              attachment.message_id
+            ]
+          ) {
+            attachmentMap[
+              attachment.message_id
+            ] = [];
+          }
+
+          attachmentMap[
+            attachment.message_id
+          ].push(
+            attachment
+          );
+        }
+      }
+
+      /*
+       * Load reactions separately.
+       */
+      let reactionMap = {};
+
+      const {
+        data: reactions,
+        error: reactionsError,
+      } = await supabase
+        .from(
+          "message_reactions"
+        )
+        .select(
+          "message_id,user_id,reaction,created_at"
+        )
+        .in(
+          "message_id",
+          messageIds
+        );
+
+      if (!reactionsError) {
+        for (const reaction of
+          reactions || []) {
+          if (
+            !reactionMap[
+              reaction.message_id
+            ]
+          ) {
+            reactionMap[
+              reaction.message_id
+            ] = [];
+          }
+
+          reactionMap[
+            reaction.message_id
+          ].push(
+            reaction
+          );
+        }
+      }
+
+      /*
+       * Load reply messages separately.
+       */
+      const replyIds = [
+        ...new Set(
+          rows
+            .map(
+              (message) =>
+                message.reply_to_id
+            )
+            .filter(Boolean)
+        ),
+      ];
+
+      let replyMap = {};
+
+      if (replyIds.length) {
+        const {
+          data: replies,
+        } = await supabase
+          .from("messages")
+          .select("*")
+          .in(
+            "id",
+            replyIds
+          );
+
+        for (const reply of
+          replies || []) {
+          replyMap[
+            reply.id
+          ] = {
+            ...reply,
+            sender:
+              profileMap[
+                reply.sender_id
+              ] ||
+              null,
+            attachments:
+              attachmentMap[
+                reply.id
+              ] || [],
+            reactions:
+              reactionMap[
+                reply.id
+              ] || [],
+          };
+        }
+      }
+
+      /*
+       * Build the final message objects.
+       */
+      const completeMessages =
+        rows.map(
+          (message) => ({
+            ...message,
+
+            sender:
+              profileMap[
+                message.sender_id
+              ] || null,
+
+            attachments:
+              attachmentMap[
+                message.id
+              ] || [],
+
+            reactions:
+              reactionMap[
+                message.id
+              ] || [],
+
+            reply_to:
+              message.reply_to_id
+                ? replyMap[
+                    message
+                      .reply_to_id
+                  ] || null
+                : null,
+          })
+        );
+
+      setMessages(
+        completeMessages
+      );
+
+      /*
+       * Mark messages from the other person
+       * as read.
+       */
+      const unread =
+        completeMessages.filter(
+          (message) =>
+            message.sender_id !==
+              userId &&
+            message.status !==
+              "read"
+        );
+
+      if (unread.length) {
+        await Promise.allSettled(
+          unread.map(
+            (message) =>
+              supabase
+                .from(
+                  "message_reads"
+                )
+                .upsert({
+                  message_id:
+                    message.id,
+                  user_id:
+                    userId,
+                  read_at:
+                    now(),
+                })
+          )
+        );
+
+        await supabase
+          .from("messages")
+          .update({
+            read_at:
+              now(),
+            status:
+              "read",
+          })
+          .in(
+            "id",
+            unread.map(
+              (message) =>
+                message.id
+            )
+          );
+      }
+    } catch (error) {
+      console.error(
+        "HEXA loadMessages fatal error:",
+        error
+      );
+
+      setMessages([]);
+
+      flash(
+        error?.message ||
+          "Could not load messages."
+      );
+    }
+  },
+  [
+    userId,
+    flash,
+  ]
+);
 
   /* =======================================================
      OTHER DATA
@@ -2208,35 +2419,32 @@ function HexaApp({
       return null;
     }
 
-    const typeDefaults = {
+    const defaults = {
       text: "",
+      voice: "🎙 Voice message",
       image: "📷 Photo",
       video: "🎥 Video",
       audio: "🎵 Audio",
-      voice: "🎙 Voice message",
       file: "📎 File",
       gif: "GIF",
       poll: "📊 Poll",
-      system: "System message",
       location: "📍 Location",
       contact: "👤 Contact",
+      system: "System message",
     };
 
-    /*
-      IMPORTANT:
-      messages.content is NOT NULL in your database.
-      Therefore every message MUST receive a string.
-      The actual media remains in message_attachments
-      and metadata.url.
-    */
     let safeContent =
-      typeof content === "string"
+      typeof content ===
+      "string"
         ? content.trim()
         : "";
 
+    /*
+     * Your database has content NOT NULL.
+     */
     if (!safeContent) {
       safeContent =
-        typeDefaults[
+        defaults[
           messageType
         ] ||
         "Message";
@@ -2245,68 +2453,42 @@ function HexaApp({
     const messageId =
       makeId();
 
-    const clientMessageId =
-      makeId();
-
-    const payload = {
-      id: messageId,
-
-      sender_id:
-        userId,
-
-      conversation_id:
-        activeConversationId,
-
-      /*
-        NEVER null because your
-        messages.content column is NOT NULL.
-      */
-      content:
-        safeContent,
-
-      message_type:
-        messageType,
-
-      status:
-        "sent",
-
-      client_message_id:
-        clientMessageId,
-
-      reply_to_id:
-        replyToId ||
-        null,
-
-      forwarded_from_id:
-        forwardedFromId ||
-        null,
-
-      metadata:
-        metadata || {},
-
-      expires_at:
-        expiresAt ||
-        null,
-
-      view_once:
-        !!viewOnce,
-
-      delivered_at:
-        now(),
-    };
-
     const {
-      data: message,
+      data: inserted,
       error,
     } = await supabase
       .from("messages")
-      .insert(payload)
-      .select()
+      .insert({
+        id: messageId,
+        sender_id: userId,
+        conversation_id:
+          activeConversationId,
+        content: safeContent,
+        message_type:
+          messageType,
+        status: "sent",
+        client_message_id:
+          makeId(),
+        reply_to_id:
+          replyToId || null,
+        forwarded_from_id:
+          forwardedFromId ||
+          null,
+        metadata:
+          metadata || {},
+        expires_at:
+          expiresAt || null,
+        view_once:
+          !!viewOnce,
+        delivered_at:
+          now(),
+      })
+      .select("*")
       .single();
 
     if (error) {
       console.error(
-        "HEXA sendMessage error:",
+        "HEXA send error:",
         error
       );
 
@@ -2317,10 +2499,6 @@ function HexaApp({
       return null;
     }
 
-    /*
-      Save the REAL uploaded media separately.
-      This is especially important for voice notes.
-    */
     if (attachment) {
       const {
         error:
@@ -2331,45 +2509,34 @@ function HexaApp({
         )
         .insert({
           id: makeId(),
-
           message_id:
-            message.id,
-
+            inserted.id,
           user_id:
             userId,
-
           file_name:
             attachment.fileName ||
             "attachment",
-
           file_path:
             attachment.filePath ||
             null,
-
           file_url:
             attachment.fileUrl ||
             null,
-
           mime_type:
             attachment.mimeType ||
             "application/octet-stream",
-
           file_size:
             attachment.fileSize ||
             0,
-
           width:
             attachment.width ||
             null,
-
           height:
             attachment.height ||
             null,
-
           duration:
             attachment.duration ||
             null,
-
           thumbnail_url:
             attachment.thumbnailUrl ||
             null,
@@ -2377,28 +2544,25 @@ function HexaApp({
 
       if (attachmentError) {
         console.error(
-          "HEXA attachment error:",
+          "Attachment error:",
           attachmentError
-        );
-
-        flash(
-          `Message sent, but attachment metadata failed: ${attachmentError.message}`
         );
       }
     }
 
     /*
-      Refresh the active conversation
-      so the actual voice/audio/media
-      immediately appears.
-    */
+     * IMPORTANT:
+     * Reload immediately.
+     * Do not depend on Realtime to make your
+     * just-sent message appear.
+     */
     await loadMessages(
       activeConversationId
     );
 
     await loadConversations();
 
-    return message;
+    return inserted;
   },
   [
     userId,
@@ -3331,68 +3495,320 @@ function HexaApp({
   const [callState, setCallState] =
     useState(null);
 
-  const startCall =
-    useCallback(
-      async ({
-        conversation,
-        type,
-      }) => {
-        const calleeId =
-          conversation
-            ?.otherProfile
-            ?.id;
+ const startCall = useCallback(
+  async ({
+    conversation,
+    type = "voice",
+  }) => {
+    if (
+      !conversation ||
+      !userId
+    ) {
+      return;
+    }
 
-        if (!calleeId) {
-          flash(
-            "This call currently requires a direct chat."
-          );
-          return;
-        }
+    /*
+     * DIRECT CALL
+     */
+    if (
+      conversation.type ===
+      "direct"
+    ) {
+      const calleeId =
+        conversation
+          .otherProfile
+          ?.id;
 
-        const {
-          data,
-          error,
-        } =
-          await supabase
-            .from("calls")
-            .insert({
-              conversation_id:
-                conversation.id,
-              caller_id:
-                userId,
-              callee_id:
-                calleeId,
-              type,
-              status:
-                "ringing",
-              rate_kobo_per_second:
-                CALL_RATE_KOBO_PER_SECOND,
-              currency:
-                "NGN",
-            })
-            .select()
-            .single();
+      if (!calleeId) {
+        flash(
+          "No call recipient was found."
+        );
+        return;
+      }
 
-        if (error) {
-          flash(
-            error.message
-          );
-          return;
-        }
+      const {
+        data: call,
+        error,
+      } =
+        await supabase
+          .from("calls")
+          .insert({
+            conversation_id:
+              conversation.id,
+            caller_id:
+              userId,
+            callee_id:
+              calleeId,
+            type,
+            status:
+              "ringing",
+            rate_kobo_per_second:
+              CALL_RATE_KOBO_PER_SECOND,
+            currency:
+              "NGN",
+          })
+          .select("*")
+          .single();
 
-        setCallState({
-          ...data,
-          direction:
-            "outgoing",
-          peer:
-            conversation.otherProfile,
+      if (error) {
+        flash(
+          error.message
+        );
+        return;
+      }
+
+      await supabase
+        .from(
+          "call_participants"
+        )
+        .upsert({
+          call_id:
+            call.id,
+          user_id:
+            userId,
+          joined_at:
+            now(),
+          muted: false,
+          video_enabled:
+            type === "video",
         });
-      },
-      [
-        userId,
-        flash,
-      ]
+
+      await supabase
+        .from(
+          "call_participants"
+        )
+        .upsert({
+          call_id:
+            call.id,
+          user_id:
+            calleeId,
+          muted: false,
+          video_enabled:
+            type === "video",
+        });
+
+      setCallState({
+        ...call,
+        direction:
+          "outgoing",
+        peer:
+          conversation
+            .otherProfile,
+        isGroup:
+          false,
+      });
+
+      return;
+    }
+
+    /*
+     * GROUP CALL
+     */
+    if (
+      conversation.type ===
+      "group"
+    ) {
+      const {
+        data: members,
+        error:
+          memberError,
+      } =
+        await supabase
+          .from(
+            "conversation_members"
+          )
+          .select(
+            "user_id,is_admin"
+          )
+          .eq(
+            "conversation_id",
+            conversation.id
+          );
+
+      if (memberError) {
+        flash(
+          memberError.message
+        );
+        return;
+      }
+
+      const memberIds =
+        [
+          ...new Set(
+            (members || [])
+              .map(
+                (member) =>
+                  member.user_id
+              )
+              .filter(Boolean)
+          ),
+        ];
+
+      if (
+        !memberIds.includes(
+          userId
+        )
+      ) {
+        memberIds.push(
+          userId
+        );
+      }
+
+      /*
+       * The existing calls schema has caller_id /
+       * callee_id. Use the first other group member
+       * as the compatibility callee, while the real
+       * group membership lives in call_participants.
+       */
+      const firstOtherMember =
+        memberIds.find(
+          (id) =>
+            id !== userId
+        ) || userId;
+
+      const {
+        data: groupCall,
+        error:
+          callError,
+      } =
+        await supabase
+          .from("calls")
+          .insert({
+            conversation_id:
+              conversation.id,
+            caller_id:
+              userId,
+            callee_id:
+              firstOtherMember,
+            type,
+            status:
+              "ringing",
+            rate_kobo_per_second:
+              CALL_RATE_KOBO_PER_SECOND,
+            currency:
+              "NGN",
+            metadata: {
+              is_group_call:
+                true,
+              group_member_ids:
+                memberIds,
+            },
+          })
+          .select("*")
+          .single();
+
+      if (callError) {
+        flash(
+          callError.message
+        );
+        return;
+      }
+
+      /*
+       * Add EVERY member to the call.
+       */
+      const participantRows =
+        memberIds.map(
+          (memberId) => ({
+            call_id:
+              groupCall.id,
+            user_id:
+              memberId,
+            joined_at:
+              memberId ===
+              userId
+                ? now()
+                : null,
+            muted: false,
+            video_enabled:
+              type ===
+              "video",
+          })
+        );
+
+      const {
+        error:
+          participantError,
+      } =
+        await supabase
+          .from(
+            "call_participants"
+          )
+          .upsert(
+            participantRows
+          );
+
+      if (
+        participantError
+      ) {
+        flash(
+          participantError.message
+        );
+        return;
+      }
+
+      /*
+       * Send a system message into the group.
+       */
+      await supabase
+        .from("messages")
+        .insert({
+          id: makeId(),
+          conversation_id:
+            conversation.id,
+          sender_id:
+            userId,
+          content:
+            `📞 ${displayName(
+              profile
+            )} started a ${
+              type ===
+              "video"
+                ? "video"
+                : "voice"
+            } group call.`,
+          message_type:
+            "system",
+          status:
+            "sent",
+          metadata: {
+            call_id:
+              groupCall.id,
+            is_group_call:
+              true,
+          },
+        });
+
+      /*
+       * Open the caller's group-call screen.
+       */
+      setCallState({
+        ...groupCall,
+        direction:
+          "outgoing",
+        isGroup:
+          true,
+        groupMembers:
+          memberIds,
+      });
+
+      flash(
+        `Group ${type} call started for ${memberIds.length} members.`
+      );
+
+      return;
+    }
+
+    flash(
+      "This conversation type cannot start a call."
     );
+  },
+  [
+    userId,
+    profile,
+    flash,
+  ]
+);
 
   /* =======================================================
      RENDER
