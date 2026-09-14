@@ -182,6 +182,31 @@ function writeEmojiPrefs(data) {
 
 const HEXA_THEME_KEY = "hexa-theme-v5";
 
+const HEXA_LANGUAGES = [
+  ["en","English"],["yo","Yorùbá"],["ig","Igbo"],["ha","Hausa"],["fr","Français"],["es","Español"],["pt","Português"],["de","Deutsch"],["it","Italiano"],["nl","Nederlands"],["sv","Svenska"],["no","Norsk"],["da","Dansk"],["fi","Suomi"],["is","Íslenska"],["ga","Gaeilge"],["cy","Cymraeg"],["pl","Polski"],["cs","Čeština"],["sk","Slovenčina"],["hu","Magyar"],["ro","Română"],["bg","Български"],["sr","Српски"],["hr","Hrvatski"],["sl","Slovenščina"],["uk","Українська"],["ru","Русский"],["be","Беларуская"],["lt","Lietuvių"],["lv","Latviešu"],["et","Eesti"],["el","Ελληνικά"],["tr","Türkçe"],["az","Azərbaycan"],["ka","ქართული"],["hy","Հայերեն"],["he","עברית"],["ar","العربية"],["fa","فارسی"],["ur","اردو"],["ps","پښتو"],["ku","Kurdî"],["hi","हिन्दी"],["bn","বাংলা"],["pa","ਪੰਜਾਬੀ"],["gu","ગુજરાતી"],["mr","मराठी"],["ne","नेपाली"],["si","සිංහල"],["ta","தமிழ்"],["te","తెలుగు"],["kn","ಕನ್ನಡ"],["ml","മലയാളം"],["or","ଓଡ଼ିଆ"],["as","অসমীয়া"],["ur-PK","اردو (پاکستان)"],["th","ไทย"],["lo","ລາວ"],["km","ខ្មែរ"],["my","မြန်မာ"],["vi","Tiếng Việt"],["id","Bahasa Indonesia"],["ms","Bahasa Melayu"],["jv","Basa Jawa"],["su","Basa Sunda"],["tl","Filipino"],["ceb","Cebuano"],["zh-CN","简体中文"],["zh-TW","繁體中文"],["ja","日本語"],["ko","한국어"],["mn","Монгол"],["bo","བོད་སྐད"],["dz","རྫོང་ཁ"],["kk","Қазақша"],["ky","Кыргызча"],["uz","O‘zbekcha"],["tg","Тоҷикӣ"],["tk","Türkmençe"],["tt","Татарча"],["ug","ئۇيغۇرچە"],["sw","Kiswahili"],["zu","isiZulu"],["xh","isiXhosa"],["af","Afrikaans"],["am","አማርኛ"],["so","Soomaali"],["rw","Kinyarwanda"],["sn","chiShona"],["st","Sesotho"],["tn","Setswana"],["ny","Chichewa"],["mg","Malagasy"],["eo","Esperanto"],["la","Latina"],["mt","Malti"],["sq","Shqip"],["bs","Bosanski"],["mk","Македонски"],["mo","Moldovan"],["br","Brezhoneg"],["co","Corsu"],["lb","Lëtzebuergesch"],["fy","Frysk"],["gd","Gàidhlig"],["jv","Jawa"],["mi","Māori"],["sm","Gagana Samoa"],["to","Lea faka-Tonga"],["fj","Fiji Hindi"],["haw","ʻŌlelo Hawaiʻi"],["ht","Kreyòl Ayisyen"],["sw-CD","Kiswahili (Congo)"],["es-MX","Español (México)"],["en-GB","English (UK)"],["en-US","English (US)"],["pt-BR","Português (Brasil)"],["fr-CA","Français (Canada)"],["de-CH","Deutsch (Schweiz)"],["it-CH","Italiano (Svizzera)"],["zh-HK","繁體中文 (香港)"],["ar-EG","العربية (مصر)"],["ha-Latn-NG","Hausa (Nigeria)"],["yo-NG","Yorùbá (Nigeria)"],["ig-NG","Igbo (Nigeria)"],
+];
+const HEXA_LANGUAGE_MAP = Object.fromEntries(HEXA_LANGUAGES.map(([code,name]) => [code,{code,name}]));
+const HEXA_LANGUAGE_STORAGE_KEY = "hexa-language-v2";
+function getSavedHexaLanguage(){ try{return localStorage.getItem(HEXA_LANGUAGE_STORAGE_KEY)||"en";}catch{return "en";} }
+function saveHexaLanguage(code){ try{localStorage.setItem(HEXA_LANGUAGE_STORAGE_KEY, code);}catch{} document.documentElement.lang=code; window.dispatchEvent(new CustomEvent("hexa-language-change",{detail:code})); }
+const HEXA_LANGUAGE_TRANSLATIONS = {
+  en:{settings:"Settings",appearance:"Appearance",language:"Language",save:"Save",search:"Search",chat:"Chat",calls:"Calls",groups:"Groups",communities:"Communities",channels:"Channels",moments:"Moments",notifications:"Notifications",kora:"Kora"},
+  yo:{settings:"Ètò",appearance:"Ìrísí",language:"Èdè",save:"Fipamọ́",search:"Wá",chat:"Ìfọ̀rọ̀wérọ̀",calls:"Ìpè",groups:"Àwọn ẹgbẹ́",communities:"Àwùjọ",channels:"Àwọn ikanni",moments:"Àwọn ìṣẹ̀lẹ̀",notifications:"Àwọn ìfitónilétí",kora:"Kora"},
+  ig:{settings:"Ntọala",appearance:"Ọdịdị",language:"Asụsụ",save:"Chekwaa",search:"Chọọ",chat:"Mkparịta ụka",calls:"Oku",groups:"Otu",communities:"Obodo",channels:"Ọwa",moments:"Ọnọdụ",notifications:"Ọkwa",kora:"Kora"},
+  ha:{settings:"Saituna",appearance:"Bayyanar",language:"Harshe",save:"Ajiye",search:"Nema",chat:"Hira",calls:"Kira",groups:"Ƙungiyoyi",communities:"Al'umma",channels:"Tashoshi",moments:"Labarai",notifications:"Sanarwa",kora:"Kora"},
+  fr:{settings:"Paramètres",appearance:"Apparence",language:"Langue",save:"Enregistrer",search:"Rechercher",chat:"Discussions",calls:"Appels",groups:"Groupes",communities:"Communautés",channels:"Chaînes",moments:"Moments",notifications:"Notifications",kora:"Kora"},
+  es:{settings:"Ajustes",appearance:"Apariencia",language:"Idioma",save:"Guardar",search:"Buscar",chat:"Chats",calls:"Llamadas",groups:"Grupos",communities:"Comunidades",channels:"Canales",moments:"Momentos",notifications:"Notificaciones",kora:"Kora"},
+  de:{settings:"Einstellungen",appearance:"Darstellung",language:"Sprache",save:"Speichern",search:"Suchen",chat:"Chats",calls:"Anrufe",groups:"Gruppen",communities:"Communitys",channels:"Kanäle",moments:"Momente",notifications:"Benachrichtigungen",kora:"Kora"},
+  pt:{settings:"Definições",appearance:"Aparência",language:"Idioma",save:"Guardar",search:"Pesquisar",chat:"Conversas",calls:"Chamadas",groups:"Grupos",communities:"Comunidades",channels:"Canais",moments:"Momentos",notifications:"Notificações",kora:"Kora"},
+  ar:{settings:"الإعدادات",appearance:"المظهر",language:"اللغة",save:"حفظ",search:"بحث",chat:"الدردشة",calls:"المكالمات",groups:"المجموعات",communities:"المجتمعات",channels:"القنوات",moments:"اللحظات",notifications:"الإشعارات",kora:"Kora"},
+  hi:{settings:"सेटिंग्स",appearance:"रूप",language:"भाषा",save:"सहेजें",search:"खोजें",chat:"चैट",calls:"कॉल",groups:"समूह",communities:"समुदाय",channels:"चैनल",moments:"मोमेंट्स",notifications:"सूचनाएँ",kora:"Kora"},
+  sw:{settings:"Mipangilio",appearance:"Mwonekano",language:"Lugha",save:"Hifadhi",search:"Tafuta",chat:"Mazungumzo",calls:"Simu",groups:"Vikundi",communities:"Jumuiya",channels:"Vituo",moments:"Matukio",notifications:"Arifa",kora:"Kora"},
+  "zh-CN":{settings:"设置",appearance:"外观",language:"语言",save:"保存",search:"搜索",chat:"聊天",calls:"通话",groups:"群组",communities:"社区",channels:"频道",moments:"动态",notifications:"通知",kora:"Kora"},
+  ja:{settings:"設定",appearance:"外観",language:"言語",save:"保存",search:"検索",chat:"チャット",calls:"通話",groups:"グループ",communities:"コミュニティ",channels:"チャンネル",moments:"モーメント",notifications:"通知",kora:"Kora"},
+  ko:{settings:"설정",appearance:"화면",language:"언어",save:"저장",search:"검색",chat:"채팅",calls:"통화",groups:"그룹",communities:"커뮤니티",channels:"채널",moments:"모먼트",notifications:"알림",kora:"Kora"},
+};
+function hexLang(code,key){const base=String(code||"en").split("-")[0]; return HEXA_LANGUAGE_TRANSLATIONS[code]?.[key] || HEXA_LANGUAGE_TRANSLATIONS[base]?.[key] || HEXA_LANGUAGE_TRANSLATIONS.en[key] || key;}
+
 const HEXA_THEMES = {
   midnight: {
     id: "midnight",
@@ -2888,13 +2913,20 @@ function ChatPage({
           safeAlert("Choose 1 hour, 8 hours, or Always.");
           break;
         }
-        if (duration === null) {
-          setMuted(current => current.includes(String(selected.id)) ? current : [...current, String(selected.id)]);
-        } else {
-          const until = new Date(Date.now() + duration * 1000).toISOString();
-          localStorage.setItem(`hexa-muted-until:${selected.id}`, until);
-          setMuted(current => current.includes(String(selected.id)) ? current : [...current, String(selected.id)]);
+        const conversationId = selected.realConversationId || selected.id;
+        const mutedUntil = duration === null ? null : new Date(Date.now() + duration * 1000).toISOString();
+        try {
+          const { error } = await supabase.from("chat_preferences").upsert({
+            user_id: profile.id,
+            conversation_id: conversationId,
+            muted_until: mutedUntil,
+          }, { onConflict: "user_id,conversation_id" });
+          if (error) throw error;
+        } catch (error) {
+          console.warn("HEXA mute preference:", error);
         }
+        if (mutedUntil) localStorage.setItem(`hexa-muted-until:${selected.id}`, mutedUntil);
+        setMuted(current => current.includes(String(selected.id)) ? current : [...current, String(selected.id)]);
         break;
       }
 
@@ -2912,18 +2944,33 @@ function ChatPage({
           break;
         }
         setDisappearing(next);
+        const conversationId = selected.realConversationId || selected.id;
+        const seconds = next === "24h" ? 86400 : next === "7d" ? 604800 : next === "90d" ? 7776000 : 0;
+        try {
+          const { error } = await supabase.from("chat_preferences").upsert({
+            user_id: profile.id,
+            conversation_id: conversationId,
+            disappearing_seconds: seconds,
+          }, { onConflict: "user_id,conversation_id" });
+          if (error) throw error;
+        } catch (error) {
+          console.warn("HEXA disappearing preference:", error);
+        }
         break;
       }
 
       case "favourite": {
-        setFavouriteChats(current => {
-          const id = String(selected.id);
-          const next = current.includes(id)
-            ? current.filter(item => item !== id)
-            : [...current, id];
-          writeJsonStorage("hexa-favourite-chats-v1", next);
-          return next;
-        });
+        const id = String(selected.id);
+        const next = favouriteChats.includes(id) ? favouriteChats.filter(item => item !== id) : [...favouriteChats, id];
+        writeJsonStorage("hexa-favourite-chats-v1", next);
+        setFavouriteChats(next);
+        try {
+          const conversationId = selected.realConversationId || selected.id;
+          const { error } = await supabase.from("chat_preferences").upsert({
+            user_id: profile.id, conversation_id: conversationId, favorite: next.includes(id)
+          }, { onConflict: "user_id,conversation_id" });
+          if (error) throw error;
+        } catch (error) { console.warn("HEXA favourite preference:", error); }
         break;
       }
 
@@ -2931,13 +2978,17 @@ function ChatPage({
         const choice = prompt("Add chat to list: Family / School / New list", "Family");
         if (!choice) break;
         const normalized = choice.trim().toLowerCase();
-        if (normalized === "family" || normalized === "school") {
-          localStorage.setItem(`hexa-chat-list:${selected.id}`, normalized);
-        } else if (normalized === "new list") {
-          const name = prompt("Enter the new list name");
-          if (name?.trim()) localStorage.setItem(`hexa-chat-list:${selected.id}`, name.trim());
-        } else {
-          safeAlert("Choose Family, School, or New list.");
+        let folder = "";
+        if (normalized === "family" || normalized === "school") folder = normalized[0].toUpperCase() + normalized.slice(1);
+        else if (normalized === "new list") { const name = prompt("Enter the new list name"); if (name?.trim()) folder = name.trim(); }
+        else { safeAlert("Choose Family, School, or New list."); break; }
+        if (folder) {
+          localStorage.setItem(`hexa-chat-list:${selected.id}`, folder);
+          try {
+            const conversationId = selected.realConversationId || selected.id;
+            const { error } = await supabase.from("chat_preferences").upsert({ user_id: profile.id, conversation_id: conversationId, folder }, { onConflict: "user_id,conversation_id" });
+            if (error) throw error;
+          } catch (error) { console.warn("HEXA chat folder preference:", error); }
         }
         break;
       }
@@ -2952,7 +3003,15 @@ function ChatPage({
           await navigator.clipboard.writeText(exportText);
           safeAlert("Chat copied to clipboard.");
         } catch {
-          safeAlert("Unable to export the chat on this device.");
+          try {
+            const blob = new Blob([exportText], { type: "text/plain;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${(selected.name || "HEXA-chat").replace(/[^a-z0-9-_]+/gi,"-")}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+          } catch { safeAlert("Unable to export the chat on this device."); }
         }
         break;
       }
@@ -2976,9 +3035,19 @@ function ChatPage({
         onStartCall?.(selected, "voice", { forceGroup: true });
         break;
 
-      case "report":
-        safeAlert("Report submitted for review.");
+      case "report": {
+        if (!window.confirm("Report this chat to HEXA?")) break;
+        try {
+          const { error } = await supabase.from("security_events").insert({
+            user_id: profile.id,
+            event_type: "chat_report",
+            metadata: { conversation_id: selected.realConversationId || selected.id, reported_user_id: selected.otherUserId || null }
+          });
+          if (error) throw error;
+          safeAlert("Report submitted to HEXA.");
+        } catch (error) { safeAlert(error?.message || "Unable to submit report."); }
         break;
+      }
 
       case "block":
         toggleBlock();
@@ -2990,9 +3059,14 @@ function ChatPage({
 
       case "delete":
         if (window.confirm("Delete this chat from your chat list?")) {
-          setConversations(current => current.filter(item => String(item.id) !== String(selected.id)));
-          setMessages([]);
-          setMobileConversationOpen(false);
+          try {
+            const conversationId = selected.realConversationId || selected.id;
+            const { error } = await supabase.from("conversation_members").delete().eq("conversation_id", conversationId).eq("user_id", profile.id);
+            if (error) throw error;
+            setConversations(current => current.filter(item => String(item.id) !== String(selected.id)));
+            setMessages([]);
+            setMobileConversationOpen(false);
+          } catch (error) { safeAlert(error?.message || "Unable to delete this chat."); }
         }
         break;
 
@@ -5592,228 +5666,89 @@ function UniversalSearch({ search, profile, onMessage }) {
 function SettingsPage({ profile, onSignOut }) {
   const [theme, setTheme] = useState(getSavedHexaTheme());
   const [showThemes, setShowThemes] = useState(true);
+  const [savedLanguage, setSavedLanguage] = useState(getSavedHexaLanguage());
+  const [draftLanguage, setDraftLanguage] = useState(getSavedHexaLanguage());
+  const [languageSearch, setLanguageSearch] = useState("");
+  const [languageOpen, setLanguageOpen] = useState(true);
+  const [saved, setSaved] = useState(false);
+  const [uiTick, setUiTick] = useState(0);
 
+  useEffect(() => { applyHexaTheme(theme); }, [theme]);
   useEffect(() => {
-    applyHexaTheme(theme);
-  }, [theme]);
+    const onLanguage = () => setUiTick(v => v + 1);
+    window.addEventListener("hexa-language-change", onLanguage);
+    document.documentElement.lang = savedLanguage;
+    return () => window.removeEventListener("hexa-language-change", onLanguage);
+  }, [savedLanguage]);
 
-  function changeTheme(themeId) {
-    setTheme(themeId);
-    applyHexaTheme(themeId);
-  }
-
+  const lang = savedLanguage;
   const activeTheme = HEXA_THEMES[theme] || HEXA_THEMES.midnight;
+  const filteredLanguages = useMemo(() => {
+    const q = languageSearch.trim().toLowerCase();
+    if (!q) return HEXA_LANGUAGES;
+    return HEXA_LANGUAGES.filter(([code,name]) => `${name} ${code}`.toLowerCase().includes(q));
+  }, [languageSearch]);
+
+  function changeTheme(themeId){ setTheme(themeId); applyHexaTheme(themeId); }
+  function saveLanguage(){
+    saveHexaLanguage(draftLanguage);
+    setSavedLanguage(draftLanguage);
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 2200);
+  }
 
   return (
     <section className="workspace-page settings-page">
-
       <div className="page-heading">
         <div className="page-heading-icon">⚙</div>
-
-        <div>
-          <h1>Settings</h1>
-          <p>
-            Customize your HEXA experience, appearance and account.
-          </p>
-        </div>
+        <div><h1>{hexLang(lang,"settings")}</h1><p>Customize HEXA, including appearance and language.</p></div>
       </div>
-
-      {/* PROFILE */}
 
       <div className="settings-card hexa-profile-settings">
-        <Avatar
-          src={profile?.avatar_url}
-          name={
-            profile?.full_name ||
-            profile?.username ||
-            "HEXA User"
-          }
-          size={64}
-        />
-
-        <div>
-          <strong>
-            {profile?.full_name ||
-              profile?.username ||
-              "HEXA User"}
-          </strong>
-
-          <p>
-            {profile?.username
-              ? `@${profile.username}`
-              : profile?.email || "HEXA account"}
-          </p>
-        </div>
+        <Avatar src={profile?.avatar_url} name={profile?.full_name || profile?.username || "HEXA User"} size={64} />
+        <div><strong>{profile?.full_name || profile?.username || "HEXA User"}</strong><p>{profile?.username ? `@${profile.username}` : profile?.email || "HEXA account"}</p></div>
       </div>
-
-      {/* APPEARANCE */}
 
       <div className="settings-section">
-
-        <button
-          className="settings-section-heading"
-          onClick={() => setShowThemes(v => !v)}
-        >
-          <div>
-            <strong>Appearance</strong>
-            <span>
-              Choose how HEXA looks on your devices.
-            </span>
-          </div>
-
-          <b>{showThemes ? "⌃" : "⌄"}</b>
+        <button className="settings-section-heading" onClick={() => setShowThemes(v => !v)}>
+          <div><strong>{hexLang(lang,"appearance")}</strong><span>Choose how HEXA looks on your devices.</span></div><b>{showThemes ? "⌃" : "⌄"}</b>
         </button>
-
-        {showThemes && (
-          <div className="hexa-theme-panel">
-
-            <div className="theme-current">
-              <div>
-                <span>Current theme</span>
-                <strong>
-                  {activeTheme.icon} {activeTheme.name}
-                </strong>
-              </div>
-
-              <small>
-                {activeTheme.description}
-              </small>
-            </div>
-
-            <div className="hexa-theme-grid">
-
-              {Object.values(HEXA_THEMES).map(item => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={
-                    `hexa-theme-option ${
-                      theme === item.id
-                        ? "selected"
-                        : ""
-                    }`
-                  }
-                  onClick={() => changeTheme(item.id)}
-                >
-
-                  <div
-                    className="theme-preview"
-                    style={{
-                      background: item.vars["--hexa-bg"]
-                    }}
-                  >
-                    <div
-                      className="theme-preview-sidebar"
-                      style={{
-                        background:
-                          item.vars["--hexa-sidebar"]
-                      }}
-                    />
-
-                    <div className="theme-preview-content">
-
-                      <div
-                        className="theme-preview-message incoming"
-                        style={{
-                          background:
-                            item.vars["--hexa-message-in"]
-                        }}
-                      />
-
-                      <div
-                        className="theme-preview-message outgoing"
-                        style={{
-                          background:
-                            item.vars["--hexa-message-out"]
-                        }}
-                      />
-
-                    </div>
-
-                    <div
-                      className="theme-preview-accent"
-                      style={{
-                        background:
-                          item.vars["--hexa-accent"]
-                      }}
-                    />
-                  </div>
-
-                  <div className="theme-option-copy">
-                    <strong>
-                      {item.icon} {item.name}
-                    </strong>
-
-                    <span>
-                      {item.description}
-                    </span>
-                  </div>
-
-                  {theme === item.id && (
-                    <div className="theme-selected">
-                      ✓
-                    </div>
-                  )}
-
-                </button>
-              ))}
-
-            </div>
-
+        {showThemes && <div className="hexa-theme-panel">
+          <div className="theme-current"><div><span>Current theme</span><strong>{activeTheme.icon} {activeTheme.name}</strong></div><small>{activeTheme.description}</small></div>
+          <div className="hexa-theme-grid">
+            {Object.values(HEXA_THEMES).map(item => <button key={item.id} type="button" className={`hexa-theme-option ${theme===item.id?"selected":""}`} onClick={() => changeTheme(item.id)}>
+              <div className="theme-preview" style={{background:item.vars["--hexa-bg"]}}><div className="theme-preview-sidebar" style={{background:item.vars["--hexa-sidebar"]}}/><div className="theme-preview-content"><div className="theme-preview-message incoming" style={{background:item.vars["--hexa-message-in"]}}/><div className="theme-preview-message outgoing" style={{background:item.vars["--hexa-message-out"]}}/></div><div className="theme-preview-accent" style={{background:item.vars["--hexa-accent"]}}/></div>
+              <div className="theme-option-copy"><strong>{item.icon} {item.name}</strong><span>{item.description}</span></div>{theme===item.id&&<div className="theme-selected">✓</div>}
+            </button>)}
           </div>
-        )}
-
+        </div>}
       </div>
 
-      {/* CHAT */}
+      <div className="settings-section language-settings-card">
+        <button className="settings-section-heading" onClick={() => setLanguageOpen(v => !v)}>
+          <div><strong>🌐 {hexLang(lang,"language")}</strong><span>{HEXA_LANGUAGE_MAP[savedLanguage]?.name || "English"} · 120+ supported languages</span></div><b>{languageOpen ? "⌃" : "⌄"}</b>
+        </button>
+        {languageOpen && <div className="language-picker-panel">
+          <div className="language-current-row">
+            <div><span>Current language</span><strong>{HEXA_LANGUAGE_MAP[savedLanguage]?.name || savedLanguage}</strong></div>
+            <span className="language-count">{HEXA_LANGUAGES.length} languages</span>
+          </div>
+          <div className="language-search-row"><span>⌕</span><input value={languageSearch} onChange={e=>setLanguageSearch(e.target.value)} placeholder="Search language or code…" /></div>
+          <div className="language-list" role="listbox" aria-label="Languages">
+            {filteredLanguages.map(([code,name]) => <button key={code} type="button" className={`language-option ${draftLanguage===code?"selected":""}`} onClick={()=>setDraftLanguage(code)}>
+              <span className="language-radio">{draftLanguage===code?"✓":""}</span><span className="language-name">{name}</span><code>{code}</code>
+            </button>)}
+            {!filteredLanguages.length && <div className="language-empty">No language matches “{languageSearch}”.</div>}
+          </div>
+          <div className="language-save-row"><span>{saved ? "✓ Language saved" : `Selected: ${HEXA_LANGUAGE_MAP[draftLanguage]?.name || draftLanguage}`}</span><button type="button" className="hero-primary language-save-button" onClick={saveLanguage}>{hexLang(lang,"save")}</button></div>
+        </div>}
+      </div>
 
       <div className="settings-grid">
-
-        <div className="settings-card">
-          <div>
-            <strong>Chat appearance</strong>
-            <p>
-              Your selected theme automatically applies to
-              conversations, chat bubbles, menus and panels.
-            </p>
-          </div>
-
-          <span className="settings-status">
-            {activeTheme.name}
-          </span>
-        </div>
-
-        <div className="settings-card">
-          <div>
-            <strong>Theme synchronization</strong>
-            <p>
-              HEXA remembers your theme on this device.
-            </p>
-          </div>
-
-          <span className="settings-status">
-            Enabled
-          </span>
-        </div>
-
-        <div className="settings-card">
-          <div>
-            <strong>Account</strong>
-            <p>
-              Manage your HEXA session.
-            </p>
-          </div>
-
-          <button
-            className="settings-danger-button"
-            onClick={onSignOut}
-          >
-            Sign out
-          </button>
-        </div>
-
+        <div className="settings-card"><div><strong>{hexLang(lang,"chat")} appearance</strong><p>Your selected theme applies to conversations, bubbles, menus and panels.</p></div><span className="settings-status">{activeTheme.name}</span></div>
+        <div className="settings-card"><div><strong>Language status</strong><p>Saved locally and applied to the HEXA interface. Your browser language attribute is also updated.</p></div><span className="settings-status">{HEXA_LANGUAGE_MAP[savedLanguage]?.name || savedLanguage}</span></div>
+        <div className="settings-card"><div><strong>Account</strong><p>Manage your HEXA session.</p></div><button className="settings-danger-button" onClick={onSignOut}>Sign out</button></div>
       </div>
-
     </section>
   );
 }
@@ -7869,7 +7804,37 @@ const APP_STYLES_TAIL = `
 /* HEXA master feature UI */
 .hexa-audio-message{display:flex;align-items:center;gap:7px}.hexa-audio-message audio{max-width:210px;height:34px}.hexa-audio-message select{background:var(--hexa-panel-2);color:var(--hexa-text);border:1px solid var(--hexa-border);border-radius:8px;padding:4px}.message-context-menu{position:fixed;z-index:1000;min-width:190px;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:14px;padding:6px;box-shadow:var(--hexa-shadow);display:grid;gap:2px}.message-context-menu button{border:0;background:none;color:var(--hexa-text);padding:10px;text-align:left;border-radius:9px}.message-context-menu button:hover{background:rgba(255,255,255,.06)}.message-context-menu .danger-text{color:var(--hexa-danger)}.emoji-panel,.sticker-panel,.feature-popover,.chat-settings-popover{position:absolute;z-index:40;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:16px;box-shadow:var(--hexa-shadow);padding:12px}.emoji-panel{left:12px;bottom:76px;width:min(410px,calc(100% - 24px))}.emoji-tones,.emoji-grid,.sticker-grid{display:flex;flex-wrap:wrap;gap:5px}.emoji-grid{max-height:220px;overflow:auto;margin-top:8px}.emoji-panel button,.sticker-grid button{border:0;background:transparent;font-size:21px;padding:6px;border-radius:8px}.emoji-panel button:hover,.sticker-grid button:hover{background:rgba(255,255,255,.06)}.sticker-panel{left:12px;bottom:76px;width:300px}.sticker-grid{margin-top:10px}.sticker-grid button{font-size:30px}.feature-popover{right:12px;bottom:76px;width:min(360px,calc(100% - 24px));display:grid;gap:8px}.feature-popover h3{margin:0}.chat-settings-popover{right:12px;top:64px;width:270px;display:grid;gap:10px;z-index:60}.chat-settings-popover label{display:grid;gap:6px;color:var(--hexa-muted);font-size:12px}.chat-settings-popover select,.chat-settings-popover button{padding:9px;border-radius:9px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text)}.chat-search-results{padding:10px;border-top:1px solid var(--hexa-border);display:grid;gap:5px}.chat-search-results button{border:0;background:transparent;color:var(--hexa-muted);text-align:left;padding:6px}.poll-message{display:grid;gap:7px;min-width:220px}.poll-message button{display:flex;justify-content:space-between;gap:10px;padding:9px;border-radius:9px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);text-align:left}.poll-message button span{color:var(--hexa-muted);font-size:10px}.shared-contact{display:flex;gap:10px;align-items:center;min-width:190px}.shared-contact div{display:grid}.shared-contact small{color:var(--hexa-muted)}.location-card{color:inherit;text-decoration:none;display:block;padding:4px}.file-message{display:flex;gap:8px;align-items:center}.forwarded-label{font-size:10px;color:var(--hexa-muted);margin-bottom:5px}.sticker-message{font-size:70px;line-height:1}.view-once-bubble{min-width:100px}.universal-search-result{display:flex;align-items:center;gap:10px;width:100%}.universal-search-result-copy{flex:1}.universal-search-result>b{text-transform:uppercase;font-size:9px;color:var(--hexa-accent-2)}
 
+
+/* HEXA 2026 composer + language settings */
+.message-composer{min-height:72px!important;padding:10px 12px!important;gap:8px!important;background:color-mix(in srgb,var(--hexa-panel) 92%,transparent);backdrop-filter:blur(14px);border-top:1px solid var(--hexa-border-strong)!important}
+.message-composer input{height:46px!important;border:1px solid var(--hexa-border-strong)!important;border-radius:16px!important;background:var(--hexa-panel-2)!important;color:var(--hexa-text)!important;padding:0 15px!important;font-size:13px!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}
+.message-composer input:focus{outline:none!important;border-color:var(--hexa-accent)!important;box-shadow:0 0 0 3px rgba(124,92,255,.12)!important}
+.message-composer .send-button{width:46px!important;height:46px!important;border-radius:50%!important;box-shadow:0 8px 22px rgba(0,0,0,.22)!important;font-size:17px!important}
+.chat-settings-popover.whatsapp-chat-menu{width:min(340px,calc(100vw - 24px));max-height:min(78vh,690px);overflow:auto;padding:7px;display:grid;gap:2px}
+.whatsapp-chat-menu button{display:grid;grid-template-columns:26px 1fr auto;align-items:center;gap:8px;width:100%;padding:11px 10px;border:0;border-radius:10px;background:transparent;color:var(--hexa-text);text-align:left;font-size:12px}
+.whatsapp-chat-menu button:hover{background:var(--hexa-panel-3)}
+.whatsapp-chat-menu button small{grid-column:2/-1;color:var(--hexa-muted);font-size:9px;margin-top:-4px}
+.whatsapp-chat-menu .danger-menu-item{color:#ff6b7a}
+.chat-menu-divider{height:1px;background:var(--hexa-border);margin:5px 3px}
+.language-settings-card{overflow:hidden}
+.language-picker-panel{padding:14px}
+.language-current-row,.language-save-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 2px}
+.language-current-row span,.language-current-row small,.language-save-row span{color:var(--hexa-muted);font-size:11px}
+.language-current-row strong{display:block;margin-top:3px}
+.language-count{padding:6px 9px;border:1px solid var(--hexa-border);border-radius:999px}
+.language-search-row{display:flex;align-items:center;gap:9px;height:44px;margin:8px 0 10px;padding:0 12px;border:1px solid var(--hexa-border-strong);border-radius:13px;background:var(--hexa-panel-2)}
+.language-search-row input{width:100%;border:0;background:transparent;outline:0;color:var(--hexa-text);font-size:12px}
+.language-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;max-height:360px;overflow:auto;padding-right:3px}
+.language-option{display:flex;align-items:center;gap:9px;min-width:0;padding:10px;border:1px solid var(--hexa-border);border-radius:11px;background:transparent;color:var(--hexa-text);text-align:left;cursor:pointer}
+.language-option:hover{background:var(--hexa-panel-3)}
+.language-option.selected{border-color:var(--hexa-accent);background:rgba(124,92,255,.09)}
+.language-radio{width:20px;height:20px;flex:0 0 20px;display:grid;place-items:center;border:1px solid var(--hexa-border-strong);border-radius:50%;color:white;background:transparent;font-size:11px}
+.language-option.selected .language-radio{background:var(--hexa-accent);border-color:var(--hexa-accent)}
+.language-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;flex:1}
+.language-option code{font-size:8px;color:var(--hexa-muted)}
+.language-empty{padding:24px;text-align:center;color:var(--hexa-muted);grid-column:1/-1}
+.language-save-button{min-width:110px!important}
+@media(max-width:700px){.language-list{grid-template-columns:1fr}.message-composer{padding:8px!important}.message-composer input{height:44px!important}.message-composer .send-button{width:44px!important;height:44px!important}}
 `;
 
 const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL;
- 
