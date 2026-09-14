@@ -1305,15 +1305,6 @@ function Sidebar({
                 @{profile?.username || "hexauser"}
               </span>
             </div>
-const savedPassword = localStorage.getItem(
-  `hexa-password-${user.id}`
-);
-
-if (!savedPassword) 
-  setShowHexaPasswordSetup(true);
- else 
-  setShowHexaPasswordLock(true)
-
 
           </div>
         </div>
@@ -7881,3 +7872,4 @@ const APP_STYLES_TAIL = `
 `;
 
 const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL;
+ 
