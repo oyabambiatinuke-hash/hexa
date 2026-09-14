@@ -3171,13 +3171,61 @@ function ChatPage({
         break;
 
       case "call-link": {
-        const link = `${window.location.origin}/call/${selected.id}`;
-        try {
-          await navigator.clipboard.writeText(link);
-          safeAlert("Call link copied.");
-        } catch {
-          safeAlert(link);
+        const conversationId = selected.realConversationId || selected.id;
+        const calleeId = selected.otherUserId;
+        if (!conversationId || !calleeId || isSystem || isSelf) {
+          safeAlert("A direct HEXA contact is required to create a call link.", "danger");
+          break;
         }
+
+        openActionDialog({
+          type: "choice",
+          title: "Create call link",
+          subtitle: `Create a real ${selected.name || "HEXA contact"} call session and share its join link.`,
+          options: [
+            { value: "voice", label: "Voice call link", icon: "☎" },
+            { value: "video", label: "Video call link", icon: "▣" },
+          ],
+          onConfirm: async (type) => {
+            try {
+              const { data: call, error } = await supabase.rpc("hexa_create_call", {
+                p_conversation_id: conversationId,
+                p_callee_id: calleeId,
+                p_type: type,
+                p_external: false,
+              });
+              if (error) throw error;
+              if (!call?.id) throw new Error("HEXA did not return a call session.");
+
+              const link = `${window.location.origin}/call/${call.id}`;
+              let copied = false;
+              try {
+                await navigator.clipboard.writeText(link);
+                copied = true;
+              } catch {}
+
+              const callLabel = type === "video" ? "🎥 HEXA video call" : "📞 HEXA voice call";
+              const { error: messageError } = await supabase.from("messages").insert({
+                conversation_id: conversationId,
+                sender_id: profile.id,
+                receiver_id: calleeId,
+                content: `${callLabel}\n${link}`,
+                message_type: "call_link",
+                status: "sent",
+                metadata: { call_id: call.id, call_type: type, call_link: link },
+              });
+              if (messageError) {
+                console.warn("HEXA call-link message:", messageError.message);
+              }
+
+              const prefix = copied ? "Call link created and copied." : "Call link created.";
+              safeAlert(`${prefix} It was also sent in this chat.`, "success");
+              await loadMessages(selected);
+            } catch (error) {
+              safeAlert(error?.message || "Unable to create the call link.", "danger");
+            }
+          }
+        });
         break;
       }
 
@@ -6827,6 +6875,117 @@ class HexaErrorBoundary extends React.Component {
   }
 }
 
+function CallLinkJoinPage({ profile }) {
+  const callId = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const match = window.location.pathname.match(/^\/call\/([0-9a-f-]{36})$/i);
+    return match?.[1] || "";
+  }, []);
+  const [call, setCall] = useState(null);
+  const [peer, setPeer] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [joining, setJoining] = useState(false);
+  const [error, setError] = useState("");
+  const [finished, setFinished] = useState(false);
+
+  useEffect(() => {
+    if (!profile?.id || !callId) {
+      setLoading(false);
+      if (!callId) setError("This HEXA call link is invalid.");
+      return;
+    }
+
+    let active = true;
+    let channel;
+
+    const load = async () => {
+      try {
+        const { data: row, error: callError } = await supabase
+          .from("calls")
+          .select("*")
+          .eq("id", callId)
+          .maybeSingle();
+        if (callError) throw callError;
+        if (!row) throw new Error("This call link is invalid, expired, or unavailable to your account.");
+
+        if (![String(row.caller_id), String(row.callee_id)].includes(String(profile.id))) {
+          throw new Error("This call link was created for a different HEXA account.");
+        }
+
+        const peerId = String(row.caller_id) === String(profile.id) ? row.callee_id : row.caller_id;
+        const { data: profileRow } = await supabase
+          .from("profiles")
+          .select("id,username,full_name,avatar_url")
+          .eq("id", peerId)
+          .maybeSingle();
+
+        if (!active) return;
+        setCall(row);
+        setPeer(profileRow || { id: peerId, full_name: "HEXA User" });
+        setLoading(false);
+
+        channel = supabase.channel(`hexa-call-link-${row.id}-${profile.id}`)
+          .on("postgres_changes", { event: "UPDATE", schema: "public", table: "calls", filter: `id=eq.${row.id}` }, (payload) => {
+            if (!active) return;
+            const next = payload.new;
+            setCall(next);
+            if (["ended", "declined", "rejected", "missed"].includes(next.status)) setFinished(true);
+          })
+          .subscribe();
+      } catch (e) {
+        if (!active) return;
+        setError(e?.message || "Unable to open this call link.");
+        setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      active = false;
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, [profile?.id, callId]);
+
+  async function joinCall() {
+    if (!call?.id || !peer?.id || joining) return;
+    setJoining(true);
+    try {
+      if (String(call.callee_id) === String(profile.id) && call.status === "ringing") {
+        const { data, error: answerError } = await supabase.rpc("hexa_answer_call", { p_call_id: call.id });
+        if (answerError) throw answerError;
+        setCall(data || { ...call, status: "active" });
+      } else if (String(call.caller_id) !== String(profile.id) && String(call.callee_id) !== String(profile.id)) {
+        throw new Error("This call link is not available to this account.");
+      }
+    } catch (e) {
+      setError(e?.message || "Unable to join the call.");
+    } finally {
+      setJoining(false);
+    }
+  }
+
+  if (loading) {
+    return <div className="story-viewer" style={{ zIndex: 1200 }}><div className="coming-card" style={{ width: "min(460px, 92vw)", textAlign: "center" }}><div className="loading-spinner" /><h2>Opening HEXA call</h2><p>Checking this call invitation…</p></div></div>;
+  }
+
+  if (error) {
+    return <div className="story-viewer" style={{ zIndex: 1200 }}><div className="coming-card" style={{ width: "min(460px, 92vw)", textAlign: "center" }}><div className="page-heading-icon">!</div><h2>Call link unavailable</h2><p>{error}</p><button className="hero-primary" type="button" onClick={() => { window.history.replaceState({}, "", "/"); window.location.reload(); }}>Return to HEXA</button></div></div>;
+  }
+
+  if (finished || ["ended", "declined", "rejected", "missed"].includes(call?.status)) {
+    return <div className="story-viewer" style={{ zIndex: 1200 }}><div className="coming-card" style={{ width: "min(460px, 92vw)", textAlign: "center" }}><div className="page-heading-icon">✓</div><h2>Call ended</h2><p>This HEXA call session is no longer active.</p><button className="hero-primary" type="button" onClick={() => { window.history.replaceState({}, "", "/"); window.location.reload(); }}>Return to HEXA</button></div></div>;
+  }
+
+  const displayName = peer?.full_name || peer?.username || "HEXA User";
+  const isCaller = String(call?.caller_id) === String(profile.id);
+
+  if ((isCaller && call?.status === "ringing") || (!isCaller && call?.status === "ringing")) {
+    return <div className="story-viewer" style={{ zIndex: 1200 }}><div className="coming-card" style={{ width: "min(480px, 94vw)", textAlign: "center" }}><Avatar src={peer?.avatar_url} name={displayName} size={92} /><h2>{call?.type === "video" ? "HEXA Video Call" : "HEXA Voice Call"}</h2><p>{isCaller ? `Waiting for ${displayName} to join…` : `Incoming call from ${displayName}.`}</p><div className="hero-actions">{!isCaller && <button className="hero-primary" type="button" onClick={joinCall} disabled={joining}>{joining ? "Joining…" : "Join call"}</button>}<button className="hero-secondary" type="button" onClick={() => { window.history.replaceState({}, "", "/"); window.location.reload(); }}>Close</button></div></div></div>;
+  }
+
+  return <WebRTCCall profile={profile} call={call} type={call.type} peer={peer} onEnd={() => setFinished(true)} />;
+}
+
 function ActionDialogInput({ config, close }) {
   const [value, setValue] = useState("");
   return (
@@ -6848,6 +7007,9 @@ function AuthenticatedHEXA({ session, onSignOut }) {
   useEffect(()=>{let cancelled=false;(async()=>{const result=await ensureHexaProfile(session?.user);if(!cancelled){setProfile(result);setProfileLoading(false)}})();return()=>{cancelled=true}},[session?.user?.id]);
   useEffect(()=>{if(!profile?.id)return;const channel=supabase.channel(`hexa-notifications-${profile.id}`).on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},p=>{if(p.new?.sender_id===profile.id)return;setNotifications(x=>[{id:Date.now(),title:"New message",body:p.new?.content||"New message",created_at:new Date().toISOString()},...x].slice(0,50))}).subscribe();return()=>supabase.removeChannel(channel)},[profile?.id]);
   if(profileLoading)return <div className="hexa-loading-screen"><div className="loading-logo">H</div><div className="loading-spinner"/><strong>Opening HEXA…</strong><span>Preparing your workspace</span></div>;
+  if (typeof window !== "undefined" && /^\/call\/[0-9a-f-]{36}$/i.test(window.location.pathname)) {
+    return <CallLinkJoinPage profile={profile} />;
+  }
   let page; switch(activePage){
     case "nexus":page=<NexusHome profile={profile} setActivePage={setActivePage}/>;break;
     case "chat":page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type)=>setCallTarget({conversation:c,type})} onOpenChatWithUser={()=>setSearch("")}/>;break;
