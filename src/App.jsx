@@ -2621,20 +2621,70 @@ function ChatPage({
      MESSAGE ACTIONS
      ============================================================ */
 
-  async function copyMessage(
-    item
-  ) {
-    try {
-      await navigator.clipboard.writeText(
-        item?.content || ""
-      );
-    } catch {
-      alert(
-        "Unable to copy this message."
-      );
+  function getMessageCopyText(item) {
+    if (!item) return "";
+    if (item.content) return String(item.content);
+    if (item.message_type === "image") return "📷 Photo";
+    if (item.message_type === "video") return "🎥 Video";
+    if (item.message_type === "voice") return "🎙 Voice message";
+    if (item.message_type === "audio") return "🎵 Audio";
+    if (item.message_type === "file") return `📎 ${item.message_attachments?.[0]?.file_name || "File"}`;
+    if (item.message_type === "gif") return "GIF";
+    if (item.message_type === "sticker") return "Sticker";
+    return "";
+  }
+
+  async function copyTextReliable(text) {
+    const value = String(text || "");
+    if (!value) throw new Error("Nothing to copy");
+
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(value);
+        return true;
+      } catch {}
     }
 
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const ok = document.execCommand("copy");
+    textarea.remove();
+    if (!ok) throw new Error("Copy failed");
+    return true;
+  }
+
+  async function copyMessage(item) {
+    try {
+      const text = getMessageCopyText(item);
+      if (!text) throw new Error("Nothing to copy");
+      await copyTextReliable(text);
+      safeAlert("Message copied to clipboard.");
+    } catch (error) {
+      safeAlert(error?.message === "Nothing to copy" ? "There is nothing to copy from this message." : "Unable to copy this message.");
+    }
     setContextMenu(null);
+  }
+
+  function getReplyPreview(item) {
+    const text = getMessageCopyText(item);
+    return text.length > 140 ? `${text.slice(0, 140)}…` : text;
+  }
+
+  function startReply(item) {
+    if (!item) return;
+    setEditing(null);
+    setReplyTo(item);
+    setContextMenu(null);
+    setTimeout(() => {
+      const composer = document.querySelector(".message-composer textarea, .message-composer input, textarea[placeholder*='message' i]");
+      composer?.focus?.();
+    }, 50);
   }
 
   async function editMessage(
@@ -3495,11 +3545,29 @@ function ChatPage({
             </div>
           )}
 
-          {(item.reply_to_id || item.reply_to) && (
-            <div className="quoted-message">
-              ↩ Reply
-            </div>
-          )}
+          {(() => {
+            const repliedTo = item.reply_to || (item.reply_to_id ? messages.find(m => String(m.id) === String(item.reply_to_id)) : null);
+            if (!repliedTo) return null;
+            return (
+              <button
+                type="button"
+                className="quoted-message quoted-message-clickable"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  const target = document.getElementById(`hexa-message-${repliedTo.id}`);
+                  target?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+                  target?.classList.add("message-highlight");
+                  window.setTimeout(() => target?.classList.remove("message-highlight"), 1600);
+                }}
+              >
+                <span className="quoted-message-bar" />
+                <span className="quoted-message-copy">
+                  <strong>{String(repliedTo.sender_id) === String(profile.id) ? "You" : (selected?.name || "Contact")}</strong>
+                  <span>{getReplyPreview(repliedTo) || "Message"}</span>
+                </span>
+              </button>
+            );
+          })()}
 
           {(() => {
             const attachmentRow = item.message_attachments?.[0];
@@ -4335,12 +4403,8 @@ function ChatPage({
                 Replying to
               </strong>
 
-              <span>
-                {
-                  replyTo.content ||
-                  "Media"
-                }
-              </span>
+              <span>{String(replyTo.sender_id) === String(profile.id) ? "You" : (selected?.name || "Contact")}</span>
+              <small>{getReplyPreview(replyTo) || "Media"}</small>
             </div>
 
             <button
@@ -5053,10 +5117,7 @@ function ChatPage({
                 <div className="message-action-section">
                   <div className="message-action-section-title">Message</div>
 
-                  <button type="button" className="message-action-item" onClick={() => {
-                    setReplyTo(item);
-                    setContextMenu(null);
-                  }}>
+                  <button type="button" className="message-action-item" onClick={() => startReply(item)}>
                     <span className="message-action-icon">↩</span>
                     <span className="message-action-copy">
                       <strong>Reply</strong>
