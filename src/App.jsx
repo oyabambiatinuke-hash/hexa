@@ -1654,6 +1654,8 @@ function ChatPage({
       )
   );
 
+  const [pinnedPanelOpen, setPinnedPanelOpen] = useState(false);
+
   const [muted, setMuted] = useState(
     () =>
       readJsonStorage(
@@ -2771,6 +2773,19 @@ function ChatPage({
   }
 
   /* ============================================================
+  function openPinnedMessage(item) {
+    if (!item?.id) return;
+    setPinnedPanelOpen(false);
+    requestAnimationFrame(() => {
+      const node = document.getElementById(`msg-${item.id}`);
+      if (node) {
+        node.scrollIntoView({ behavior: "smooth", block: "center" });
+        node.classList.add("hexa-pinned-highlight");
+        window.setTimeout(() => node.classList.remove("hexa-pinned-highlight"), 1800);
+      }
+    });
+  }
+
      REACTIONS
      ============================================================ */
 
@@ -3829,6 +3844,25 @@ function ChatPage({
 
             <button
               type="button"
+              className={pinnedPanelOpen ? "quick-actions-trigger active" : "quick-actions-trigger"}
+              title="Pinned messages"
+              aria-label="Pinned messages"
+              onClick={() => {
+                setPinnedPanelOpen(value => !value);
+                setQuickActionsOpen(false);
+                setChatSettingsOpen(false);
+              }}
+            >
+              📌
+              {messages.filter(message => pinned.includes(String(message.id))).length > 0 && (
+                <span className="pinned-header-count">
+                  {messages.filter(message => pinned.includes(String(message.id))).length}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
               className={quickActionsOpen ? "quick-actions-trigger active" : "quick-actions-trigger"}
               title="Quick actions"
               aria-label="Quick actions"
@@ -3975,6 +4009,48 @@ function ChatPage({
               </div>
             )}
 
+          </div>
+        )}
+
+        {pinnedPanelOpen && (
+          <div className="hexa-pinned-panel">
+            <div className="hexa-pinned-head">
+              <div>
+                <span className="hexa-pinned-kicker">CHAT SHORTCUT</span>
+                <strong>📌 Pinned messages</strong>
+                <small>Jump straight to important messages in this conversation.</small>
+              </div>
+              <button type="button" onClick={() => setPinnedPanelOpen(false)} aria-label="Close pinned messages">×</button>
+            </div>
+            {(() => {
+              const currentPinned = messages.filter(message => pinned.includes(String(message.id)));
+              if (!currentPinned.length) {
+                return (
+                  <div className="hexa-pinned-empty">
+                    <div>📌</div>
+                    <strong>No pinned messages yet</strong>
+                    <span>Use Message actions → Pin on any important message.</span>
+                  </div>
+                );
+              }
+              return (
+                <div className="hexa-pinned-list">
+                  {currentPinned.slice(-8).reverse().map(item => (
+                    <div className="hexa-pinned-item" key={item.id}>
+                      <button type="button" className="hexa-pinned-jump" onClick={() => openPinnedMessage(item)}>
+                        <span className="hexa-pinned-icon">📌</span>
+                        <span className="hexa-pinned-copy">
+                          <strong>{String(item.sender_id) === String(profile.id) ? "You" : (selected?.name || "Contact")}</strong>
+                          <span>{item.content || (item.message_type === "image" ? "📷 Photo" : item.message_type === "video" ? "🎥 Video" : item.message_type === "voice" ? "🎙 Voice message" : "Message")}</span>
+                          <small>{item.created_at ? new Date(item.created_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : ""}</small>
+                        </span>
+                      </button>
+                      <button type="button" className="hexa-pinned-unpin" title="Unpin message" onClick={() => togglePin(item)}>×</button>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -8914,5 +8990,9 @@ const HEXA_COMPOSER_CSS = `
 @media(max-width:700px){.hexa-message-composer{padding:7px 8px 9px!important}.composer-shell{border-radius:20px}.composer-main-row{gap:5px;padding:6px}.composer-icon-btn,.composer-voice-btn,.composer-send-btn{flex-basis:38px;width:38px;height:38px}.composer-textarea{font-size:14px;padding-left:4px;padding-right:4px}.composer-recording-bar{font-size:11px}.composer-recording-bar .recording-hint{display:none}}
 `;
 
-const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS + HEXA_MOMENTS_CSS + HEXA_KORA_CSS + HEXA_COMPOSER_CSS;
+const HEXA_PINNED_MESSAGES_CSS = `
+.hexa-pinned-panel{position:relative;z-index:12;border-bottom:1px solid var(--hexa-border);background:var(--hexa-panel);box-shadow:0 10px 28px rgba(0,0,0,.08);animation:hexaPinnedDrop .18s ease-out}.hexa-pinned-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:13px 16px;border-bottom:1px solid var(--hexa-border)}.hexa-pinned-head>div{min-width:0;display:flex;flex-direction:column;gap:3px}.hexa-pinned-kicker{font-size:9px;font-weight:900;letter-spacing:.12em;color:var(--hexa-accent);text-transform:uppercase}.hexa-pinned-head strong{font-size:13px;color:var(--hexa-text)}.hexa-pinned-head small{font-size:10px;color:var(--hexa-muted)}.hexa-pinned-head>button{width:32px;height:32px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:10px;font-size:18px;cursor:pointer}.hexa-pinned-list{max-height:260px;overflow:auto;padding:7px 10px}.hexa-pinned-item{display:flex;align-items:stretch;gap:6px;border-radius:13px}.hexa-pinned-item:hover{background:var(--hexa-panel-2)}.hexa-pinned-jump{flex:1;display:flex;align-items:center;gap:10px;min-width:0;border:0;background:transparent;color:inherit;text-align:left;padding:10px 8px;border-radius:12px;cursor:pointer}.hexa-pinned-icon{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;background:rgba(124,92,255,.10);flex:0 0 auto}.hexa-pinned-copy{min-width:0;display:flex;flex-direction:column;gap:2px}.hexa-pinned-copy strong,.hexa-pinned-copy span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hexa-pinned-copy strong{font-size:11px;color:var(--hexa-text)}.hexa-pinned-copy span{font-size:12px;color:var(--hexa-text)}.hexa-pinned-copy small{font-size:9px;color:var(--hexa-muted)}.hexa-pinned-unpin{width:32px;margin:7px 5px 7px 0;border:0;background:transparent;color:var(--hexa-muted);border-radius:9px;cursor:pointer;font-size:17px}.hexa-pinned-unpin:hover{background:rgba(255,70,70,.10);color:#f87171}.hexa-pinned-empty{padding:24px 18px 26px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--hexa-muted)}.hexa-pinned-empty>div{width:42px;height:42px;display:grid;place-items:center;border-radius:13px;background:rgba(124,92,255,.10);font-size:20px}.hexa-pinned-empty strong{color:var(--hexa-text);font-size:12px}.hexa-pinned-empty span{font-size:10px;max-width:350px}.pinned-header-count{position:absolute;transform:translate(10px,-10px);min-width:16px;height:16px;padding:0 4px;display:grid;place-items:center;border-radius:999px;background:var(--hexa-accent);color:#fff;font-size:8px;font-weight:900;border:2px solid var(--hexa-panel)}.hexa-pinned-highlight .message-bubble{animation:hexaPinnedHighlight 1.8s ease}.hexa-pinned-highlight{position:relative;z-index:2}@keyframes hexaPinnedDrop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}@keyframes hexaPinnedHighlight{0%{box-shadow:0 0 0 0 rgba(124,92,255,0)}20%{box-shadow:0 0 0 5px rgba(124,92,255,.25)}100%{box-shadow:0 0 0 0 rgba(124,92,255,0)}}[data-hexa-theme="white"] .hexa-pinned-panel{background:#fff;border-color:rgba(0,0,0,.10);box-shadow:0 12px 28px rgba(0,0,0,.07)}[data-hexa-theme="white"] .hexa-pinned-head>button{background:#f7f7f8;color:#111;border-color:rgba(0,0,0,.12)}[data-hexa-theme="white"] .hexa-pinned-item:hover{background:#f7f7f8}[data-hexa-theme="white"] .pinned-header-count{border-color:#fff}@media(max-width:700px){.hexa-pinned-head{padding:11px 12px}.hexa-pinned-list{max-height:220px}.hexa-pinned-copy span{font-size:11px}.pinned-header-count{transform:translate(8px,-8px)}}
+`;
+
+const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS + HEXA_MOMENTS_CSS + HEXA_KORA_CSS + HEXA_COMPOSER_CSS + HEXA_PINNED_MESSAGES_CSS;
 
