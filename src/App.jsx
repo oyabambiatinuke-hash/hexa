@@ -434,17 +434,14 @@ if (typeof window !== "undefined") {
 }
 
 const NAV_ITEMS = [
-  { id: "nexus", label: "Nexus", icon: "⌂" },
   { id: "chat", label: "Chat", icon: "💬" },
   { id: "groups", label: "Groups", icon: "👥" },
   { id: "communities", label: "Communities", icon: "◉" },
-  { id: "channels", label: "Channels", icon: "▣" },
-  { id: "status", label: "Status", icon: "◌" },
   { id: "calls", label: "Calls", icon: "☎" },
-  { id: "wallet", label: "Wallet", icon: "₦" },
-  { id: "projects", label: "Projects", icon: "◆" },
+  { id: "moments", label: "Moments", icon: "◌" },
+  { id: "channels", label: "Channels", icon: "▣" },
   { id: "kora", label: "Kora", icon: "✦" },
-  { id: "developer", label: "Developer Hub", icon: "</>" },
+  { id: "developer", label: "", icon: "</>" },
   { id: "settings", label: "Settings", icon: "⚙" },
 ];
 
@@ -452,14 +449,14 @@ const HEXA_FEATURES = [
   ["Messaging", "1:1 chats", "Group chats", "Replies", "Forward", "Edit", "Delete for me/everyone", "Copy", "Star", "Pin", "Search", "Reactions", "Emoji + skin tones", "GIFs", "Stickers", "Animated stickers", "Images", "Videos", "Files", "Audio", "Voice messages", "Playback speed", "Waveform", "Contacts", "Current/live location", "Polls", "Link previews", "Mentions", "Timestamps", "Delivered/read", "Typing/recording", "Unread counts", "Drafts", "Disappearing messages", "View-once media"],
   ["Groups", "Create", "Add/remove members", "Owner", "Multiple admins", "Permissions", "Invite links", "Name/photo/description", "Member search", "Mentions", "Announcements", "Group media/files", "Polls", "Reactions", "Replies", "Group calls", "Participant management", "Leave/report/delete"],
   ["Calls", "1:1 voice", "1:1 video", "Group voice", "Group video", "Incoming/outgoing", "Accept/decline/missed", "Mute", "Speaker", "Camera", "Front/rear camera", "PiP", "Call history", "Add participants", "Call links", "Privacy/security", "WebRTC", "STUN/TURN", "Network quality"],
-  ["Status", "Text/photo/video/GIF", "Captions", "Emoji/stickers/drawing", "Privacy", "Viewers", "Seen/unseen", "Reactions", "Replies", "Navigation", "24-hour expiry", "Delete", "Notifications", "Mute"],
+  ["Moments", "Text/photo/video/GIF", "Captions", "Emoji/stickers/drawing", "Privacy", "Viewers", "Seen/unseen", "Reactions", "Replies", "Navigation", "24-hour expiry", "Delete", "Notifications", "Mute"],
   ["Channels", "Create/follow/unfollow", "Profile", "Posts", "Media", "Links", "Polls", "Reactions", "Forward/share", "Search", "Notifications", "Admins", "Followers", "Privacy", "Verification"],
   ["Search", "Contacts", "Chats", "Messages", "Groups", "Channels", "Media", "Documents", "Links", "GIFs", "Audio", "Date filters", "Within conversation", "Advanced filters"],
   ["Profiles & Contacts", "Photo", "Name", "About", "Phone", "QR", "Add/invite", "Block/report", "Last seen", "Online", "Privacy", "Read receipts", "Group-add controls"],
   ["Privacy & Security", "E2E encryption", "Encrypted calls", "2FA", "Passkeys", "App lock", "Biometrics", "Security notifications", "Disappearing", "View-once", "Privacy checkup", "Device management", "Linked devices", "Logout"],
   ["Media & Files", "Camera", "Gallery", "Multiple selection", "Preview", "Compression", "Original quality", "Download", "Forward", "Delete", "Auto-download", "Storage management"],
   ["Organization", "Starred", "Pinned", "Archived", "Favorites", "Unread", "Chat filters", "Folders/categories", "Saved search"],
-  ["Notifications", "Messages", "Groups", "Calls", "Missed calls", "Status", "Mentions", "Replies", "Reactions", "Channels", "Sounds", "Vibration", "Previews", "Mute", "Custom notifications"],
+  ["Notifications", "Messages", "Groups", "Calls", "Missed calls", "Moments", "Mentions", "Replies", "Reactions", "Channels", "Sounds", "Vibration", "Previews", "Mute", "Custom notifications"],
   ["Payments & Business", "Payments", "Business profiles", "Catalogs", "Shopping", "Cart", "Orders", "Customer messaging", "Broadcasts", "Automated replies", "Labels", "Business tools"],
   ["Communities", "Create", "Description/icon", "Groups", "Announcement group", "Admins", "Members", "Invites", "Notifications", "Announcements"],
   ["Broadcasts", "Create list", "Send to many", "Manage", "Private replies", "Edit/delete"],
@@ -1428,7 +1425,7 @@ function NexusHome({
 
       <div className="feature-grid">
         {HEXA_FEATURES.slice(0, 12).map(([title, ...items]) => (
-          <button key={title} className="feature-card" onClick={() => setActivePage(title === "Messaging" ? "chat" : title === "Groups" ? "groups" : title === "Status" ? "status" : title === "Calls" ? "calls" : title === "Channels" ? "channels" : title === "Communities" ? "communities" : title === "AI" ? "kora" : "settings")}>
+          <button key={title} className="feature-card" onClick={() => setActivePage(title === "Messaging" ? "chat" : title === "Groups" ? "groups" : title === "Status" ? "moments" : title === "Calls" ? "calls" : title === "Channels" ? "channels" : title === "Communities" ? "communities" : title === "AI" ? "kora" : "settings")}>
             <span>{({Messaging:"💬",Groups:"👥",Calls:"☎",Status:"◌",Channels:"▣",Communities:"◉",Search:"⌕",Profiles:"👤", "Privacy & Security":"🔐", "Media & Files":"📁",Organization:"⭐",Notifications:"🔔"})[title] || "✦"}</span>
             <strong>{title}</strong>
             <p>{items.slice(0, 6).join(" · ")}</p>
@@ -1446,7 +1443,7 @@ function NexusHome({
 function koraReply(input) {
   const q = String(input || "").toLowerCase();
   if (q.includes("hello") || q.includes("hi")) return "Hello. I’m Kora, your HEXA assistant. What would you like to do?";
-  if (q.includes("status")) return "You can create a HEXA Status with text, photos or videos from the Status workspace.";
+  if (q.includes("status")) return "You can create a HEXA Moments with text, photos or videos from the Moments workspace.";
   if (q.includes("call")) return "Open a direct chat and use the phone or video button to start a WebRTC call.";
   if (q.includes("group")) return "Open Groups, create a group, and select the HEXA users you want to add.";
   return "I’m Kora. I can help you navigate HEXA, plan messages, explain features, and work with the tools connected to your workspace.";
@@ -5221,7 +5218,7 @@ function StatusPage({ profile }) {
   async function create(e){e.preventDefault();if(!text.trim()&&!file)return;let mediaUrl="",mediaType="";try{if(file){mediaUrl=await upload(file.file);mediaType=file.kind}}catch(err){alert(err.message);return}const {error}=await supabase.from("statuses").insert({user_id:profile.id,text:text.trim(),description:description.trim(),media_url:mediaUrl,media_type:mediaType,expires_at:new Date(Date.now()+86400000).toISOString()});if(error)alert(error.message);else{setText("");setDescription("");setFile(null);setShow(false);load()}}
   function pick(e){const f=e.target.files?.[0];if(f)setFile({file:f,url:URL.createObjectURL(f),kind:f.type.startsWith("video")?"video":"image"})}
   async function like(s){if(String(s.id).startsWith("local"))return;const {data}=await supabase.from("status_likes").select("status_id").eq("status_id",s.id).eq("user_id",profile.id).maybeSingle();if(data)await supabase.from("status_likes").delete().eq("status_id",s.id).eq("user_id",profile.id);else await supabase.from("status_likes").insert({status_id:s.id,user_id:profile.id});}
-  return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">◌</div><div><h1>Status</h1><p>Share text, photos and videos that expire after 24 hours.</p></div><button className="hero-primary heading-action" onClick={()=>setShow(true)}>＋ Create Status</button></div><div className="status-row"><button className="create-status-card" onClick={()=>setShow(true)}><div className="create-status-plus">＋</div><strong>Create Status</strong><span>Text, photo or video</span></button>{statuses.map(s=><button key={s.id} className="status-card unseen" onClick={()=>setViewer(s)}><div className="status-preview">{s.media_url&&s.media_type==="image"?<img src={s.media_url} alt=""/>:s.media_url&&s.media_type==="video"?<video src={s.media_url}/>:<span>Aa</span>}</div><strong>{s.text||s.description||"Media status"}</strong><span>{new Date(s.created_at).toLocaleString()}</span></button>)}</div>{show&&<div className="modal-backdrop" onClick={()=>setShow(false)}><div className="status-modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><h2>Create Status</h2><button onClick={()=>setShow(false)}>×</button></div><form onSubmit={create}><textarea className="modal-input modal-textarea" value={text} onChange={e=>setText(e.target.value)} placeholder="What's happening?"/><input className="modal-input" value={description} onChange={e=>setDescription(e.target.value)} placeholder="Caption / description"/><button type="button" className="media-picker" onClick={()=>fileRef.current?.click()}><span>📷</span><div><strong>{file?file.file.name:"Add photo or video"}</strong><small>Camera, gallery or laptop file</small></div></button><input ref={fileRef} hidden type="file" accept="image/*,video/*" capture="environment" onChange={pick}/>{file&&<div className="status-media-preview">{file.kind==="video"?<video controls src={file.url}/>:<img src={file.url} alt="Preview"/>}</div>}<button className="hero-primary">Post Status</button></form></div></div>}{viewer&&<div className="story-viewer" onClick={()=>setViewer(null)}><button className="story-close" onClick={()=>setViewer(null)}>×</button><div className="story-content" onClick={e=>e.stopPropagation()}>{viewer.media_url&&viewer.media_type==="video"?<video controls autoPlay src={viewer.media_url}/>:viewer.media_url?<img src={viewer.media_url} alt="Status"/>:<div className="story-text">{viewer.text}</div>}<div className="story-caption">{viewer.description||viewer.text}</div><div className="story-actions"><button onClick={()=>like(viewer)}>❤️</button><button>😂</button><button>😮</button></div></div></div>}</section>;
+  return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">◌</div><div><h1>Moments</h1><p>Share text, photos and videos that expire after 24 hours.</p></div><button className="hero-primary heading-action" onClick={()=>setShow(true)}>＋ Create Moment</button></div><div className="status-row"><button className="create-status-card" onClick={()=>setShow(true)}><div className="create-status-plus">＋</div><strong>Create Moment</strong><span>Text, photo or video</span></button>{statuses.map(s=><button key={s.id} className="status-card unseen" onClick={()=>setViewer(s)}><div className="status-preview">{s.media_url&&s.media_type==="image"?<img src={s.media_url} alt=""/>:s.media_url&&s.media_type==="video"?<video src={s.media_url}/>:<span>Aa</span>}</div><strong>{s.text||s.description||"Media status"}</strong><span>{new Date(s.created_at).toLocaleString()}</span></button>)}</div>{show&&<div className="modal-backdrop" onClick={()=>setShow(false)}><div className="status-modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><h2>Create Moment</h2><button onClick={()=>setShow(false)}>×</button></div><form onSubmit={create}><textarea className="modal-input modal-textarea" value={text} onChange={e=>setText(e.target.value)} placeholder="What's happening?"/><input className="modal-input" value={description} onChange={e=>setDescription(e.target.value)} placeholder="Caption / description"/><button type="button" className="media-picker" onClick={()=>fileRef.current?.click()}><span>📷</span><div><strong>{file?file.file.name:"Add photo or video"}</strong><small>Camera, gallery or laptop file</small></div></button><input ref={fileRef} hidden type="file" accept="image/*,video/*" capture="environment" onChange={pick}/>{file&&<div className="status-media-preview">{file.kind==="video"?<video controls src={file.url}/>:<img src={file.url} alt="Preview"/>}</div>}<button className="hero-primary">Post Moment</button></form></div></div>}{viewer&&<div className="story-viewer" onClick={()=>setViewer(null)}><button className="story-close" onClick={()=>setViewer(null)}>×</button><div className="story-content" onClick={e=>e.stopPropagation()}>{viewer.media_url&&viewer.media_type==="video"?<video controls autoPlay src={viewer.media_url}/>:viewer.media_url?<img src={viewer.media_url} alt="Status"/>:<div className="story-text">{viewer.text}</div>}<div className="story-caption">{viewer.description||viewer.text}</div><div className="story-actions"><button onClick={()=>like(viewer)}>❤️</button><button>😂</button><button>😮</button></div></div></div>}</section>;
 }
 
 function KoraPage({ profile }) {
@@ -6033,7 +6030,7 @@ class HexaErrorBoundary extends React.Component {
 
 function AuthenticatedHEXA({ session, onSignOut }) {
 
-  const [profile,setProfile]=useState(null),[profileLoading,setProfileLoading]=useState(true),[activePage,setActivePage]=useState("nexus"),[search,setSearch]=useState(""),[notifications,setNotifications]=useState([]),[showNotifications,setShowNotifications]=useState(false),[chatTarget,setChatTarget]=useState(null),[callTarget,setCallTarget]=useState(null);
+  const [profile,setProfile]=useState(null),[profileLoading,setProfileLoading]=useState(true),[activePage,setActivePage]=useState("chat"),[search,setSearch]=useState(""),[notifications,setNotifications]=useState([]),[showNotifications,setShowNotifications]=useState(false),[chatTarget,setChatTarget]=useState(null),[callTarget,setCallTarget]=useState(null);
   useEffect(()=>{let cancelled=false;(async()=>{const result=await ensureHexaProfile(session?.user);if(!cancelled){setProfile(result);setProfileLoading(false)}})();return()=>{cancelled=true}},[session?.user?.id]);
   useEffect(()=>{if(!profile?.id)return;const channel=supabase.channel(`hexa-notifications-${profile.id}`).on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},p=>{if(p.new?.sender_id===profile.id)return;setNotifications(x=>[{id:Date.now(),title:"New message",body:p.new?.content||"New message",created_at:new Date().toISOString()},...x].slice(0,50))}).subscribe();return()=>supabase.removeChannel(channel)},[profile?.id]);
   if(profileLoading)return <div className="hexa-loading-screen"><div className="loading-logo">H</div><div className="loading-spinner"/><strong>Opening HEXA…</strong><span>Preparing your workspace</span></div>;
@@ -6043,13 +6040,12 @@ function AuthenticatedHEXA({ session, onSignOut }) {
     case "groups":page=<GroupsPage profile={profile} onOpenChat={c=>{setChatTarget(c);setActivePage("chat")}}/>;break;
     case "communities":page=<CommunitiesPage profile={profile}/>;break;
     case "channels":page=<ChannelsPage profile={profile}/>;break;
-    case "status":page=<StatusPage profile={profile}/>;break;
+    case "moments":page=<StatusPage profile={profile}/>;break;
     case "calls":page=<CallsPage profile={profile}/>;break;
     case "kora":page=<KoraPage profile={profile}/>;break;
     case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut}/>;break;
-    case "projects":page=<WorkspacePlaceholder title="Projects" description="Organize collaborative work." icon="◆"/>;break;
-    case "developer":page=<WorkspacePlaceholder title="Developer Hub" description="Build and connect with HEXA." icon="</>"/>;break;
-    default:page=<NexusHome profile={profile} setActivePage={setActivePage}/>;
+        case "developer":page=<WorkspacePlaceholder title="" description="Build and connect with HEXA." icon="</>"/>;break;
+    default:page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type)=>setCallTarget({conversation:c,type})} onOpenChatWithUser={()=>setSearch("")}/>;
   }
   return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div></div>;
 }
