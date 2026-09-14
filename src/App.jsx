@@ -1609,6 +1609,12 @@ function ChatPage({
   const [chatSettingsOpen, setChatSettingsOpen] =
     useState(false);
 
+  const [quickActionsOpen, setQuickActionsOpen] =
+    useState(false);
+
+  const [focusMode, setFocusMode] =
+    useState(false);
+
   const [disappearing, setDisappearing] =
     useState("off");
 
@@ -2875,6 +2881,46 @@ function ChatPage({
     setChatSettingsOpen(false);
   }
 
+  function closeQuickActions() {
+    setQuickActionsOpen(false);
+  }
+
+  function runQuickAction(action) {
+    closeQuickActions();
+
+    if (action === "focus") {
+      setFocusMode(value => !value);
+      return;
+    }
+
+    if (action === "latest") {
+      requestAnimationFrame(() => {
+        bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      });
+      return;
+    }
+
+    if (action === "search") {
+      const value = prompt("Search messages in this chat");
+      if (value !== null) setMessageSearch(value.trim());
+      return;
+    }
+
+    if (action === "export") {
+      handleChatMenuAction("export");
+      return;
+    }
+
+    if (action === "voice") {
+      if (!isSystem && !isSelf) onStartCall?.(selected, "voice");
+      return;
+    }
+
+    if (action === "video") {
+      if (!isSystem && !isSelf) onStartCall?.(selected, "video");
+    }
+  }
+
   async function handleChatMenuAction(action) {
     closeChatMenu();
 
@@ -3392,7 +3438,7 @@ function ChatPage({
           mobileConversationOpen
             ? "mobile-chat-open"
             : "mobile-chat-list"
-        }`
+        } ${focusMode ? "focus-mode" : ""}`
       }
       onClick={() => {
         if (contextMenu) {
@@ -3711,6 +3757,19 @@ function ChatPage({
 
             <button
               type="button"
+              className={quickActionsOpen ? "quick-actions-trigger active" : "quick-actions-trigger"}
+              title="Quick actions"
+              aria-label="Quick actions"
+              onClick={() => {
+                setQuickActionsOpen(value => !value);
+                setChatSettingsOpen(false);
+              }}
+            >
+              ✦
+            </button>
+
+            <button
+              type="button"
               title="Chat options"
               aria-label="Chat options"
               onClick={() =>
@@ -3726,6 +3785,28 @@ function ChatPage({
           </div>
 
         </header>
+
+        {quickActionsOpen && (
+          <>
+            <div
+              className="chat-menu-backdrop"
+              onClick={closeQuickActions}
+              aria-hidden="true"
+            />
+            <div className="quick-actions-popover">
+              <div className="quick-actions-heading">
+                <strong>Quick Actions</strong>
+                <span>Power tools for this chat</span>
+              </div>
+              <button type="button" onClick={() => runQuickAction("latest")}>↓<span>Jump to latest message</span></button>
+              <button type="button" className={focusMode ? "selected" : ""} onClick={() => runQuickAction("focus")}>⛶<span>{focusMode ? "Exit focus mode" : "Enter focus mode"}</span></button>
+              <button type="button" onClick={() => runQuickAction("search")}>⌕<span>Search this chat</span></button>
+              <button type="button" onClick={() => runQuickAction("export")}>⇩<span>Export conversation</span></button>
+              {!isSystem && !isSelf && <button type="button" onClick={() => runQuickAction("voice")}>☎<span>Start voice call</span></button>}
+              {!isSystem && !isSelf && <button type="button" onClick={() => runQuickAction("video")}>▣<span>Start video call</span></button>}
+            </div>
+          </>
+        )}
 
         {/* CHAT THREE-DOT MENU */}
         {chatSettingsOpen && (
@@ -7804,6 +7885,71 @@ const APP_STYLES_TAIL = `
 /* HEXA master feature UI */
 .hexa-audio-message{display:flex;align-items:center;gap:7px}.hexa-audio-message audio{max-width:210px;height:34px}.hexa-audio-message select{background:var(--hexa-panel-2);color:var(--hexa-text);border:1px solid var(--hexa-border);border-radius:8px;padding:4px}.message-context-menu{position:fixed;z-index:1000;min-width:190px;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:14px;padding:6px;box-shadow:var(--hexa-shadow);display:grid;gap:2px}.message-context-menu button{border:0;background:none;color:var(--hexa-text);padding:10px;text-align:left;border-radius:9px}.message-context-menu button:hover{background:rgba(255,255,255,.06)}.message-context-menu .danger-text{color:var(--hexa-danger)}.emoji-panel,.sticker-panel,.feature-popover,.chat-settings-popover{position:absolute;z-index:40;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:16px;box-shadow:var(--hexa-shadow);padding:12px}.emoji-panel{left:12px;bottom:76px;width:min(410px,calc(100% - 24px))}.emoji-tones,.emoji-grid,.sticker-grid{display:flex;flex-wrap:wrap;gap:5px}.emoji-grid{max-height:220px;overflow:auto;margin-top:8px}.emoji-panel button,.sticker-grid button{border:0;background:transparent;font-size:21px;padding:6px;border-radius:8px}.emoji-panel button:hover,.sticker-grid button:hover{background:rgba(255,255,255,.06)}.sticker-panel{left:12px;bottom:76px;width:300px}.sticker-grid{margin-top:10px}.sticker-grid button{font-size:30px}.feature-popover{right:12px;bottom:76px;width:min(360px,calc(100% - 24px));display:grid;gap:8px}.feature-popover h3{margin:0}.chat-settings-popover{right:12px;top:64px;width:270px;display:grid;gap:10px;z-index:60}.chat-settings-popover label{display:grid;gap:6px;color:var(--hexa-muted);font-size:12px}.chat-settings-popover select,.chat-settings-popover button{padding:9px;border-radius:9px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text)}.chat-search-results{padding:10px;border-top:1px solid var(--hexa-border);display:grid;gap:5px}.chat-search-results button{border:0;background:transparent;color:var(--hexa-muted);text-align:left;padding:6px}.poll-message{display:grid;gap:7px;min-width:220px}.poll-message button{display:flex;justify-content:space-between;gap:10px;padding:9px;border-radius:9px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);text-align:left}.poll-message button span{color:var(--hexa-muted);font-size:10px}.shared-contact{display:flex;gap:10px;align-items:center;min-width:190px}.shared-contact div{display:grid}.shared-contact small{color:var(--hexa-muted)}.location-card{color:inherit;text-decoration:none;display:block;padding:4px}.file-message{display:flex;gap:8px;align-items:center}.forwarded-label{font-size:10px;color:var(--hexa-muted);margin-bottom:5px}.sticker-message{font-size:70px;line-height:1}.view-once-bubble{min-width:100px}.universal-search-result{display:flex;align-items:center;gap:10px;width:100%}.universal-search-result-copy{flex:1}.universal-search-result>b{text-transform:uppercase;font-size:9px;color:var(--hexa-accent-2)}
 
+
+/* HEXA 2026 visual polish + Quick Actions */
+.hexa-avatar{
+  position:relative!important;
+  display:grid!important;
+  place-items:center!important;
+  overflow:hidden!important;
+  aspect-ratio:1/1!important;
+  border-radius:50%!important;
+  background:radial-gradient(circle at 30% 25%,rgba(124,92,255,.28),rgba(18,23,32,.98) 62%)!important;
+  border:1px solid rgba(255,255,255,.11)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 8px 24px rgba(0,0,0,.18)!important;
+}
+.hexa-avatar img{
+  display:block!important;
+  width:100%!important;
+  height:100%!important;
+  min-width:100%!important;
+  min-height:100%!important;
+  object-fit:cover!important;
+  object-position:50% 50%!important;
+  border-radius:50%!important;
+  overflow:hidden!important;
+  background:var(--hexa-panel-3)!important;
+}
+.hexa-avatar span{position:relative;z-index:1}
+.hexa-online-dot{z-index:4!important;box-shadow:0 0 0 2px var(--hexa-panel),0 0 10px rgba(43,214,126,.5)!important}
+.chat-main{background:radial-gradient(circle at 75% 15%,rgba(124,92,255,.06),transparent 34%),linear-gradient(180deg,rgba(9,12,17,.96),rgba(7,9,13,.99))}
+.chat-header{min-height:72px!important;padding:10px 14px!important;background:rgba(10,13,19,.78)!important;backdrop-filter:blur(18px)!important;border-bottom:1px solid rgba(255,255,255,.08)!important;box-shadow:0 8px 28px rgba(0,0,0,.12)!important}
+.chat-header-copy{min-width:0!important}
+.chat-header-copy strong{font-size:13px!important;letter-spacing:.01em}
+.chat-header-copy span{font-size:10px!important;color:#8993a3!important;margin-top:3px!important;display:block!important}
+.chat-header-actions{display:flex!important;align-items:center!important;gap:5px!important}
+.chat-header-actions button{width:38px!important;height:38px!important;border:1px solid rgba(255,255,255,.07)!important;border-radius:12px!important;background:rgba(255,255,255,.035)!important;color:var(--hexa-text)!important;transition:transform .16s ease,background .16s ease,border-color .16s ease!important}
+.chat-header-actions button:hover{transform:translateY(-1px);background:rgba(124,92,255,.12)!important;border-color:rgba(124,92,255,.3)!important}
+.quick-actions-trigger.active{background:rgba(124,92,255,.16)!important;border-color:rgba(124,92,255,.35)!important;color:#fff!important}
+.messages-area{padding:18px 20px!important;scroll-behavior:smooth!important;background-image:radial-gradient(circle at 15% 20%,rgba(124,92,255,.035),transparent 30%),radial-gradient(circle at 85% 75%,rgba(72,149,239,.03),transparent 28%)}
+.hexa-message-row{align-items:flex-end!important;gap:7px!important}
+.hexa-message-row.incoming{justify-content:flex-start!important}
+.hexa-message-row.mine{justify-content:flex-end!important}
+.hexa-message-row.mine .message-bubble{border-radius:18px 18px 5px 18px!important;background:linear-gradient(135deg,rgba(124,92,255,.24),rgba(124,92,255,.12))!important;border-color:rgba(124,92,255,.24)!important;box-shadow:0 8px 24px rgba(0,0,0,.12)!important}
+.hexa-message-row.incoming .message-bubble{border-radius:18px 18px 18px 5px!important;background:rgba(255,255,255,.035)!important;border-color:rgba(255,255,255,.08)!important;box-shadow:0 6px 18px rgba(0,0,0,.10)!important}
+.message-content{font-size:13px!important;line-height:1.55!important;color:#eef2f8!important;white-space:pre-wrap!important;overflow-wrap:anywhere!important}
+.message-meta{font-size:9px!important;opacity:.78!important;margin-top:5px!important;gap:6px!important}
+.focus-mode .chat-list-panel{display:none!important}
+.focus-mode{grid-template-columns:minmax(0,1fr)!important}
+.focus-mode .chat-main{min-width:0!important}
+.quick-actions-popover{position:absolute;right:58px;top:74px;z-index:70;width:min(300px,calc(100vw - 24px));padding:8px;background:rgba(16,20,28,.97);border:1px solid var(--hexa-border-strong);border-radius:18px;box-shadow:0 24px 70px rgba(0,0,0,.34);backdrop-filter:blur(20px);display:grid;gap:3px}
+.quick-actions-heading{padding:8px 10px 10px;border-bottom:1px solid var(--hexa-border);margin-bottom:2px}
+.quick-actions-heading strong{display:block;font-size:13px}
+.quick-actions-heading span{display:block;color:var(--hexa-muted);font-size:9px;margin-top:3px}
+.quick-actions-popover button{display:grid;grid-template-columns:28px 1fr;align-items:center;gap:7px;border:0;background:transparent;color:var(--hexa-text);padding:10px;border-radius:10px;text-align:left;font-size:11px}
+.quick-actions-popover button:hover,.quick-actions-popover button.selected{background:rgba(124,92,255,.12);color:#fff}
+.chat-menu-backdrop{position:fixed;inset:0;z-index:55;background:transparent}
+.chat-settings-popover.whatsapp-chat-menu,.quick-actions-popover{z-index:80!important}
+.chat-list-panel{background:linear-gradient(180deg,#0a0e14,#080b10)!important}
+.chat-list-header,.chat-search{background:transparent!important}
+.conversation{margin:3px 7px!important;border-radius:15px!important;transition:background .16s ease,transform .16s ease!important}
+.conversation:hover{background:rgba(255,255,255,.035)!important;transform:translateX(1px)}
+.conversation.active{background:linear-gradient(90deg,rgba(124,92,255,.15),rgba(124,92,255,.055))!important;box-shadow:inset 2px 0 0 var(--hexa-accent)!important}
+.message-composer{min-height:78px!important;padding:12px 14px!important;gap:9px!important;background:rgba(8,11,16,.88)!important;backdrop-filter:blur(20px)!important}
+.message-composer input{height:48px!important;border-radius:17px!important;background:rgba(255,255,255,.045)!important;border-color:rgba(255,255,255,.09)!important;font-size:13px!important}
+.message-composer input:focus{border-color:rgba(124,92,255,.55)!important;box-shadow:0 0 0 4px rgba(124,92,255,.10),inset 0 1px 0 rgba(255,255,255,.04)!important}
+.message-composer .send-button{width:48px!important;height:48px!important;flex:0 0 48px!important;border-radius:16px!important;background:linear-gradient(145deg,var(--hexa-accent),#6f85ff)!important;box-shadow:0 10px 26px rgba(124,92,255,.28)!important}
+@media(max-width:700px){.messages-area{padding:12px!important}.quick-actions-popover{right:10px;top:64px}.chat-header-actions button{width:34px!important;height:34px!important}.message-composer{min-height:70px!important;padding:9px!important}.message-composer input{height:44px!important}.message-composer .send-button{width:44px!important;height:44px!important;flex-basis:44px!important}}
 
 /* HEXA 2026 composer + language settings */
 .message-composer{min-height:72px!important;padding:10px 12px!important;gap:8px!important;background:color-mix(in srgb,var(--hexa-panel) 92%,transparent);backdrop-filter:blur(14px);border-top:1px solid var(--hexa-border-strong)!important}
