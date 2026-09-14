@@ -1305,16 +1305,6 @@ function Sidebar({
                 @{profile?.username || "hexauser"}
               </span>
             </div>
-const savedPassword = localStorage.getItem(
-  `hexa-password-${user.id}`
-);
-
-if (!savedPassword) 
-  setShowHexaPasswordSetup(true);
- else 
-  setShowHexaPasswordLock(true)
-
-
           </div>
         </div>
       </aside>
@@ -5847,7 +5837,6 @@ function AuthenticatedHEXA({ session, onSignOut }) {
     case "channels":page=<ChannelsPage profile={profile}/>;break;
     case "status":page=<StatusPage profile={profile}/>;break;
     case "calls":page=<CallsPage profile={profile}/>;break;
-    case "wallet":page=<WalletPage profile={profile}/>;break;
     case "kora":page=<KoraPage profile={profile}/>;break;
     case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut}/>;break;
     case "projects":page=<WorkspacePlaceholder title="Projects" description="Organize collaborative work." icon="◆"/>;break;
