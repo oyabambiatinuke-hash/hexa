@@ -4061,7 +4061,7 @@ function ChatPage({
 
         {!isSystem && (
           <form
-            className="chat-composer"
+            className={`chat-composer hexa-message-composer ${recording ? "is-recording" : ""}`}
             onSubmit={
               editing
                 ? event => {
@@ -4071,102 +4071,95 @@ function ChatPage({
                 : sendMessage
             }
           >
-
-            <div className="composer-left">
-
-              <button
-                type="button"
-                title="Emoji"
-                onClick={() =>
-                  setEmojiOpen(
-                    value =>
-                      !value
-                  )
-                }
-              >
-                😊
-              </button>
-
-              <button
-                type="button"
-                title="Attachments"
-                onClick={() =>
-                  setAttachmentOpen(
-                    value =>
-                      !value
-                  )
-                }
-              >
-                📎
-              </button>
-
-            </div>
-
-            <input
-              value={
-                message
-              }
-              onChange={event =>
-                saveDraft(
-                  event.target
-                    .value
-                )
-              }
-              placeholder={
-                recording
-                  ? "Recording voice message…"
-                  : "Type a message"
-              }
-              onKeyDown={event => {
-                if (
-                  event.key ===
-                    "Enter" &&
-                  !event.shiftKey
-                ) {
-                  event.preventDefault();
-
-                  if (editing) {
-                    saveEditedMessage();
-                  } else {
-                    sendMessage(
-                      event
-                    );
-                  }
-                }
-              }}
-            />
-
-            <div className="composer-right">
-
-              {!message.trim() &&
-                !attachment ? (
+            <div className="composer-shell">
+              <div className="composer-main-row">
                 <button
                   type="button"
-                  title="Voice message"
-                  onClick={() =>
-                    setRecording(
-                      value =>
-                        !value
-                    )
-                  }
+                  className="composer-icon-btn"
+                  title="Emoji"
+                  aria-label="Open emoji picker"
+                  onClick={() => setEmojiOpen(value => !value)}
                 >
-                  🎙
+                  <span aria-hidden="true">😊</span>
                 </button>
-              ) : (
+
                 <button
-                  type="submit"
-                  title={
-                    editing
-                      ? "Save edit"
-                      : "Send"
-                  }
+                  type="button"
+                  className="composer-icon-btn"
+                  title="Attach"
+                  aria-label="Attach a photo, video, file or audio"
+                  onClick={() => setAttachmentOpen(value => !value)}
                 >
-                  ➤
+                  <span aria-hidden="true">＋</span>
                 </button>
+
+                <textarea
+                  className="composer-textarea"
+                  rows={1}
+                  value={message}
+                  onChange={event => saveDraft(event.target.value)}
+                  placeholder={
+                    recording
+                      ? "Recording voice message…"
+                      : editing
+                        ? "Edit your message…"
+                        : "Type a message"
+                  }
+                  disabled={recording}
+                  onKeyDown={event => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      if (editing) saveEditedMessage();
+                      else sendMessage(event);
+                    }
+                  }}
+                  onInput={event => {
+                    event.currentTarget.style.height = "auto";
+                    event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 140)}px`;
+                  }}
+                />
+
+                <div className="composer-trailing-actions">
+                  {editing ? (
+                    <button
+                      type="submit"
+                      className="composer-send-btn"
+                      title="Save edit"
+                      aria-label="Save edited message"
+                    >
+                      ✓
+                    </button>
+                  ) : message.trim() || attachment ? (
+                    <button
+                      type="submit"
+                      className="composer-send-btn"
+                      title="Send"
+                      aria-label="Send message"
+                    >
+                      ➤
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className={`composer-voice-btn ${recording ? "active" : ""}`}
+                      title={recording ? "Stop recording" : "Record voice message"}
+                      aria-label={recording ? "Stop recording" : "Record voice message"}
+                      onClick={() => setRecording(value => !value)}
+                    >
+                      <span aria-hidden="true">🎙</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {recording && (
+                <div className="composer-recording-bar">
+                  <span className="recording-pulse" aria-hidden="true" />
+                  <strong>Recording voice message</strong>
+                  <span className="recording-hint">Tap 🎙 to stop</span>
+                </div>
               )}
-
             </div>
-
           </form>
         )}
 
@@ -5211,14 +5204,238 @@ function ChannelsPage({ profile }) {
 }
 
 function StatusPage({ profile }) {
-  const[statuses,setStatuses]=useState([]);const[show,setShow]=useState(false);const[viewer,setViewer]=useState(null);const[text,setText]=useState("");const[description,setDescription]=useState("");const[file,setFile]=useState(null);const fileRef=useRef(null);
-  async function load(){const {data}=await supabase.from("statuses").select("*").gt("expires_at",new Date().toISOString()).order("created_at",{ascending:false});setStatuses(data||[])}
-  useEffect(()=>{load()},[]);
-  async function upload(file){const bucket=import.meta.env.VITE_SUPABASE_STORAGE_BUCKET;if(!bucket)throw new Error("Set VITE_SUPABASE_STORAGE_BUCKET for status media uploads.");const path=`${profile.id}/statuses/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g,"_")}`;const {error}=await supabase.storage.from(bucket).upload(path,file,{contentType:file.type});if(error)throw error;return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl}
-  async function create(e){e.preventDefault();if(!text.trim()&&!file)return;let mediaUrl="",mediaType="";try{if(file){mediaUrl=await upload(file.file);mediaType=file.kind}}catch(err){alert(err.message);return}const {error}=await supabase.from("statuses").insert({user_id:profile.id,text:text.trim(),description:description.trim(),media_url:mediaUrl,media_type:mediaType,expires_at:new Date(Date.now()+86400000).toISOString()});if(error)alert(error.message);else{setText("");setDescription("");setFile(null);setShow(false);load()}}
-  function pick(e){const f=e.target.files?.[0];if(f)setFile({file:f,url:URL.createObjectURL(f),kind:f.type.startsWith("video")?"video":"image"})}
-  async function like(s){if(String(s.id).startsWith("local"))return;const {data}=await supabase.from("status_likes").select("status_id").eq("status_id",s.id).eq("user_id",profile.id).maybeSingle();if(data)await supabase.from("status_likes").delete().eq("status_id",s.id).eq("user_id",profile.id);else await supabase.from("status_likes").insert({status_id:s.id,user_id:profile.id});}
-  return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">◌</div><div><h1>Moments</h1><p>Share text, photos and videos that expire after 24 hours.</p></div><button className="hero-primary heading-action" onClick={()=>setShow(true)}>＋ Create Moment</button></div><div className="status-row"><button className="create-status-card" onClick={()=>setShow(true)}><div className="create-status-plus">＋</div><strong>Create Moment</strong><span>Text, photo or video</span></button>{statuses.map(s=><button key={s.id} className="status-card unseen" onClick={()=>setViewer(s)}><div className="status-preview">{s.media_url&&s.media_type==="image"?<img src={s.media_url} alt=""/>:s.media_url&&s.media_type==="video"?<video src={s.media_url}/>:<span>Aa</span>}</div><strong>{s.text||s.description||"Media status"}</strong><span>{new Date(s.created_at).toLocaleString()}</span></button>)}</div>{show&&<div className="modal-backdrop" onClick={()=>setShow(false)}><div className="status-modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><h2>Create Moment</h2><button onClick={()=>setShow(false)}>×</button></div><form onSubmit={create}><textarea className="modal-input modal-textarea" value={text} onChange={e=>setText(e.target.value)} placeholder="What's happening?"/><input className="modal-input" value={description} onChange={e=>setDescription(e.target.value)} placeholder="Caption / description"/><button type="button" className="media-picker" onClick={()=>fileRef.current?.click()}><span>📷</span><div><strong>{file?file.file.name:"Add photo or video"}</strong><small>Camera, gallery or laptop file</small></div></button><input ref={fileRef} hidden type="file" accept="image/*,video/*" capture="environment" onChange={pick}/>{file&&<div className="status-media-preview">{file.kind==="video"?<video controls src={file.url}/>:<img src={file.url} alt="Preview"/>}</div>}<button className="hero-primary">Post Moment</button></form></div></div>}{viewer&&<div className="story-viewer" onClick={()=>setViewer(null)}><button className="story-close" onClick={()=>setViewer(null)}>×</button><div className="story-content" onClick={e=>e.stopPropagation()}>{viewer.media_url&&viewer.media_type==="video"?<video controls autoPlay src={viewer.media_url}/>:viewer.media_url?<img src={viewer.media_url} alt="Status"/>:<div className="story-text">{viewer.text}</div>}<div className="story-caption">{viewer.description||viewer.text}</div><div className="story-actions"><button onClick={()=>like(viewer)}>❤️</button><button>😂</button><button>😮</button></div></div></div>}</section>;
+  const [statuses, setStatuses] = useState([]);
+  const [show, setShow] = useState(false);
+  const [viewer, setViewer] = useState(null);
+  const [text, setText] = useState("");
+  const [description, setDescription] = useState("");
+  const [file, setFile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [posting, setPosting] = useState(false);
+  const [statusError, setStatusError] = useState("");
+  const [shareOpen, setShareOpen] = useState(false);
+  const [reaction, setReaction] = useState("❤️");
+  const [commentText, setCommentText] = useState("");
+  const [comments, setComments] = useState([]);
+  const [counts, setCounts] = useState({});
+  const [liked, setLiked] = useState({});
+  const [viewed, setViewed] = useState({});
+  const [viewList, setViewList] = useState([]);
+  const fileRef = useRef(null);
+
+  async function load() {
+    if (!profile?.id) return;
+    setLoading(true); setStatusError("");
+    try {
+      const { data, error } = await supabase.from("statuses")
+        .select("*")
+        .gt("expires_at", new Date().toISOString())
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      const rows = data || [];
+      setStatuses(rows);
+      if (!rows.length) { setCounts({}); setLiked({}); setViewed({}); return; }
+      const ids = rows.map((x) => x.id);
+      const [likesR, viewsR] = await Promise.all([
+        supabase.from("status_likes").select("status_id,user_id").in("status_id", ids),
+        supabase.from("status_views").select("status_id,viewer_id,viewed_at").in("status_id", ids),
+      ]);
+      const c = {}, l = {}, v = {};
+      (likesR.data || []).forEach((x) => { c[x.status_id] = (c[x.status_id] || 0) + 1; if (String(x.user_id) === String(profile.id)) l[x.status_id] = true; });
+      (viewsR.data || []).forEach((x) => { c[`${x.status_id}:views`] = (c[`${x.status_id}:views`] || 0) + 1; if (String(x.viewer_id) === String(profile.id)) v[x.status_id] = true; });
+      setCounts(c); setLiked(l); setViewed(v);
+    } catch (error) {
+      console.error("hexachi status load:", error);
+      setStatusError(error?.message || "Unable to load statuses.");
+    } finally { setLoading(false); }
+  }
+
+  useEffect(() => { load(); }, [profile?.id]);
+
+  async function openStatus(status) {
+    setViewer(status);
+    setShareOpen(false);
+    setReaction("❤️");
+    if (!status?.id || String(status.user_id) === String(profile.id)) return;
+    try {
+      await supabase.from("status_views").upsert({ status_id: status.id, viewer_id: profile.id, viewed_at: new Date().toISOString() }, { onConflict: "status_id,viewer_id" });
+      setViewed((x) => ({ ...x, [status.id]: true }));
+      setCounts((x) => ({ ...x, [`${status.id}:views`]: (x[`${status.id}:views`] || 0) + (x[status.id + ":counted"] ? 0 : 1), [status.id + ":counted"]: true }));
+    } catch (e) { console.warn("hexachi status view:", e?.message || e); }
+    await loadComments(status.id);
+  }
+
+  async function loadComments(statusId) {
+    if (!statusId) return;
+    const { data, error } = await supabase.from("status_comments").select("id,status_id,user_id,text,created_at").eq("status_id", statusId).order("created_at", { ascending: true });
+    if (error) { console.warn("hexachi status comments:", error.message); return; }
+    const rows = data || [];
+    const ids = [...new Set(rows.map((x) => x.user_id).filter(Boolean))];
+    let profiles = [];
+    if (ids.length) profiles = (await supabase.from("profiles").select("id,username,full_name,avatar_url").in("id", ids)).data || [];
+    const map = Object.fromEntries(profiles.map((x) => [x.id, x]));
+    setComments(rows.map((x) => ({ ...x, profile: map[x.user_id] || null })));
+  }
+
+  async function toggleLike(status) {
+    if (!status?.id) return;
+    try {
+      if (liked[status.id]) {
+        const { error } = await supabase.from("status_likes").delete().eq("status_id", status.id).eq("user_id", profile.id);
+        if (error) throw error;
+        setLiked((x) => ({ ...x, [status.id]: false }));
+        setCounts((x) => ({ ...x, [status.id]: Math.max(0, (x[status.id] || 0) - 1) }));
+      } else {
+        const { error } = await supabase.from("status_likes").insert({ status_id: status.id, user_id: profile.id });
+        if (error) throw error;
+        setLiked((x) => ({ ...x, [status.id]: true }));
+        setCounts((x) => ({ ...x, [status.id]: (x[status.id] || 0) + 1 }));
+      }
+    } catch (error) { setStatusError(error?.message || "Unable to update like."); }
+  }
+
+  async function addComment(e) {
+    e?.preventDefault();
+    const value = commentText.trim();
+    if (!viewer?.id || !value) return;
+    if (viewer.allow_replies === false) { setStatusError("Replies are disabled for this status."); return; }
+    const { data, error } = await supabase.from("status_comments").insert({ status_id: viewer.id, user_id: profile.id, text: value }).select("id,status_id,user_id,text,created_at").single();
+    if (error) { setStatusError(error.message); return; }
+    setComments((x) => [...x, { ...data, profile }]);
+    setCommentText("");
+    setCounts((x) => ({ ...x, [`${viewer.id}:comments`]: (x[`${viewer.id}:comments`] || 0) + 1 }));
+    try {
+      const owner = viewer.user_id;
+      if (String(owner) !== String(profile.id)) await supabase.from("notifications").insert({ user_id: owner, kind: "status_comment", title: "New status comment", body: `${profile.full_name || profile.username || "Someone"} commented on your status.`, data: { status_id: viewer.id, comment_id: data.id } });
+    } catch {}
+    await loadComments(viewer.id);
+  }
+
+  async function uploadStatusMedia(selectedFile) {
+    const bucket = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET;
+    if (!bucket) throw new Error("Set VITE_SUPABASE_STORAGE_BUCKET in Vercel before uploading status media.");
+    const safeName = selectedFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const path = `${profile.id}/statuses/${Date.now()}-${safeName}`;
+    const { error } = await supabase.storage.from(bucket).upload(path, selectedFile, { contentType: selectedFile.type || undefined, upsert: false });
+    if (error) throw error;
+    return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  }
+
+  async function create(e) {
+    e.preventDefault(); if (posting) return;
+    const cleanText = text.trim(), cleanDescription = description.trim();
+    if (!cleanText && !file) { setStatusError("Add text or choose a photo/video."); return; }
+    setPosting(true); setStatusError("");
+    try {
+      let mediaUrl = "", mediaType = "";
+      if (file?.file) { mediaUrl = await uploadStatusMedia(file.file); mediaType = file.kind; }
+      const { data, error } = await supabase.from("statuses").insert({ user_id: profile.id, text: cleanText, description: cleanDescription, media_url: mediaUrl || null, media_type: mediaType || null, expires_at: new Date(Date.now() + 86400000).toISOString(), privacy: "contacts", allow_replies: true, metadata: {} }).select("*").single();
+      if (error) throw error;
+      setText(""); setDescription(""); setFile(null); setShow(false); await load();
+      if (data?.id) setViewer(data);
+    } catch (error) { setStatusError(error?.message || "Unable to post status."); }
+    finally { setPosting(false); }
+  }
+
+  function pick(e) {
+    const selected = e.target.files?.[0]; if (!selected) return;
+    if (!selected.type.startsWith("image/") && !selected.type.startsWith("video/")) { setStatusError("Choose an image or video."); return; }
+    if (selected.size > HEXA_MAX_ATTACHMENT_BYTES) { setStatusError("Status media must be 50 MB or smaller."); return; }
+    setStatusError(""); setFile({ file: selected, url: URL.createObjectURL(selected), kind: selected.type.startsWith("video/") ? "video" : "image" });
+  }
+
+  async function copyMomentLink(status) {
+    const url = `${window.location.origin}/moments/${status.id}`;
+    try { await navigator.clipboard.writeText(url); setStatusError("Moment link copied."); } catch { window.prompt("Copy this Moment link:", url); }
+    setShareOpen(false);
+  }
+
+  async function shareMoment(status) {
+    const url = `${window.location.origin}/moments/${status.id}`;
+    try {
+      if (navigator.share) await navigator.share({ title: "HEXA Moment", text: status.description || status.text || "Check out this Moment", url });
+      else { await navigator.clipboard.writeText(url); setStatusError("Moment link copied."); }
+      try { await supabase.from("status_shares").insert({ status_id: status.id, user_id: profile.id, share_type: "native" }); } catch {}
+    } catch (error) { if (error?.name !== "AbortError") setStatusError(error?.message || "Unable to share Moment."); }
+    setShareOpen(false);
+  }
+
+  async function repostMoment(status) {
+    try {
+      const { error: repostError } = await supabase.from("statuses").insert({
+        user_id: profile.id,
+        text: status.text || "",
+        description: status.description || "",
+        media_url: status.media_url || null,
+        media_type: status.media_type || null,
+        expires_at: new Date(Date.now() + 86400000).toISOString(),
+        privacy: "contacts",
+        allow_replies: true,
+        metadata: { ...(status.metadata || {}), repost_of: status.id, reposted_from_user_id: status.user_id }
+      });
+      if (repostError) throw repostError;
+      try { await supabase.from("status_reposts").upsert({ status_id: status.id, user_id: profile.id }, { onConflict: "status_id,user_id" }); } catch {}
+      setStatusError("Moment reposted to your Moments.");
+      setShareOpen(false);
+      await load();
+    } catch (error) { setStatusError(error?.message || "Unable to repost Moment."); }
+  }
+
+  async function reactToMoment(status, emoji) {
+    if (!status?.id) return;
+    try {
+      const { data: existing } = await supabase.from("status_reactions").select("reaction").eq("status_id", status.id).eq("user_id", profile.id).maybeSingle();
+      if (existing?.reaction === emoji) {
+        await supabase.from("status_reactions").delete().eq("status_id", status.id).eq("user_id", profile.id);
+        setReaction("❤️");
+      } else {
+        await supabase.from("status_reactions").upsert({ status_id: status.id, user_id: profile.id, reaction: emoji }, { onConflict: "status_id,user_id" });
+        setReaction(emoji);
+      }
+      await load();
+    } catch (error) { setStatusError(error?.message || "Unable to update reaction."); }
+  }
+
+  function nextStatus(direction) {
+    if (!viewer) return;
+    const i = statuses.findIndex((x) => x.id === viewer.id);
+    const next = statuses[i + direction];
+    if (next) openStatus(next);
+  }
+
+  useEffect(() => {
+    if (!viewer?.id) return;
+    const channel = supabase.channel(`hexa-status-${viewer.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "status_comments", filter: `status_id=eq.${viewer.id}` }, () => loadComments(viewer.id))
+      .on("postgres_changes", { event: "*", schema: "public", table: "status_likes", filter: `status_id=eq.${viewer.id}` }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [viewer?.id]);
+
+  const likeCount = viewer ? counts[viewer.id] || 0 : 0;
+  const viewCount = viewer ? counts[`${viewer.id}:views`] || 0 : 0;
+  const commentCount = viewer ? counts[`${viewer.id}:comments`] || comments.length : 0;
+
+  return <section className="workspace-page status-workspace">
+    <div className="page-heading"><div className="page-heading-icon">◌</div><div><h1>Moments</h1><p>Facebook-style Stories that expire after 24 hours. Like, react, comment, share and repost.</p></div><button className="hero-primary heading-action" onClick={() => setShow(true)}>＋ Create Moment</button></div>
+    {statusError && <div className="settings-card status-error"><strong>Status</strong><p>{statusError}</p><button onClick={() => setStatusError("")}>Dismiss</button></div>}
+    <div className="status-row status-scroll-row">
+      <button className="create-status-card" onClick={() => setShow(true)}><div className="create-status-plus">＋</div><strong>Create Moment</strong><span>Text, photo or video</span></button>
+      {loading ? <div className="coming-card"><h2>Loading statuses…</h2></div> : statuses.map((s) => <button key={s.id} className={`status-card moments-story-card ${viewed[s.id] ? "seen" : "unseen"}`} onClick={() => openStatus(s)}><div className="status-preview">{s.media_url && s.media_type === "image" ? <img src={s.media_url} alt=""/> : s.media_url && s.media_type === "video" ? <video src={s.media_url} muted playsInline/> : <span>Aa</span>}</div><strong>{s.text || s.description || "Media status"}</strong><span>{counts[s.id] || 0} ❤️ · {counts[`${s.id}:views`] || 0} 👁</span></button>)}
+    </div>
+    {show && <div className="modal-backdrop" onClick={() => !posting && setShow(false)}><div className="status-modal" onClick={(e) => e.stopPropagation()}><div className="modal-header"><div><h2>Create Moment</h2><p>Share something with your contacts.</p></div><button type="button" onClick={() => !posting && setShow(false)}>×</button></div><form onSubmit={create}><textarea className="modal-input modal-textarea" value={text} onChange={(e) => setText(e.target.value)} placeholder="What's happening?" maxLength={HEXA_MAX_MESSAGE_LENGTH}/><input className="modal-input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Caption / description" maxLength={1000}/><button type="button" className="media-picker" onClick={() => fileRef.current?.click()} disabled={posting}><span>📷</span><div><strong>{file ? file.file.name : "Add photo or video"}</strong><small>Camera, gallery or laptop file</small></div></button><input ref={fileRef} hidden type="file" accept="image/*,video/*" capture="environment" onChange={pick}/>{file && <div className="status-media-preview">{file.kind === "video" ? <video controls src={file.url}/> : <img src={file.url} alt="Preview"/>}</div>}<button className="hero-primary" type="submit" disabled={posting}>{posting ? "Posting…" : "Post Moment"}</button></form></div></div>}
+    {viewer && <div className="story-viewer" onClick={() => setViewer(null)}><button className="story-close" onClick={() => setViewer(null)}>×</button><button className="story-nav story-prev" onClick={(e) => {e.stopPropagation();nextStatus(-1)}}>‹</button><div className="story-content" onClick={(e) => e.stopPropagation()}>{viewer.media_url && viewer.media_type === "video" ? <video controls autoPlay playsInline src={viewer.media_url}/> : viewer.media_url ? <img src={viewer.media_url} alt="Status"/> : <div className="story-text">{viewer.text}</div>}<div className="story-caption"><strong>{viewer.description || viewer.text || "Status"}</strong><span>{new Date(viewer.created_at).toLocaleString()}</span></div><div className="story-stats"><span>❤️ {likeCount}</span><span>👁 {viewCount}</span><span>💬 {commentCount}</span></div><div className="story-actions moments-story-actions">
+        <button onClick={() => toggleLike(viewer)}>{liked[viewer.id] ? "❤️" : "♡"}</button>
+        {['👍','😂','😮','😢','😡'].map((emoji) => <button key={emoji} className={reaction === emoji ? "active" : ""} onClick={() => reactToMoment(viewer, emoji)}>{emoji}</button>)}
+        <button onClick={() => loadComments(viewer.id)}>💬</button>
+        <button onClick={() => setShareOpen((x) => !x)}>↗</button>
+      </div>
+      {shareOpen && <><div className="moments-share-menu" onClick={(e) => e.stopPropagation()}>
+        <button onClick={() => shareMoment(viewer)}>↗ Share Moment</button>
+        <button onClick={() => copyMomentLink(viewer)}>🔗 Copy link</button>
+        <button onClick={() => repostMoment(viewer)}>↻ Repost</button>
+      </div><div className="status-comments"><strong>Comments</strong><div className="status-comments-list">{comments.map((c) => <div className="status-comment" key={c.id}><Avatar src={c.profile?.avatar_url} name={c.profile?.full_name || c.profile?.username || "HEXA User"} size={32} /><div><b>{c.profile?.full_name || c.profile?.username || "HEXA User"}</b><p>{c.text}</p><small>{new Date(c.created_at).toLocaleString()}</small></div></div>)}</div>{viewer.allow_replies !== false && <form className="status-comment-form" onSubmit={addComment}><input value={commentText} onChange={(e) => setCommentText(e.target.value)} placeholder="Write a comment…" maxLength={1000} /><button type="submit">Send</button></form>}</div></>}</div><button className="story-nav story-next" onClick={(e) => {e.stopPropagation();nextStatus(1)}}>›</button></div>}
+  </section>;
 }
 
 function KoraPage({ profile }) {
@@ -8395,8 +8612,41 @@ const HEXA_WHITE_THEME_CSS = `
 `;
 
 
+
+const HEXA_MOMENTS_CSS = `
+/* Facebook-style Moments polish */
+.moments-story-card{position:relative}.moments-story-card .status-preview{overflow:hidden}.moments-story-card .status-preview img,.moments-story-card .status-preview video{width:100%;height:100%;object-fit:cover}.moments-story-actions{position:static!important;display:flex!important;gap:6px!important;flex-wrap:wrap!important}.moments-story-actions button{min-width:38px}.moments-story-actions button.active{background:#fff!important;color:#111!important}.moments-share-menu{position:absolute;right:14px;bottom:58px;z-index:50;width:220px;background:#fff;color:#111;border-radius:14px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.35)}.moments-share-menu button{width:100%;display:block;text-align:left;padding:10px;border:0;background:transparent;color:#111;border-radius:9px}.moments-share-menu button:hover{background:#f3f4f6}.status-comments{background:rgba(0,0,0,.25);border-radius:12px}.status-comment-form input{outline:none}.status-comment-form button{min-width:68px}.moment-share-inline{margin-left:auto}.status-card{transition:transform .18s ease,box-shadow .18s ease}.status-card:hover{transform:translateY(-2px)}
+@media(max-width:700px){.moments-share-menu{right:8px;bottom:54px}.moments-story-actions{gap:4px!important}.moments-story-actions button{min-width:34px;padding:7px}.story-stats{gap:10px;font-size:11px}}
+`;
 const HEXA_KORA_CSS = `
 .hexa-inline-warning{margin:0 0 14px;padding:12px 14px;border:1px solid rgba(245,158,11,.35);background:rgba(245,158,11,.08);border-radius:12px;color:var(--hexa-text);font-size:12px}.kora-page-card{height:min(680px,calc(100vh - 180px));display:flex;flex-direction:column;border:1px solid var(--hexa-border);background:var(--hexa-panel);border-radius:22px;overflow:hidden;box-shadow:var(--hexa-shadow)}.kora-page-messages{flex:1;overflow:auto;padding:22px}.kora-empty{text-align:center;max-width:440px;margin:auto;color:var(--hexa-muted)}.kora-empty>div{width:56px;height:56px;display:grid;place-items:center;margin:0 auto 12px;border-radius:18px;background:var(--hexa-accent);color:#fff;font-size:26px}.kora-empty h2{margin:0;color:var(--hexa-text)}.kora-message{display:flex;gap:10px;align-items:flex-start;max-width:min(760px,90%);margin:0 0 14px}.kora-message>span{flex:0 0 auto;font-size:11px;font-weight:800;color:var(--hexa-muted);padding-top:8px}.kora-message p{margin:0;padding:11px 14px;border-radius:16px;background:var(--hexa-panel-2);color:var(--hexa-text);line-height:1.55;white-space:pre-wrap}.kora-message.user{margin-left:auto;justify-content:flex-end}.kora-message.user>span{order:2}.kora-message.user p{background:var(--hexa-accent);color:#fff}.kora-composer{display:flex;gap:10px;padding:14px;border-top:1px solid var(--hexa-border);background:var(--hexa-panel)}.kora-composer input{flex:1;min-width:0;height:46px;padding:0 15px;border:1px solid var(--hexa-border);border-radius:14px;background:var(--hexa-panel-2);color:var(--hexa-text);outline:none}.kora-composer input:focus{border-color:var(--hexa-accent);box-shadow:0 0 0 3px rgba(124,92,255,.10)}@media(max-width:700px){.kora-page-card{height:calc(100vh - 150px);border-radius:16px}.kora-page-messages{padding:14px}.kora-message{max-width:94%}}
 `;
-const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS + HEXA_KORA_CSS;
+
+
+const HEXA_COMPOSER_CSS = `
+.hexa-message-composer{width:100%;padding:10px 14px 14px!important;background:var(--hexa-panel)!important;border-top:1px solid var(--hexa-border)!important}
+.composer-shell{width:min(100%,980px);margin:0 auto;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);border-radius:24px;box-shadow:0 8px 30px rgba(0,0,0,.06);overflow:hidden}
+.composer-main-row{display:flex;align-items:flex-end;gap:8px;min-height:58px;padding:7px 8px}
+.composer-icon-btn,.composer-voice-btn,.composer-send-btn{flex:0 0 42px;width:42px;height:42px;border:0;border-radius:50%;display:grid;place-items:center;cursor:pointer;transition:transform .15s ease,background .15s ease,box-shadow .15s ease;color:var(--hexa-text);background:transparent;font-size:20px}
+.composer-icon-btn:hover{background:rgba(127,127,127,.12);transform:translateY(-1px)}
+.composer-textarea{flex:1;min-width:0;min-height:42px;max-height:140px;resize:none;border:0;outline:none;background:transparent;color:var(--hexa-text);font:inherit;font-size:15px;line-height:1.45;padding:10px 6px 8px}
+.composer-textarea::placeholder{color:var(--hexa-muted)}
+.composer-textarea:disabled{opacity:.75}
+.composer-trailing-actions{display:flex;align-items:center;gap:6px;padding-bottom:1px}
+.composer-send-btn{background:var(--hexa-accent);color:#fff;font-size:19px;font-weight:900;box-shadow:0 8px 20px rgba(0,0,0,.14)}
+.composer-send-btn:hover{transform:scale(1.04)}
+.composer-voice-btn{background:var(--hexa-text);color:var(--hexa-panel);font-size:19px}
+.composer-voice-btn:hover{transform:scale(1.04)}
+.composer-voice-btn.active{background:#d11;color:#fff;box-shadow:0 0 0 5px rgba(209,17,17,.13)}
+.composer-recording-bar{display:flex;align-items:center;gap:9px;padding:8px 15px 10px;border-top:1px solid var(--hexa-border);font-size:12px;color:var(--hexa-text)}
+.composer-recording-bar .recording-hint{margin-left:auto;color:var(--hexa-muted)}
+.recording-pulse{width:9px;height:9px;border-radius:50%;background:#d11;box-shadow:0 0 0 0 rgba(209,17,17,.5);animation:hexaRecordingPulse 1.35s infinite}
+@keyframes hexaRecordingPulse{0%{box-shadow:0 0 0 0 rgba(209,17,17,.5)}70%{box-shadow:0 0 0 8px rgba(209,17,17,0)}100%{box-shadow:0 0 0 0 rgba(209,17,17,0)}}
+[data-hexa-theme="white"] .hexa-message-composer{background:#fff!important}
+[data-hexa-theme="white"] .composer-shell{background:#fff;border-color:rgba(0,0,0,.14);box-shadow:0 10px 30px rgba(0,0,0,.07)}
+[data-hexa-theme="white"] .composer-textarea{color:#111}
+@media(max-width:700px){.hexa-message-composer{padding:7px 8px 9px!important}.composer-shell{border-radius:20px}.composer-main-row{gap:5px;padding:6px}.composer-icon-btn,.composer-voice-btn,.composer-send-btn{flex-basis:38px;width:38px;height:38px}.composer-textarea{font-size:14px;padding-left:4px;padding-right:4px}.composer-recording-bar{font-size:11px}.composer-recording-bar .recording-hint{display:none}}
+`;
+
+const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS + HEXA_MOMENTS_CSS + HEXA_KORA_CSS + HEXA_COMPOSER_CSS;
 
