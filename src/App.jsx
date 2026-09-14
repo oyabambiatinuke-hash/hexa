@@ -1253,352 +1253,240 @@ function HexaApp({
      ROBUST MESSAGE LOADER
      ======================================================= */
 
-  const loadMessages =
-    useCallback(
-      async (
-        conversationId
-      ) => {
-        if (
-          !conversationId ||
-          !userId
-        ) {
-          setMessages([]);
-          return;
+  async function loadMessages(conversation) {
+  if (!conversation?.id) {
+    setMessages([]);
+    return;
+  }
+
+  if (conversation.id === "self" || conversation.id === "kora") {
+    setMessages([]);
+    return;
+  }
+
+  setLoading(true);
+
+  let conversationId =
+    conversation.realConversationId || conversation.id;
+
+  try {
+    // Resolve the real HEXA system-group conversation UUID
+    if (conversation.id === "hexa-system-group") {
+      const { data: systemConversation, error: systemError } =
+        await supabase
+          .from("conversations")
+          .select("id,name,type,owner_id,created_by,avatar_url,theme")
+          .eq("name", "THE HEXA GROUP")
+          .eq("type", "system_group")
+          .limit(1)
+          .maybeSingle();
+
+      if (systemError) throw systemError;
+
+      if (!systemConversation?.id) {
+        setMessages([]);
+        return;
+      }
+
+      conversationId = systemConversation.id;
+
+      const { data: membership } = await supabase
+        .from("conversation_members")
+        .select("user_id,is_admin")
+        .eq("conversation_id", conversationId)
+        .eq("user_id", profile.id)
+        .maybeSingle();
+
+      setSelected((previous) =>
+        previous?.id === "hexa-system-group"
+          ? {
+              ...previous,
+              ...systemConversation,
+              id: "hexa-system-group",
+              realConversationId: conversationId,
+              is_admin: Boolean(membership?.is_admin),
+            }
+          : previous
+      );
+    }
+
+    // IMPORTANT:
+    // Load the messages table by itself.
+    // Do NOT use nested relationships here.
+    const { data: rows, error } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("conversation_id", conversationId)
+      .is("deleted_at", null)
+      .order("created_at", {
+        ascending: true,
+      });
+
+    if (error) {
+      console.error("HEXA load messages error:", error);
+      throw error;
+    }
+
+    let visibleMessages = rows || [];
+
+    // Load reactions separately.
+    try {
+      const ids = visibleMessages
+        .map((row) => row.id)
+        .filter(Boolean);
+
+      if (ids.length) {
+        const { data: reactions } = await supabase
+          .from("message_reactions")
+          .select("*")
+          .in("message_id", ids);
+
+        const reactionsByMessage = {};
+
+        for (const reaction of reactions || []) {
+          if (!reactionsByMessage[reaction.message_id]) {
+            reactionsByMessage[reaction.message_id] = [];
+          }
+
+          reactionsByMessage[reaction.message_id].push(reaction);
         }
 
-        try {
-          const {
-            data: messageRows,
-            error:
-              messageError,
-          } =
-            await supabase
-              .from(
-                "messages"
-              )
-              .select("*")
-              .eq(
-                "conversation_id",
-                conversationId
-              )
-              .order(
-                "created_at",
-                {
-                  ascending:
-                    true,
-                }
-              );
+        visibleMessages = visibleMessages.map((row) => ({
+          ...row,
+          message_reactions:
+            reactionsByMessage[row.id] || [],
+        }));
+      }
+    } catch (reactionError) {
+      console.warn(
+        "HEXA reactions could not be loaded:",
+        reactionError
+      );
+    }
 
-          if (messageError) {
-            console.error(
-              "HEXA message load:",
-              messageError
-            );
+    // Load attachments separately.
+    try {
+      const ids = visibleMessages
+        .map((row) => row.id)
+        .filter(Boolean);
 
-            flash(
-              `Could not load messages: ${messageError.message}`
-            );
+      if (ids.length) {
+        const { data: attachments } = await supabase
+          .from("message_attachments")
+          .select("*")
+          .in("message_id", ids);
 
-            setMessages([]);
-            return;
+        const attachmentsByMessage = {};
+
+        for (const attachmentRow of attachments || []) {
+          if (!attachmentsByMessage[attachmentRow.message_id]) {
+            attachmentsByMessage[attachmentRow.message_id] = [];
           }
 
-          const rows =
-            messageRows || [];
-
-          if (!rows.length) {
-            setMessages([]);
-            return;
-          }
-
-          const senderIds = [
-            ...new Set(
-              rows
-                .map(
-                  (message) =>
-                    message.sender_id
-                )
-                .filter(Boolean)
-            ),
-          ];
-
-          let profileMap =
-            {};
-
-          if (
-            senderIds.length
-          ) {
-            const {
-              data:
-                senderProfiles,
-            } =
-              await supabase
-                .from(
-                  "profiles"
-                )
-                .select(
-                  "id,username,full_name,display_name,avatar_url,about"
-                )
-                .in(
-                  "id",
-                  senderIds
-                );
-
-            profileMap =
-              Object.fromEntries(
-                (
-                  senderProfiles ||
-                  []
-                ).map(
-                  (item) => [
-                    item.id,
-                    item,
-                  ]
-                )
-              );
-          }
-
-          const messageIds =
-            rows.map(
-              (message) =>
-                message.id
-            );
-
-          let attachmentMap =
-            {};
-
-          const {
-            data:
-              attachments,
-          } =
-            await supabase
-              .from(
-                "message_attachments"
-              )
-              .select("*")
-              .in(
-                "message_id",
-                messageIds
-              );
-
-          for (
-            const attachment of
-              attachments ||
-              []
-          ) {
-            if (
-              !attachmentMap[
-                attachment.message_id
-              ]
-            ) {
-              attachmentMap[
-                attachment.message_id
-              ] = [];
-            }
-
-            attachmentMap[
-              attachment.message_id
-            ].push(
-              attachment
-            );
-          }
-
-          let reactionMap =
-            {};
-
-          const {
-            data:
-              reactions,
-          } =
-            await supabase
-              .from(
-                "message_reactions"
-              )
-              .select(
-                "message_id,user_id,reaction,created_at"
-              )
-              .in(
-                "message_id",
-                messageIds
-              );
-
-          for (
-            const reaction of
-              reactions ||
-              []
-          ) {
-            if (
-              !reactionMap[
-                reaction.message_id
-              ]
-            ) {
-              reactionMap[
-                reaction.message_id
-              ] = [];
-            }
-
-            reactionMap[
-              reaction.message_id
-            ].push(
-              reaction
-            );
-          }
-
-          const replyIds = [
-            ...new Set(
-              rows
-                .map(
-                  (message) =>
-                    message.reply_to_id
-                )
-                .filter(Boolean)
-            ),
-          ];
-
-          let replyMap =
-            {};
-
-          if (
-            replyIds.length
-          ) {
-            const {
-              data:
-                replies,
-            } =
-              await supabase
-                .from(
-                  "messages"
-                )
-                .select("*")
-                .in(
-                  "id",
-                  replyIds
-                );
-
-            for (
-              const reply of
-                replies ||
-                []
-            ) {
-              replyMap[
-                reply.id
-              ] = {
-                ...reply,
-                sender:
-                  profileMap[
-                    reply.sender_id
-                  ] ||
-                  null,
-                attachments:
-                  attachmentMap[
-                    reply.id
-                  ] ||
-                  [],
-                reactions:
-                  reactionMap[
-                    reply.id
-                  ] ||
-                  [],
-              };
-            }
-          }
-
-          const complete =
-            rows.map(
-              (message) => ({
-                ...message,
-                sender:
-                  profileMap[
-                    message.sender_id
-                  ] ||
-                  null,
-                attachments:
-                  attachmentMap[
-                    message.id
-                  ] ||
-                  [],
-                reactions:
-                  reactionMap[
-                    message.id
-                  ] ||
-                  [],
-                reply_to:
-                  message.reply_to_id
-                    ? replyMap[
-                        message.reply_to_id
-                      ] ||
-                      null
-                    : null,
-              })
-            );
-
-          setMessages(
-            complete
-          );
-
-          const unread =
-            complete.filter(
-              (message) =>
-                message.sender_id !==
-                userId
-            );
-
-          if (
-            unread.length
-          ) {
-            await Promise.allSettled(
-              unread.map(
-                (message) =>
-                  supabase
-                    .from(
-                      "message_reads"
-                    )
-                    .upsert({
-                      message_id:
-                        message.id,
-                      user_id:
-                        userId,
-                      read_at:
-                        now(),
-                    })
-              )
-            );
-
-            await supabase
-              .from(
-                "messages"
-              )
-              .update({
-                read_at:
-                  now(),
-                status:
-                  "read",
-              })
-              .in(
-                "id",
-                unread.map(
-                  (message) =>
-                    message.id
-                )
-              );
-          }
-        } catch (error) {
-          console.error(
-            "HEXA message loader:",
-            error
-          );
-
-          setMessages([]);
-
-          flash(
-            error?.message ||
-              "Could not load messages."
+          attachmentsByMessage[attachmentRow.message_id].push(
+            attachmentRow
           );
         }
-      },
-      [userId, flash]
+
+        visibleMessages = visibleMessages.map((row) => ({
+          ...row,
+          message_attachments:
+            attachmentsByMessage[row.id] || [],
+        }));
+      }
+    } catch (attachmentError) {
+      console.warn(
+        "HEXA attachments could not be loaded:",
+        attachmentError
+      );
+    }
+
+    // Load per-user message actions separately.
+    try {
+      const ids = visibleMessages
+        .map((row) => row.id)
+        .filter(Boolean);
+
+      if (ids.length) {
+        const { data: actions } = await supabase
+          .from("message_user_actions")
+          .select("*")
+          .in("message_id", ids)
+          .eq("user_id", profile.id);
+
+        const actionsByMessage = {};
+
+        for (const action of actions || []) {
+          actionsByMessage[action.message_id] = action;
+        }
+
+        visibleMessages = visibleMessages
+          .filter((row) => {
+            const action =
+              actionsByMessage[row.id];
+
+            return !action?.deleted_for_me;
+          })
+          .map((row) => ({
+            ...row,
+            message_user_actions:
+              actionsByMessage[row.id]
+                ? [actionsByMessage[row.id]]
+                : [],
+          }));
+
+        setStarred(
+          (actions || [])
+            .filter((action) => action.starred)
+            .map((action) => String(action.message_id))
+        );
+
+        setPinned(
+          (actions || [])
+            .filter((action) => action.pinned)
+            .map((action) => String(action.message_id))
+        );
+      }
+    } catch (actionError) {
+      console.warn(
+        "HEXA message actions could not be loaded:",
+        actionError
+      );
+    }
+
+    setMessages(visibleMessages);
+
+    // Mark incoming messages delivered/read.
+    const incomingIds = visibleMessages
+      .filter(
+        (row) =>
+          String(row.sender_id) !== String(profile.id) &&
+          row.id
+      )
+      .map((row) => row.id);
+
+    if (incomingIds.length) {
+      Promise.allSettled([
+        supabase.rpc("hexa_mark_delivered", {
+          p_message_ids: incomingIds,
+        }),
+        supabase.rpc("hexa_mark_read", {
+          p_message_ids: incomingIds,
+        }),
+      ]).catch(() => {});
+    }
+  } catch (error) {
+    console.error(
+      "HEXA message loading failed:",
+      error
     );
 
+    // Do NOT destroy the currently displayed messages
+    // just because an optional relationship failed.
+  } finally {
+    setLoading(false);
+  }
+}
   /* =======================================================
      COMMUNITIES
      ======================================================= */
