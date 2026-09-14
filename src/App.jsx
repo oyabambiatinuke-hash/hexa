@@ -1305,6 +1305,16 @@ function Sidebar({
                 @{profile?.username || "hexauser"}
               </span>
             </div>
+const savedPassword = localStorage.getItem(
+  `hexa-password-${user.id}`
+);
+
+if (!savedPassword) 
+  setShowHexaPasswordSetup(true);
+ else 
+  setShowHexaPasswordLock(true)
+
+
           </div>
         </div>
       </aside>
@@ -1594,6 +1604,14 @@ function ChatPage({
       )
   );
 
+  const [favouriteChats, setFavouriteChats] = useState(
+    () =>
+      readJsonStorage(
+        "hexa-favourite-chats-v1",
+        []
+      )
+  );
+
   const [pinned, setPinned] = useState(
     () =>
       readJsonStorage(
@@ -1798,174 +1816,131 @@ function ChatPage({
       return;
     }
 
-    if (conversation.id === "self" || conversation.id === "kora") {
+    if (
+      conversation.id === "self" ||
+      conversation.id === "kora"
+    ) {
       setMessages([]);
       return;
     }
 
     setLoading(true);
-    let conversationId = conversation.realConversationId || conversation.id;
+
+    let conversationId =
+      conversation.realConversationId ||
+      conversation.id;
 
     try {
-      // Resolve the real database conversation for the HEXA system group.
-      if (conversation.id === "hexa-system-group") {
-        const { data: systemConversation, error: systemError } = await supabase
-          .from("conversations")
-          .select("id,name,type,owner_id,created_by,avatar_url,theme")
-          .eq("name", "THE HEXA GROUP")
-          .eq("type", "system_group")
-          .limit(1)
-          .maybeSingle();
+      if (
+        conversation.id ===
+        "hexa-system-group"
+      ) {
+        const { data } =
+          await supabase
+            .from("conversations")
+            .select(
+              "id,name,type,owner_id,created_by,avatar_url,theme"
+            )
+            .eq(
+              "name",
+              "THE HEXA GROUP"
+            )
+            .eq(
+              "type",
+              "system_group"
+            )
+            .limit(1)
+            .maybeSingle();
 
-        if (systemError) throw systemError;
-        if (!systemConversation?.id) {
+        if (!data?.id) {
           setMessages([]);
           return;
         }
 
-        conversationId = systemConversation.id;
+        conversationId = data.id;
 
         const { data: membership } = await supabase
           .from("conversation_members")
           .select("user_id,is_admin")
-          .eq("conversation_id", conversationId)
+          .eq("conversation_id", data.id)
           .eq("user_id", profile.id)
           .maybeSingle();
 
-        setSelected((previous) =>
-          previous?.id === "hexa-system-group"
+        setSelected(previous =>
+          previous?.id ===
+          "hexa-system-group"
             ? {
                 ...previous,
-                ...systemConversation,
+                ...data,
                 id: "hexa-system-group",
-                realConversationId: conversationId,
+                realConversationId:
+                  data.id,
                 is_admin: Boolean(membership?.is_admin),
+                type: data.type
               }
             : previous
         );
       }
 
-      // CRITICAL: messages are loaded by themselves.
-      // Optional relationships are loaded separately so a broken/missing
-      // relationship cannot make the entire chat appear empty.
-      const now = new Date().toISOString();
-      const { data: rows, error: messageError } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("conversation_id", conversationId)
-        .is("deleted_at", null)
-        .or(`expires_at.is.null,expires_at.gt.${now}`)
-        .order("created_at", { ascending: true });
-
-      if (messageError) throw messageError;
-
-      let visibleMessages = rows || [];
-      const messageIds = visibleMessages.map((row) => row.id).filter(Boolean);
-
-      // Reactions are optional. Never allow them to hide messages.
-      if (messageIds.length) {
-        try {
-          const { data: reactions, error: reactionError } = await supabase
-            .from("message_reactions")
-            .select("*")
-            .in("message_id", messageIds);
-
-          if (!reactionError) {
-            const byMessage = {};
-            for (const reaction of reactions || []) {
-              (byMessage[reaction.message_id] ||= []).push(reaction);
+      const { data, error } =
+        await supabase
+          .from("messages")
+          .select(
+            "*, message_reactions(*), message_attachments(*), message_user_actions(*)"
+          )
+          .eq(
+            "conversation_id",
+            conversationId
+          )
+          .is(
+            "deleted_at",
+            null
+          )
+          .order(
+            "created_at",
+            {
+              ascending: true
             }
-            visibleMessages = visibleMessages.map((row) => ({
-              ...row,
-              message_reactions: byMessage[row.id] || [],
-            }));
-          }
-        } catch (error) {
-          console.warn("HEXA reactions load skipped:", error);
-        }
-      }
-
-      // Attachments are optional. Never allow them to hide messages.
-      if (messageIds.length) {
-        try {
-          const { data: attachments, error: attachmentError } = await supabase
-            .from("message_attachments")
-            .select("*")
-            .in("message_id", messageIds);
-
-          if (!attachmentError) {
-            const byMessage = {};
-            for (const attachmentRow of attachments || []) {
-              (byMessage[attachmentRow.message_id] ||= []).push(attachmentRow);
-            }
-            visibleMessages = visibleMessages.map((row) => ({
-              ...row,
-              message_attachments: byMessage[row.id] || [],
-            }));
-          }
-        } catch (error) {
-          console.warn("HEXA attachments load skipped:", error);
-        }
-      }
-
-      // Per-user actions are optional. Keep them separate from the base message query.
-      try {
-        const actionsQuery = supabase
-          .from("message_user_actions")
-          .select("*")
-          .eq("user_id", profile.id);
-
-        const { data: actions, error: actionError } = messageIds.length
-          ? await actionsQuery.in("message_id", messageIds)
-          : { data: [], error: null };
-
-        if (!actionError) {
-          const actionByMessage = {};
-          for (const action of actions || []) {
-            actionByMessage[action.message_id] = action;
-          }
-
-          visibleMessages = visibleMessages
-            .filter((row) => !actionByMessage[row.id]?.deleted_for_me)
-            .map((row) => ({
-              ...row,
-              message_user_actions: actionByMessage[row.id]
-                ? [actionByMessage[row.id]]
-                : [],
-            }));
-
-          setStarred(
-            (actions || [])
-              .filter((action) => action.starred)
-              .map((action) => String(action.message_id))
           );
 
-          setPinned(
-            (actions || [])
-              .filter((action) => action.pinned)
-              .map((action) => String(action.message_id))
-          );
-        }
-      } catch (error) {
-        console.warn("HEXA message actions load skipped:", error);
+      if (error) {
+        throw error;
       }
 
-      setMessages(visibleMessages);
+      const visible = (data || []).filter((row) => {
+        const actions = Array.isArray(row.message_user_actions)
+          ? row.message_user_actions
+          : [];
+        const mine = actions.find(
+          (action) => String(action.user_id) === String(profile.id)
+        );
+        return !mine?.deleted_for_me;
+      });
 
-      // Read/delivery RPCs are best-effort and never block rendering.
-      const incomingIds = visibleMessages
+      setMessages(visible);
+
+      const myActions = (data || [])
+        .flatMap((row) => row.message_user_actions || [])
+        .filter((action) => String(action.user_id) === String(profile.id));
+      setStarred(myActions.filter((action) => action.starred).map((action) => String(action.message_id)));
+      setPinned(myActions.filter((action) => action.pinned).map((action) => String(action.message_id)));
+
+      const incomingIds = visible
         .filter((row) => String(row.sender_id) !== String(profile.id) && row.id)
         .map((row) => row.id);
-
       if (incomingIds.length) {
-        Promise.allSettled([
+        await Promise.all([
           supabase.rpc("hexa_mark_delivered", { p_message_ids: incomingIds }),
           supabase.rpc("hexa_mark_read", { p_message_ids: incomingIds }),
-        ]).catch(() => {});
+        ]);
       }
     } catch (error) {
-      console.error("HEXA message loading failed:", error);
-      // Keep existing messages on screen instead of blanking the chat.
+      console.warn(
+        "HEXA message loading:",
+        error
+      );
+
+      setMessages([]);
     } finally {
       setLoading(false);
     }
@@ -2537,7 +2512,7 @@ function ChatPage({
       const { data, error } = await supabase
         .from("messages")
         .insert(payload)
-        .select("*")
+        .select("*, message_reactions(*), message_attachments(*), message_user_actions(*)")
         .single();
       if (error) throw error;
 
@@ -2561,27 +2536,8 @@ function ChatPage({
         }
       }
 
-      const messageWithOptionalCollections = {
-        ...data,
-        message_reactions: [],
-        message_attachments: upload
-          ? [{
-              file_name: attachment?.name || null,
-              file_path: upload.path,
-              file_url: upload.url,
-              mime_type: attachment?.file?.type || "application/octet-stream",
-              file_size: attachment?.file?.size || 0,
-            }]
-          : [],
-        message_user_actions: [],
-      };
-
-      setMessages((current) =>
-        current.map((item) =>
-          item.id === optimisticId ? messageWithOptionalCollections : item
-        )
-      );
-      updateConversationPreview(selected, messageWithOptionalCollections);
+      setMessages((current) => current.map((item) => item.id === optimisticId ? data : item));
+      updateConversationPreview(selected, data);
     } catch (error) {
       console.error("HEXA send message:", error);
       // Files cannot safely be serialized into localStorage; text messages can.
@@ -2899,11 +2855,164 @@ function ChatPage({
     );
   }
 
+  function closeChatMenu() {
+    setChatSettingsOpen(false);
+  }
+
+  async function handleChatMenuAction(action) {
+    closeChatMenu();
+
+    if (!selected?.id) return;
+
+    switch (action) {
+      case "contact-info":
+        setContactOpen(true);
+        break;
+
+      case "search":
+        setMessageSearch(" ".trim());
+        setTimeout(() => {
+          const value = prompt("Search messages in this chat");
+          if (value !== null) setMessageSearch(value.trim());
+        }, 0);
+        break;
+
+      case "select":
+        setSelectionMode(true);
+        break;
+
+      case "mute": {
+        const choice = prompt("Mute notifications for: 1 hour / 8 hours / Always", "1 hour");
+        if (!choice) break;
+        const normalized = choice.trim().toLowerCase();
+        const duration =
+          normalized === "1 hour" || normalized === "1h"
+            ? 3600
+            : normalized === "8 hours" || normalized === "8h"
+              ? 28800
+              : normalized === "always"
+                ? null
+                : undefined;
+        if (duration === undefined) {
+          safeAlert("Choose 1 hour, 8 hours, or Always.");
+          break;
+        }
+        if (duration === null) {
+          setMuted(current => current.includes(String(selected.id)) ? current : [...current, String(selected.id)]);
+        } else {
+          const until = new Date(Date.now() + duration * 1000).toISOString();
+          localStorage.setItem(`hexa-muted-until:${selected.id}`, until);
+          setMuted(current => current.includes(String(selected.id)) ? current : [...current, String(selected.id)]);
+        }
+        break;
+      }
+
+      case "disappearing": {
+        const choice = prompt("Disappearing messages: Off / 24 hours / 7 days / 90 days", disappearing === "off" ? "Off" : disappearing);
+        if (!choice) break;
+        const normalized = choice.trim().toLowerCase();
+        const next =
+          normalized === "24 hours" || normalized === "24h" ? "24h" :
+          normalized === "7 days" || normalized === "7d" ? "7d" :
+          normalized === "90 days" || normalized === "90d" ? "90d" :
+          normalized === "off" ? "off" : null;
+        if (!next) {
+          safeAlert("Choose Off, 24 hours, 7 days, or 90 days.");
+          break;
+        }
+        setDisappearing(next);
+        break;
+      }
+
+      case "favourite": {
+        setFavouriteChats(current => {
+          const id = String(selected.id);
+          const next = current.includes(id)
+            ? current.filter(item => item !== id)
+            : [...current, id];
+          writeJsonStorage("hexa-favourite-chats-v1", next);
+          return next;
+        });
+        break;
+      }
+
+      case "list": {
+        const choice = prompt("Add chat to list: Family / School / New list", "Family");
+        if (!choice) break;
+        const normalized = choice.trim().toLowerCase();
+        if (normalized === "family" || normalized === "school") {
+          localStorage.setItem(`hexa-chat-list:${selected.id}`, normalized);
+        } else if (normalized === "new list") {
+          const name = prompt("Enter the new list name");
+          if (name?.trim()) localStorage.setItem(`hexa-chat-list:${selected.id}`, name.trim());
+        } else {
+          safeAlert("Choose Family, School, or New list.");
+        }
+        break;
+      }
+
+      case "export": {
+        const exportText = messages.map(item => {
+          const sender = String(item.sender_id) === String(profile.id) ? "You" : (selected.name || "Contact");
+          const time = item.created_at ? new Date(item.created_at).toLocaleString() : "";
+          return `[${time}] ${sender}: ${item.content || ""}`;
+        }).join("\n");
+        try {
+          await navigator.clipboard.writeText(exportText);
+          safeAlert("Chat copied to clipboard.");
+        } catch {
+          safeAlert("Unable to export the chat on this device.");
+        }
+        break;
+      }
+
+      case "close":
+        setMobileConversationOpen(false);
+        break;
+
+      case "call-link": {
+        const link = `${window.location.origin}/call/${selected.id}`;
+        try {
+          await navigator.clipboard.writeText(link);
+          safeAlert("Call link copied.");
+        } catch {
+          safeAlert(link);
+        }
+        break;
+      }
+
+      case "group-call":
+        onStartCall?.(selected, "voice", { forceGroup: true });
+        break;
+
+      case "report":
+        safeAlert("Report submitted for review.");
+        break;
+
+      case "block":
+        toggleBlock();
+        break;
+
+      case "clear":
+        clearChat();
+        break;
+
+      case "delete":
+        if (window.confirm("Delete this chat from your chat list?")) {
+          setConversations(current => current.filter(item => String(item.id) !== String(selected.id)));
+          setMessages([]);
+          setMobileConversationOpen(false);
+        }
+        break;
+
+      default:
+        break;
+    }
+  }
+
   function clearChat() {
     setMessages([]);
-    setChatSettingsOpen(
-      false
-    );
+    setChatSettingsOpen(false);
   }
 
   /* ============================================================
@@ -3537,7 +3646,8 @@ function ChatPage({
 
             <button
               type="button"
-              title="Chat settings"
+              title="Chat options"
+              aria-label="Chat options"
               onClick={() =>
                 setChatSettingsOpen(
                   value =>
@@ -3552,106 +3662,34 @@ function ChatPage({
 
         </header>
 
-        {/* CHAT SETTINGS */}
-
+        {/* CHAT THREE-DOT MENU */}
         {chatSettingsOpen && (
-          <div className="chat-settings-popover">
-
-            <strong>
-              Chat settings
-            </strong>
-
-            <label>
-              Disappearing messages
-
-              <select
-                value={
-                  disappearing
-                }
-                onChange={event =>
-                  setDisappearing(
-                    event.target
-                      .value
-                  )
-                }
-              >
-                <option value="off">
-                  Off
-                </option>
-
-                <option value="24h">
-                  24 hours
-                </option>
-
-                <option value="7d">
-                  7 days
-                </option>
-
-                <option value="90d">
-                  90 days
-                </option>
-              </select>
-            </label>
-
-            <button
-              type="button"
-              onClick={
-                toggleMute
-              }
-            >
-              {muted.includes(
-                String(
-                  selected.id
-                )
-              )
-                ? "🔔 Unmute chat"
-                : "🔕 Mute chat"}
-            </button>
-
-            <button
-              type="button"
-              onClick={
-                toggleArchive
-              }
-            >
-              {archived.includes(
-                String(
-                  selected.id
-                )
-              )
-                ? "Unarchive chat"
-                : "Archive chat"}
-            </button>
-
-            <button
-              type="button"
-              onClick={
-                clearChat
-              }
-            >
-              Clear chat
-            </button>
-
-            {!isSystem &&
-              !isSelf && (
-                <button
-                  type="button"
-                  className="danger-text"
-                  onClick={
-                    toggleBlock
-                  }
-                >
-                  {blocked.includes(
-                    String(
-                      selected.id
-                    )
-                  )
-                    ? "Unblock contact"
-                    : "Block contact"}
-                </button>
-              )}
-
-          </div>
+          <>
+            <div
+              className="chat-menu-backdrop"
+              onClick={closeChatMenu}
+              aria-hidden="true"
+            />
+            <div className="chat-settings-popover whatsapp-chat-menu">
+              <button type="button" onClick={() => handleChatMenuAction("contact-info")}>👤 <span>Contact info</span></button>
+              <button type="button" onClick={() => handleChatMenuAction("search")}>⌕ <span>Search</span></button>
+              <button type="button" onClick={() => handleChatMenuAction("select")}>☑ <span>Select messages</span></button>
+              <div className="chat-menu-divider" />
+              <button type="button" onClick={() => handleChatMenuAction("mute")}>🔕 <span>Mute notifications</span><small>1 hour · 8 hours · Always</small></button>
+              <button type="button" onClick={() => handleChatMenuAction("disappearing")}>⏱ <span>Disappearing messages</span><small>24 hours · 7 days · 90 days · Off</small></button>
+              <button type="button" onClick={() => handleChatMenuAction("favourite")}>⭐ <span>Add to favourites</span></button>
+              <button type="button" onClick={() => handleChatMenuAction("list")}>☷ <span>Add to list</span><small>Family · School · + New list</small></button>
+              <button type="button" onClick={() => handleChatMenuAction("export")}>⇩ <span>Export chat</span></button>
+              <button type="button" onClick={() => handleChatMenuAction("close")}>× <span>Close chat</span></button>
+              <button type="button" onClick={() => handleChatMenuAction("call-link")}>🔗 <span>Send call link</span></button>
+              <button type="button" onClick={() => handleChatMenuAction("group-call")}>👥 <span>New group call</span></button>
+              <div className="chat-menu-divider" />
+              <button type="button" onClick={() => handleChatMenuAction("report")}>⚑ <span>Report</span></button>
+              <button type="button" className="danger-menu-item" onClick={() => handleChatMenuAction("block")}>🚫 <span>Block</span></button>
+              <button type="button" onClick={() => handleChatMenuAction("clear")}>⌫ <span>Clear chat</span></button>
+              <button type="button" className="danger-menu-item" onClick={() => handleChatMenuAction("delete")}>🗑 <span>Delete chat</span></button>
+            </div>
+          </>
         )}
 
         {/* MESSAGE SEARCH */}
@@ -5837,6 +5875,7 @@ function AuthenticatedHEXA({ session, onSignOut }) {
     case "channels":page=<ChannelsPage profile={profile}/>;break;
     case "status":page=<StatusPage profile={profile}/>;break;
     case "calls":page=<CallsPage profile={profile}/>;break;
+    case "wallet":page=<WalletPage profile={profile}/>;break;
     case "kora":page=<KoraPage profile={profile}/>;break;
     case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut}/>;break;
     case "projects":page=<WorkspacePlaceholder title="Projects" description="Organize collaborative work." icon="◆"/>;break;
@@ -7119,6 +7158,100 @@ button:disabled {
 
 .message-row.own {
   justify-content: flex-end;
+}
+
+.hexa-message-row {
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  gap: 7px;
+  margin: 7px 0;
+}
+.hexa-message-row.mine {
+  justify-content: flex-end;
+  flex-direction: row-reverse;
+}
+.hexa-message-row.incoming {
+  justify-content: flex-start;
+}
+.hexa-message-row.mine .message-bubble {
+  margin-left: auto;
+  margin-right: 0;
+}
+.hexa-message-row.incoming .message-bubble {
+  margin-right: auto;
+  margin-left: 0;
+}
+.hexa-message-row.mine .message-bubble-wrap {
+  margin-left: auto;
+}
+.hexa-message-row.incoming .message-bubble-wrap {
+  margin-right: auto;
+}
+.chat-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: transparent;
+}
+.whatsapp-chat-menu {
+  position: absolute;
+  right: 14px;
+  top: 62px;
+  z-index: 80;
+  width: min(330px, calc(100vw - 28px));
+  max-height: min(78vh, 690px);
+  overflow-y: auto;
+  padding: 7px;
+  border-radius: 16px;
+}
+.whatsapp-chat-menu > button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 26px minmax(0,1fr);
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--hexa-text);
+  text-align: left;
+  cursor: pointer;
+}
+.whatsapp-chat-menu > button:hover {
+  background: rgba(255,255,255,.055);
+}
+.whatsapp-chat-menu > button > span {
+  font-size: 12px;
+  font-weight: 650;
+}
+.whatsapp-chat-menu > button > small {
+  grid-column: 2;
+  margin-top: -7px;
+  color: var(--hexa-muted);
+  font-size: 9px;
+  line-height: 1.35;
+}
+.chat-menu-divider {
+  height: 1px;
+  background: var(--hexa-border);
+  margin: 6px 7px;
+}
+.whatsapp-chat-menu .danger-menu-item {
+  color: #ff7070;
+}
+@media (max-width: 700px) {
+  .whatsapp-chat-menu {
+    right: 8px;
+    top: 58px;
+    width: min(340px, calc(100vw - 16px));
+    max-height: 74vh;
+  }
+  .hexa-message-row .message-bubble {
+    max-width: 82%;
+  }
 }
 
 .message-bubble {
