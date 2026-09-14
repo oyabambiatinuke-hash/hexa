@@ -5436,6 +5436,11 @@ function StatusPage({ profile }) {
   const [liked, setLiked] = useState({});
   const [viewed, setViewed] = useState({});
   const [viewList, setViewList] = useState([]);
+  const [highlights, setHighlights] = useState([]);
+  const [highlightEditor, setHighlightEditor] = useState(null);
+  const [highlightViewer, setHighlightViewer] = useState(null);
+  const [highlightName, setHighlightName] = useState("");
+  const [highlightSource, setHighlightSource] = useState(null);
   const fileRef = useRef(null);
 
   async function load() {
@@ -5465,7 +5470,80 @@ function StatusPage({ profile }) {
     } finally { setLoading(false); }
   }
 
-  useEffect(() => { load(); }, [profile?.id]);
+  useEffect(() => {
+    load();
+    if (!profile?.id) return;
+    try {
+      const raw = localStorage.getItem(`hexa-moments-highlights:${profile.id}`);
+      setHighlights(raw ? JSON.parse(raw) : []);
+    } catch { setHighlights([]); }
+  }, [profile?.id]);
+
+  function persistHighlights(next) {
+    setHighlights(next);
+    try { localStorage.setItem(`hexa-moments-highlights:${profile.id}`, JSON.stringify(next)); } catch {}
+  }
+
+  function addMomentToHighlight(status, highlightId) {
+    if (!status?.id || !highlightId) return;
+    const next = highlights.map((h) => {
+      if (h.id !== highlightId) return h;
+      const exists = (h.items || []).some((item) => item.id === status.id);
+      if (exists) return h;
+      return { ...h, items: [...(h.items || []), { ...status }] };
+    });
+    persistHighlights(next);
+    setHighlightEditor(null);
+    setStatusError(`Added to ${next.find((h) => h.id === highlightId)?.name || "Highlight"}.`);
+  }
+
+  function createHighlightFromMoment(status) {
+    setHighlightSource(status);
+    setHighlightName("");
+    setHighlightEditor({ mode: "create" });
+  }
+
+  function createHighlight() {
+    const name = highlightName.trim();
+    if (!name || !highlightSource?.id) return;
+    const item = { ...highlightSource };
+    const next = [{ id: `hl-${Date.now()}`, name, cover_url: item.media_url || "", items: [item], created_at: new Date().toISOString() }, ...highlights];
+    persistHighlights(next);
+    setHighlightEditor(null); setHighlightSource(null); setHighlightName("");
+    setStatusError(`Created highlight “${name}”.`);
+  }
+
+  function renameHighlight(highlight) {
+    const name = window.prompt("Rename highlight", highlight?.name || "");
+    if (!name?.trim()) return;
+    persistHighlights(highlights.map((h) => h.id === highlight.id ? { ...h, name: name.trim() } : h));
+  }
+
+  function deleteHighlight(highlight) {
+    if (!highlight) return;
+    if (!window.confirm(`Delete the “${highlight.name}” highlight?`)) return;
+    persistHighlights(highlights.filter((h) => h.id !== highlight.id));
+    if (highlightViewer?.id === highlight.id) setHighlightViewer(null);
+  }
+
+  function removeMomentFromHighlight(highlight, momentId) {
+    const items = (highlight.items || []).filter((item) => item.id !== momentId);
+    const next = items.length ? highlights.map((h) => h.id === highlight.id ? { ...h, items, cover_url: h.cover_url === (highlight.items || []).find((i) => i.id === momentId)?.media_url ? (items[0]?.media_url || "") : h.cover_url } : h) : highlights.filter((h) => h.id !== highlight.id);
+    persistHighlights(next);
+    setHighlightViewer({ ...(next.find((h) => h.id === highlight.id) || {}), id: highlight.id, items });
+  }
+
+  function openHighlight(highlight) {
+    if (!highlight?.items?.length) return;
+    setHighlightViewer({ ...highlight, index: 0 });
+  }
+
+  function nextHighlightItem(direction) {
+    if (!highlightViewer?.items?.length) return;
+    const nextIndex = highlightViewer.index + direction;
+    if (nextIndex < 0 || nextIndex >= highlightViewer.items.length) return;
+    setHighlightViewer({ ...highlightViewer, index: nextIndex });
+  }
 
   async function openStatus(status) {
     setViewer(status);
@@ -5633,6 +5711,27 @@ function StatusPage({ profile }) {
 
   return <section className="workspace-page status-workspace">
     <div className="page-heading"><div className="page-heading-icon">◌</div><div><h1>Moments</h1><p>Facebook-style Stories that expire after 24 hours. Like, react, comment, share and repost.</p></div><button className="hero-primary heading-action" onClick={() => setShow(true)}>＋ Create Moment</button></div>
+    <div className="moments-highlights-section">
+      <div className="moments-highlights-heading">
+        <div><strong>Highlights</strong><span>Keep your favourite Moments beyond 24 hours</span></div>
+        <button type="button" onClick={() => setStatusError("Open a Moment and choose ☆ Highlight to create or add it to a Highlight.")}>How it works</button>
+      </div>
+      <div className="moments-highlights-row">
+        <button type="button" className="moment-highlight-add" onClick={() => setStatusError("Open one of your Moments to create a Highlight.")}>
+          <span>＋</span><b>New</b>
+        </button>
+        {highlights.map((h) => (
+          <div className="moment-highlight-card-wrap" key={h.id}>
+            <button type="button" className="moment-highlight-card" onClick={() => openHighlight(h)}>
+              <div className="moment-highlight-ring">{h.cover_url ? <img src={h.cover_url} alt=""/> : <span>✦</span>}</div>
+              <strong>{h.name}</strong><small>{h.items?.length || 0} Moment{(h.items?.length || 0) === 1 ? "" : "s"}</small>
+            </button>
+            <button type="button" className="moment-highlight-more" onClick={() => renameHighlight(h)} aria-label={`Rename ${h.name}`}>⋯</button>
+          </div>
+        ))}
+        {!highlights.length && <div className="moments-highlights-empty"><span>☆</span><div><strong>Your first Highlight</strong><small>Save a Moment here so it stays on your profile after 24 hours.</small></div></div>}
+      </div>
+    </div>
     {statusError && <div className="settings-card status-error"><strong>Status</strong><p>{statusError}</p><button onClick={() => setStatusError("")}>Dismiss</button></div>}
     <div className="status-row status-scroll-row">
       <button className="create-status-card" onClick={() => setShow(true)}><div className="create-status-plus">＋</div><strong>Create Moment</strong><span>Text, photo or video</span></button>
@@ -5688,6 +5787,9 @@ function StatusPage({ profile }) {
             ))}
             <button type="button" onClick={() => loadComments(viewer.id)}>💬</button>
             <button type="button" onClick={() => setShareOpen((x) => !x)}>↗</button>
+            {String(viewer.user_id) === String(profile.id) && (
+              <button type="button" onClick={() => { setHighlightSource(viewer); setHighlightEditor({ mode: "choose" }); }}>☆</button>
+            )}
           </div>
 
           {shareOpen && (
@@ -5743,6 +5845,38 @@ function StatusPage({ profile }) {
         >
           ›
         </button>
+      </div>
+    )}
+
+    {highlightEditor && (
+      <div className="modal-backdrop" onClick={() => setHighlightEditor(null)}>
+        <div className="highlight-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-header"><div><h2>{highlightEditor.mode === "choose" ? "Add to Highlight" : "Create Highlight"}</h2><p>{highlightEditor.mode === "choose" ? "Choose a Highlight for this Moment." : "Keep this Moment on your profile."}</p></div><button type="button" onClick={() => setHighlightEditor(null)}>×</button></div>
+          {highlightEditor.mode === "create" ? (
+            <div className="highlight-create-form">
+              <input className="modal-input" autoFocus value={highlightName} onChange={(e) => setHighlightName(e.target.value)} placeholder="Highlight name" maxLength={40}/>
+              <button className="hero-primary" type="button" disabled={!highlightName.trim()} onClick={createHighlight}>Create Highlight</button>
+            </div>
+          ) : (
+            <div className="highlight-choice-list">
+              {highlights.map((h) => <button type="button" className="highlight-choice" key={h.id} onClick={() => addMomentToHighlight(highlightSource, h)}><span className="highlight-choice-cover">{h.cover_url ? <img src={h.cover_url} alt=""/> : "✦"}</span><span><b>{h.name}</b><small>{h.items?.length || 0} saved Moment{(h.items?.length || 0) === 1 ? "" : "s"}</small></span><strong>›</strong></button>)}
+              <button type="button" className="highlight-choice highlight-new-choice" onClick={() => setHighlightEditor({ mode: "create" })}><span className="highlight-choice-cover plus">＋</span><span><b>New Highlight</b><small>Create a new collection</small></span><strong>＋</strong></button>
+            </div>
+          )}
+        </div>
+      </div>
+    )}
+
+    {highlightViewer && (
+      <div className="highlight-viewer" onClick={() => setHighlightViewer(null)}>
+        <button className="story-close" onClick={() => setHighlightViewer(null)}>×</button>
+        <button className="story-nav story-prev" onClick={(e) => { e.stopPropagation(); nextHighlightItem(-1); }}>‹</button>
+        <div className="highlight-viewer-card" onClick={(e) => e.stopPropagation()}>
+          <div className="highlight-viewer-top"><div><strong>{highlightViewer.name}</strong><small>Highlight · {highlightViewer.index + 1} / {highlightViewer.items.length}</small></div><button type="button" onClick={() => deleteHighlight(highlightViewer)}>Delete</button></div>
+          {(() => { const item = highlightViewer.items[highlightViewer.index]; return item?.media_url && item.media_type === "video" ? <video controls autoPlay playsInline src={item.media_url}/> : item?.media_url ? <img src={item.media_url} alt="Moment"/> : <div className="highlight-viewer-text">{item?.text || "Moment"}</div>; })()}
+          <div className="highlight-viewer-caption">{highlightViewer.items[highlightViewer.index]?.description || highlightViewer.items[highlightViewer.index]?.text || "Moment"}<button type="button" onClick={() => removeMomentFromHighlight(highlightViewer, highlightViewer.items[highlightViewer.index]?.id)}>Remove from Highlight</button></div>
+        </div>
+        <button className="story-nav story-next" onClick={(e) => { e.stopPropagation(); nextHighlightItem(1); }}>›</button>
       </div>
     )}
   </section>;
@@ -9023,6 +9157,7 @@ const HEXA_MOMENTS_CSS = `
 /* Facebook-style Moments polish */
 .moments-story-card{position:relative}.moments-story-card .status-preview{overflow:hidden}.moments-story-card .status-preview img,.moments-story-card .status-preview video{width:100%;height:100%;object-fit:cover}.moments-story-actions{position:static!important;display:flex!important;gap:6px!important;flex-wrap:wrap!important}.moments-story-actions button{min-width:38px}.moments-story-actions button.active{background:#fff!important;color:#111!important}.moments-share-menu{position:absolute;right:14px;bottom:58px;z-index:50;width:220px;background:#fff;color:#111;border-radius:14px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.35)}.moments-share-menu button{width:100%;display:block;text-align:left;padding:10px;border:0;background:transparent;color:#111;border-radius:9px}.moments-share-menu button:hover{background:#f3f4f6}.status-comments{background:rgba(0,0,0,.25);border-radius:12px}.status-comment-form input{outline:none}.status-comment-form button{min-width:68px}.moment-share-inline{margin-left:auto}.status-card{transition:transform .18s ease,box-shadow .18s ease}.status-card:hover{transform:translateY(-2px)}
 @media(max-width:700px){.moments-share-menu{right:8px;bottom:54px}.moments-story-actions{gap:4px!important}.moments-story-actions button{min-width:34px;padding:7px}.story-stats{gap:10px;font-size:11px}}
+.moments-highlights-section{margin:0 0 18px;padding:16px;border:1px solid var(--hexa-border);border-radius:18px;background:var(--hexa-panel);box-shadow:var(--hexa-shadow)}.moments-highlights-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}.moments-highlights-heading>div{display:flex;flex-direction:column;gap:3px}.moments-highlights-heading strong{font-size:14px;color:var(--hexa-text)}.moments-highlights-heading span{font-size:10px;color:var(--hexa-muted)}.moments-highlights-heading>button{border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:10px;padding:8px 10px;font-size:10px;cursor:pointer}.moments-highlights-row{display:flex;align-items:flex-start;gap:14px;overflow:auto;padding:2px 2px 5px}.moment-highlight-card-wrap{position:relative;min-width:88px}.moment-highlight-card,.moment-highlight-add{width:88px;border:0;background:transparent;color:var(--hexa-text);display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer}.moment-highlight-ring{width:64px;height:64px;border-radius:50%;padding:3px;background:linear-gradient(135deg,#7c5cff,#00c2ff,#ff3b81);display:grid;place-items:center}.moment-highlight-ring img{width:100%;height:100%;object-fit:cover;border-radius:50%;border:3px solid var(--hexa-panel)}.moment-highlight-ring span{width:100%;height:100%;border-radius:50%;display:grid;place-items:center;background:var(--hexa-panel-2);font-size:22px}.moment-highlight-card strong,.moment-highlight-card small{max-width:88px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.moment-highlight-card strong{font-size:10px}.moment-highlight-card small{font-size:8px;color:var(--hexa-muted)}.moment-highlight-add span{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;border:2px dashed var(--hexa-accent);font-size:26px;background:var(--hexa-panel-2)}.moment-highlight-add b{font-size:10px}.moment-highlight-more{position:absolute;top:2px;right:-1px;width:24px;height:24px;border:1px solid var(--hexa-border);border-radius:50%;background:var(--hexa-panel);color:var(--hexa-text);cursor:pointer}.moments-highlights-empty{display:flex;align-items:center;gap:10px;padding:6px 10px;color:var(--hexa-muted)}.moments-highlights-empty>span{width:48px;height:48px;display:grid;place-items:center;border-radius:50%;background:var(--hexa-panel-2);font-size:20px}.moments-highlights-empty>div{display:flex;flex-direction:column;gap:2px}.moments-highlights-empty strong{font-size:11px;color:var(--hexa-text)}.moments-highlights-empty small{font-size:9px;max-width:260px}.highlight-modal{width:min(520px,92vw);background:var(--hexa-panel);color:var(--hexa-text);border:1px solid var(--hexa-border);border-radius:22px;box-shadow:0 28px 90px rgba(0,0,0,.3);padding:18px}.highlight-create-form{display:flex;flex-direction:column;gap:12px}.highlight-choice-list{display:flex;flex-direction:column;gap:7px}.highlight-choice{display:flex;align-items:center;gap:11px;width:100%;padding:9px 10px;border:1px solid var(--hexa-border);border-radius:14px;background:var(--hexa-panel-2);color:var(--hexa-text);cursor:pointer;text-align:left}.highlight-choice:hover{transform:translateY(-1px);box-shadow:0 8px 18px rgba(0,0,0,.08)}.highlight-choice-cover{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:var(--hexa-panel);flex:0 0 auto;font-size:17px}.highlight-choice-cover img{width:100%;height:100%;object-fit:cover}.highlight-choice span:nth-child(2){min-width:0;display:flex;flex-direction:column;gap:2px;flex:1}.highlight-choice b{font-size:11px}.highlight-choice small{font-size:9px;color:var(--hexa-muted)}.highlight-choice>strong{font-size:20px;color:var(--hexa-muted)}.highlight-choice-cover.plus{border:1px dashed var(--hexa-accent);font-size:21px}.highlight-viewer{position:fixed;inset:0;z-index:5000;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;padding:20px}.highlight-viewer-card{width:min(520px,92vw);max-height:92vh;display:flex;flex-direction:column;background:#111;color:#fff;border-radius:20px;overflow:hidden;box-shadow:0 30px 100px rgba(0,0,0,.5)}.highlight-viewer-card>img,.highlight-viewer-card>video{width:100%;max-height:72vh;object-fit:contain;background:#000}.highlight-viewer-top{display:flex;align-items:center;justify-content:space-between;padding:12px 14px}.highlight-viewer-top>div{display:flex;flex-direction:column;gap:3px}.highlight-viewer-top strong{font-size:13px}.highlight-viewer-top small{font-size:9px;opacity:.7}.highlight-viewer-top button{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:#fff;border-radius:9px;padding:7px 10px;font-size:9px}.highlight-viewer-text{min-height:420px;display:grid;place-items:center;padding:30px;font-size:22px;text-align:center;white-space:pre-wrap}.highlight-viewer-caption{display:flex;align-items:center;gap:12px;padding:12px 14px;font-size:11px}.highlight-viewer-caption>button{margin-left:auto;border:0;background:rgba(255,255,255,.08);color:#fff;border-radius:9px;padding:7px 9px;font-size:9px}.highlight-viewer .story-nav{color:#fff}.highlight-viewer .story-close{color:#fff}@media(max-width:700px){.moments-highlights-section{padding:12px;border-radius:15px}.moments-highlights-heading span{display:none}.moments-highlights-row{gap:10px}.highlight-modal{padding:14px}.highlight-viewer{padding:10px}.highlight-viewer-card{width:100%}}
 `;
 const HEXA_KORA_CSS = `
 .hexa-inline-warning{margin:0 0 14px;padding:12px 14px;border:1px solid rgba(245,158,11,.35);background:rgba(245,158,11,.08);border-radius:12px;color:var(--hexa-text);font-size:12px}.kora-page-card{height:min(680px,calc(100vh - 180px));display:flex;flex-direction:column;border:1px solid var(--hexa-border);background:var(--hexa-panel);border-radius:22px;overflow:hidden;box-shadow:var(--hexa-shadow)}.kora-page-messages{flex:1;overflow:auto;padding:22px}.kora-empty{text-align:center;max-width:440px;margin:auto;color:var(--hexa-muted)}.kora-empty>div{width:56px;height:56px;display:grid;place-items:center;margin:0 auto 12px;border-radius:18px;background:var(--hexa-accent);color:#fff;font-size:26px}.kora-empty h2{margin:0;color:var(--hexa-text)}.kora-message{display:flex;gap:10px;align-items:flex-start;max-width:min(760px,90%);margin:0 0 14px}.kora-message>span{flex:0 0 auto;font-size:11px;font-weight:800;color:var(--hexa-muted);padding-top:8px}.kora-message p{margin:0;padding:11px 14px;border-radius:16px;background:var(--hexa-panel-2);color:var(--hexa-text);line-height:1.55;white-space:pre-wrap}.kora-message.user{margin-left:auto;justify-content:flex-end}.kora-message.user>span{order:2}.kora-message.user p{background:var(--hexa-accent);color:#fff}.kora-composer{display:flex;gap:10px;padding:14px;border-top:1px solid var(--hexa-border);background:var(--hexa-panel)}.kora-composer input{flex:1;min-width:0;height:46px;padding:0 15px;border:1px solid var(--hexa-border);border-radius:14px;background:var(--hexa-panel-2);color:var(--hexa-text);outline:none}.kora-composer input:focus{border-color:var(--hexa-accent);box-shadow:0 0 0 3px rgba(124,92,255,.10)}@media(max-width:700px){.kora-page-card{height:calc(100vh - 150px);border-radius:16px}.kora-page-messages{padding:14px}.kora-message{max-width:94%}}
