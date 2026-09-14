@@ -1656,6 +1656,8 @@ function ChatPage({
 
   const [pinnedPanelOpen, setPinnedPanelOpen] = useState(false);
   const [savedPanelOpen, setSavedPanelOpen] = useState(false);
+  const [reminders, setReminders] = useState(() => readJsonStorage("hexa-message-reminders-v1", []));
+  const [remindersPanelOpen, setRemindersPanelOpen] = useState(false);
 
   const [muted, setMuted] = useState(
     () =>
@@ -1686,6 +1688,31 @@ function ChatPage({
 
   const [selectionMode, setSelectionMode] =
     useState(false);
+
+  useEffect(() => {
+    writeJsonStorage("hexa-message-reminders-v1", reminders);
+  }, [reminders]);
+
+  useEffect(() => {
+    const tick = () => {
+      const now = Date.now();
+      setReminders(current => {
+        let changed = false;
+        const next = current.map(item => {
+          if (!item.triggered && item.remindAt <= now) {
+            changed = true;
+            safeAlert(`Reminder: ${item.preview || "Saved message"}`, "success");
+            return { ...item, triggered: true };
+          }
+          return item;
+        });
+        return changed ? next : current;
+      });
+    };
+    tick();
+    const id = window.setInterval(tick, 30000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const mediaRef = useRef(null);
   const cameraRef = useRef(null);
@@ -2957,6 +2984,46 @@ function ChatPage({
     setActionDialog(null);
   }
 
+  function scheduleMessageReminder(item, when) {
+    if (!item?.id) return;
+    const remindAt = when === "today"
+      ? Date.now() + 2 * 60 * 60 * 1000
+      : when === "tomorrow"
+        ? Date.now() + 24 * 60 * 60 * 1000
+        : when === "weekend"
+          ? Date.now() + 3 * 24 * 60 * 60 * 1000
+          : when === "next-week"
+            ? Date.now() + 7 * 24 * 60 * 60 * 1000
+            : new Date(when).getTime();
+    if (!Number.isFinite(remindAt)) return;
+    const reminder = {
+      id: `rem-${Date.now()}-${item.id}`,
+      messageId: String(item.id),
+      conversationId: String(selected?.realConversationId || selected?.id || ""),
+      remindAt,
+      createdAt: Date.now(),
+      triggered: false,
+      preview: item.content || (item.message_type === "voice" ? "🎙 Voice message" : item.message_type === "image" ? "📷 Photo" : item.message_type === "video" ? "🎥 Video" : "Message"),
+      sender: String(item.sender_id) === String(profile.id) ? "You" : (selected?.name || "Contact")
+    };
+    setReminders(current => [reminder, ...current.filter(x => x.messageId !== reminder.messageId || x.triggered)]);
+    setRemindersPanelOpen(true);
+    setContextMenu(null);
+    safeAlert("Message reminder set.", "success");
+  }
+
+  function removeReminder(id) {
+    setReminders(current => current.filter(item => item.id !== id));
+  }
+
+  function jumpToReminder(reminder) {
+    const item = messages.find(m => String(m.id) === String(reminder.messageId));
+    if (item) {
+      openPinnedMessage(item);
+      setRemindersPanelOpen(false);
+    }
+  }
+
   async function handleChatMenuAction(action) {
     closeChatMenu();
 
@@ -3885,6 +3952,23 @@ function ChatPage({
 
             <button
               type="button"
+              className={remindersPanelOpen ? "quick-actions-trigger active" : "quick-actions-trigger"}
+              title="Message reminders"
+              aria-label="Message reminders"
+              onClick={() => {
+                setRemindersPanelOpen(value => !value);
+                setPinnedPanelOpen(false);
+                setSavedPanelOpen(false);
+                setQuickActionsOpen(false);
+                setChatSettingsOpen(false);
+              }}
+            >
+              ⏰
+              {reminders.filter(item => !item.triggered).length > 0 && <span className="saved-header-count">{reminders.filter(item => !item.triggered).length}</span>}
+            </button>
+
+            <button
+              type="button"
               className={quickActionsOpen ? "quick-actions-trigger active" : "quick-actions-trigger"}
               title="Quick actions"
               aria-label="Quick actions"
@@ -4031,6 +4115,38 @@ function ChatPage({
               </div>
             )}
 
+          </div>
+        )}
+
+        {remindersPanelOpen && (
+          <div className="hexa-pinned-panel hexa-reminders-panel">
+            <div className="hexa-pinned-head">
+              <div>
+                <span className="hexa-pinned-kicker">MESSAGE TO-DO</span>
+                <strong>⏰ Reminders</strong>
+                <small>Come back to important messages at the right time.</small>
+              </div>
+              <button type="button" onClick={() => setRemindersPanelOpen(false)} aria-label="Close reminders">×</button>
+            </div>
+            {!reminders.length ? (
+              <div className="hexa-pinned-empty"><div>⏰</div><strong>No reminders yet</strong><span>Open Message actions → Remind me on any message.</span></div>
+            ) : (
+              <div className="hexa-pinned-list">
+                {reminders.slice(0, 12).map(reminder => (
+                  <div className="hexa-pinned-item hexa-reminder-item" key={reminder.id}>
+                    <button type="button" className="hexa-pinned-jump" onClick={() => jumpToReminder(reminder)}>
+                      <span className="hexa-pinned-icon">⏰</span>
+                      <span className="hexa-pinned-copy">
+                        <strong>{reminder.sender}</strong>
+                        <span>{reminder.preview}</span>
+                        <small>{reminder.triggered ? "Reminder delivered" : new Date(reminder.remindAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</small>
+                      </span>
+                    </button>
+                    <button type="button" className="hexa-pinned-unpin" title="Remove reminder" onClick={() => removeReminder(reminder.id)}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -4976,6 +5092,28 @@ function ChatPage({
                       <small>Send to another chat</small>
                     </span>
                   </button>
+
+                  <button type="button" className="message-action-item" onClick={() => {
+                    setContextMenu(null);
+                    openActionDialog({
+                      type: "choice",
+                      title: "Remind me",
+                      subtitle: "Get a reminder about this message later.",
+                      options: [
+                        { label: "Later today", value: "today", icon: "☀" },
+                        { label: "Tomorrow", value: "tomorrow", icon: "◷" },
+                        { label: "This weekend", value: "weekend", icon: "☷" },
+                        { label: "Next week", value: "next-week", icon: "→" },
+                      ],
+                      onConfirm: (value) => scheduleMessageReminder(item, value)
+                    });
+                  }}>
+                    <span className="message-action-icon">⏰</span>
+                    <span className="message-action-copy">
+                      <strong>Remind me</strong>
+                      <small>Come back to this message later</small>
+                    </span>
+                  </button>
                 </div>
 
                 <div className="message-action-divider" />
@@ -5735,7 +5873,7 @@ function StatusPage({ profile }) {
     {statusError && <div className="settings-card status-error"><strong>Status</strong><p>{statusError}</p><button onClick={() => setStatusError("")}>Dismiss</button></div>}
     <div className="status-row status-scroll-row">
       <button className="create-status-card" onClick={() => setShow(true)}><div className="create-status-plus">＋</div><strong>Create Moment</strong><span>Text, photo or video</span></button>
-      {loading ? <div className="coming-card"><h2>Loading statuses…</h2></div> : statuses.map((s) => <button key={s.id} className={`status-card moments-story-card ${viewed[s.id] ? "seen" : "unseen"}`} onClick={() => openStatus(s)}><div className="status-preview">{s.media_url && s.media_type === "image" ? <img src={s.media_url} alt=""/> : s.media_url && s.media_type === "video" ? <video src={s.media_url} muted playsInline/> : <span>Aa</span>}</div><strong>{s.text || s.description || "Media status"}</strong><span>{counts[s.id] || 0} ❤️ · {counts[`${s.id}:views`] || 0} 👁</span></button>)}
+      {loading ? <div className="coming-card"><h2>Loading statuses…</h2></div> : statuses.map((s) => <button key={s.id} className={`status-card moments-story-card ${viewed[s.id] ? "seen" : "unseen"}`} onClick={() => openStatus(s)}><div className="status-preview">{s.media_url && s.media_type === "image" ? <img src={s.media_url} alt=""/> : s.media_url && s.media_type === "video" ? <video src={s.media_url} muted playsInline/> : <span className="moment-text-preview">Aa</span>}<span className="moment-story-badge">{viewed[s.id] ? "Viewed" : "New"}</span></div><div className="moment-card-body"><div className="moment-card-author"><Avatar src={s.user_id === profile.id ? profile.avatar_url : ""} name={s.user_id === profile.id ? (profile.full_name || profile.username || "You") : "HEXA User"} size={32}/><div><strong>{s.user_id === profile.id ? (profile.full_name || profile.username || "You") : "HEXA User"}</strong><small>{s.created_at ? new Date(s.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</small></div></div><p>{s.description || s.text || "Media Moment"}</p><div className="moment-card-stats"><span>❤️ {counts[s.id] || 0}</span><span>👁 {counts[`${s.id}:views`] || 0}</span><span>💬 {counts[`${s.id}:comments`] || 0}</span></div></div></button>)}
     </div>
     {show && <div className="modal-backdrop" onClick={() => !posting && setShow(false)}><div className="status-modal" onClick={(e) => e.stopPropagation()}><div className="modal-header"><div><h2>Create Moment</h2><p>Share something with your contacts.</p></div><button type="button" onClick={() => !posting && setShow(false)}>×</button></div><form onSubmit={create}><textarea className="modal-input modal-textarea" value={text} onChange={(e) => setText(e.target.value)} placeholder="What's happening?" maxLength={HEXA_MAX_MESSAGE_LENGTH}/><input className="modal-input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Caption / description" maxLength={1000}/><button type="button" className="media-picker" onClick={() => fileRef.current?.click()} disabled={posting}><span>📷</span><div><strong>{file ? file.file.name : "Add photo or video"}</strong><small>Camera, gallery or laptop file</small></div></button><input ref={fileRef} hidden type="file" accept="image/*,video/*" capture="environment" onChange={pick}/>{file && <div className="status-media-preview">{file.kind === "video" ? <video controls src={file.url}/> : <img src={file.url} alt="Preview"/>}</div>}<button className="hero-primary" type="submit" disabled={posting}>{posting ? "Posting…" : "Post Moment"}</button></form></div></div>}
     {viewer && (
@@ -5751,7 +5889,8 @@ function StatusPage({ profile }) {
           ‹
         </button>
 
-        <div className="story-content" onClick={(e) => e.stopPropagation()}>
+        <div className="story-content moments-viewer-content" onClick={(e) => e.stopPropagation()}>
+          <div className="moments-viewer-topbar"><div className="moment-viewer-identity"><Avatar name={viewer.user_id === profile.id ? (profile.full_name || profile.username || "You") : "HEXA User"} src={viewer.user_id === profile.id ? profile.avatar_url : ""} size={36}/><div><strong>{viewer.user_id === profile.id ? (profile.full_name || profile.username || "You") : "HEXA User"}</strong><small>{viewer.created_at ? new Date(viewer.created_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : ""}</small></div></div><button type="button" className="moment-viewer-more" onClick={() => setShareOpen(x => !x)}>⋯</button></div>
           {viewer.media_url && viewer.media_type === "video" ? (
             <video controls autoPlay playsInline src={viewer.media_url} />
           ) : viewer.media_url ? (
@@ -5765,10 +5904,10 @@ function StatusPage({ profile }) {
             <span>{new Date(viewer.created_at).toLocaleString()}</span>
           </div>
 
-          <div className="story-stats">
-            <span>❤️ {likeCount}</span>
-            <span>👁 {viewCount}</span>
-            <span>💬 {commentCount}</span>
+          <div className="story-stats moments-viewer-stats">
+            <span><b>{likeCount}</b> likes</span>
+            <span><b>{viewCount}</b> views</span>
+            <span><b>{commentCount}</b> comments</span>
           </div>
 
           <div className="story-actions moments-story-actions">
@@ -9194,5 +9333,34 @@ const HEXA_PINNED_MESSAGES_CSS = `
 .hexa-pinned-panel{position:relative;z-index:12;border-bottom:1px solid var(--hexa-border);background:var(--hexa-panel);box-shadow:0 10px 28px rgba(0,0,0,.08);animation:hexaPinnedDrop .18s ease-out}.hexa-pinned-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:13px 16px;border-bottom:1px solid var(--hexa-border)}.hexa-pinned-head>div{min-width:0;display:flex;flex-direction:column;gap:3px}.hexa-pinned-kicker{font-size:9px;font-weight:900;letter-spacing:.12em;color:var(--hexa-accent);text-transform:uppercase}.hexa-pinned-head strong{font-size:13px;color:var(--hexa-text)}.hexa-pinned-head small{font-size:10px;color:var(--hexa-muted)}.hexa-pinned-head>button{width:32px;height:32px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:10px;font-size:18px;cursor:pointer}.hexa-pinned-list{max-height:260px;overflow:auto;padding:7px 10px}.hexa-pinned-item{display:flex;align-items:stretch;gap:6px;border-radius:13px}.hexa-pinned-item:hover{background:var(--hexa-panel-2)}.hexa-pinned-jump{flex:1;display:flex;align-items:center;gap:10px;min-width:0;border:0;background:transparent;color:inherit;text-align:left;padding:10px 8px;border-radius:12px;cursor:pointer}.hexa-pinned-icon{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;background:rgba(124,92,255,.10);flex:0 0 auto}.hexa-pinned-copy{min-width:0;display:flex;flex-direction:column;gap:2px}.hexa-pinned-copy strong,.hexa-pinned-copy span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hexa-pinned-copy strong{font-size:11px;color:var(--hexa-text)}.hexa-pinned-copy span{font-size:12px;color:var(--hexa-text)}.hexa-pinned-copy small{font-size:9px;color:var(--hexa-muted)}.hexa-pinned-unpin{width:32px;margin:7px 5px 7px 0;border:0;background:transparent;color:var(--hexa-muted);border-radius:9px;cursor:pointer;font-size:17px}.hexa-pinned-unpin:hover{background:rgba(255,70,70,.10);color:#f87171}.hexa-pinned-empty{padding:24px 18px 26px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--hexa-muted)}.hexa-pinned-empty>div{width:42px;height:42px;display:grid;place-items:center;border-radius:13px;background:rgba(124,92,255,.10);font-size:20px}.hexa-pinned-empty strong{color:var(--hexa-text);font-size:12px}.hexa-pinned-empty span{font-size:10px;max-width:350px}.pinned-header-count{position:absolute;transform:translate(10px,-10px);min-width:16px;height:16px;padding:0 4px;display:grid;place-items:center;border-radius:999px;background:var(--hexa-accent);color:#fff;font-size:8px;font-weight:900;border:2px solid var(--hexa-panel)}.hexa-pinned-highlight .message-bubble{animation:hexaPinnedHighlight 1.8s ease}.hexa-pinned-highlight{position:relative;z-index:2}@keyframes hexaPinnedDrop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}@keyframes hexaPinnedHighlight{0%{box-shadow:0 0 0 0 rgba(124,92,255,0)}20%{box-shadow:0 0 0 5px rgba(124,92,255,.25)}100%{box-shadow:0 0 0 0 rgba(124,92,255,0)}}[data-hexa-theme="white"] .hexa-pinned-panel{background:#fff;border-color:rgba(0,0,0,.10);box-shadow:0 12px 28px rgba(0,0,0,.07)}[data-hexa-theme="white"] .hexa-pinned-head>button{background:#f7f7f8;color:#111;border-color:rgba(0,0,0,.12)}[data-hexa-theme="white"] .hexa-pinned-item:hover{background:#f7f7f8}[data-hexa-theme="white"] .pinned-header-count{border-color:#fff}@media(max-width:700px){.hexa-pinned-head{padding:11px 12px}.hexa-pinned-list{max-height:220px}.hexa-pinned-copy span{font-size:11px}.pinned-header-count{transform:translate(8px,-8px)}}
 `;
 
-const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS + HEXA_MOMENTS_CSS + HEXA_KORA_CSS + HEXA_COMPOSER_CSS + HEXA_PINNED_MESSAGES_CSS;
+const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS + HEXA_MOMENTS_CSS + HEXA_KORA_CSS + HEXA_COMPOSER_CSS + HEXA_PINNED_MESSAGES_CSS + HEXA_UI_POLISH_CSS;
+
+const HEXA_UI_POLISH_CSS = `
+.hexa-reminders-panel{border-color:rgba(124,92,255,.22)}
+.hexa-reminder-item .hexa-pinned-jump{align-items:flex-start}
+.message-action-item{transition:background .16s ease,transform .16s ease}
+.message-action-item:hover{transform:translateY(-1px)}
+.moments-story-card{overflow:hidden;background:var(--hexa-panel);border:1px solid var(--hexa-border)!important;border-radius:20px!important;box-shadow:var(--hexa-shadow);min-width:230px;max-width:250px;text-align:left;padding:0!important}
+.moments-story-card .status-preview{height:250px;position:relative;background:var(--hexa-panel-2)}
+.moments-story-card .moment-text-preview{font-size:44px;font-weight:900;color:var(--hexa-text);display:grid;place-items:center;width:100%;height:100%}
+.moment-story-badge{position:absolute;top:10px;right:10px;padding:5px 8px;border-radius:999px;background:rgba(0,0,0,.5);color:#fff;font-size:9px;backdrop-filter:blur(8px)}
+.moment-card-body{padding:11px 12px 13px;display:grid;gap:9px}
+.moment-card-author{display:flex;align-items:center;gap:8px}
+.moment-card-author>div{display:grid;gap:1px;min-width:0}
+.moment-card-author strong{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.moment-card-author small{font-size:8px;color:var(--hexa-muted)}
+.moment-card-body p{margin:0;font-size:11px;line-height:1.45;color:var(--hexa-text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:31px}
+.moment-card-stats{display:flex;gap:10px;color:var(--hexa-muted);font-size:9px}
+.moment-card-stats span:first-child{color:var(--hexa-text)}
+.moments-viewer-content{display:flex!important;flex-direction:column;align-items:stretch!important;justify-content:flex-start!important}
+.moments-viewer-topbar{position:absolute;z-index:4;top:0;left:0;right:0;padding:15px;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(rgba(0,0,0,.58),transparent)}
+.moment-viewer-identity{display:flex;align-items:center;gap:9px;color:#fff}
+.moment-viewer-identity>div{display:grid;gap:2px}
+.moment-viewer-identity strong{font-size:12px}.moment-viewer-identity small{font-size:9px;opacity:.78}
+.moment-viewer-more{width:36px;height:36px;border-radius:50%;border:0;background:rgba(255,255,255,.12);color:#fff;font-size:22px}
+.moments-viewer-content>img,.moments-viewer-content>video{flex:1;width:100%;height:100%;object-fit:contain!important;background:#000;padding-top:18px}
+.moments-viewer-stats{left:18px;right:18px;bottom:54px!important;display:flex;gap:18px;color:rgba(255,255,255,.9)}
+.moments-viewer-stats span{font-size:10px}.moments-viewer-stats b{color:#fff;font-size:12px}
+@media(max-width:700px){.moments-story-card{min-width:205px}.moments-story-card .status-preview{height:215px}.moment-card-body{padding:10px}.moments-viewer-topbar{padding:12px}.moments-viewer-stats{gap:12px}}
+`;
 
