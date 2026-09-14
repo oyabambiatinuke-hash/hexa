@@ -677,10 +677,20 @@ function validateMessageInput(text, attachment) {
   return "";
 }
 
-function safeAlert(message) {
-  if (typeof window !== "undefined") {
-    window.alert(message);
-  }
+function safeAlert(message, kind = "info") {
+  if (typeof document === "undefined") return;
+  document.querySelector(".hexa-action-toast")?.remove();
+  const toast = document.createElement("div");
+  toast.className = `hexa-action-toast ${kind}`;
+  toast.setAttribute("role", "status");
+  const safe = String(message).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+  toast.innerHTML = `<span class="hexa-toast-icon">${kind === "success" ? "✓" : kind === "danger" ? "!" : "i"}</span><span>${safe}</span>`;
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add("show"));
+  window.setTimeout(() => {
+    toast.classList.remove("show");
+    window.setTimeout(() => toast.remove(), 180);
+  }, 2600);
 }
 
 /* ============================================================
@@ -1551,6 +1561,7 @@ function ChatPage({
 
   const [forwardOpen, setForwardOpen] = useState(false);
   const [forwardMessage, setForwardMessage] = useState(null);
+  const [actionDialog, setActionDialog] = useState(null);
 
   const [emojiOpen, setEmojiOpen] = useState(false);
 
@@ -2902,8 +2913,8 @@ function ChatPage({
     }
 
     if (action === "search") {
-      const value = prompt("Search messages in this chat");
-      if (value !== null) setMessageSearch(value.trim());
+      setMessageSearch("");
+      requestAnimationFrame(() => document.querySelector(".chat-message-search input")?.focus());
       return;
     }
 
@@ -2922,6 +2933,14 @@ function ChatPage({
     }
   }
 
+  function openActionDialog(config) {
+    setActionDialog({ type: "choice", title: "HEXA", subtitle: "", options: [], value: "", ...config });
+  }
+
+  function closeActionDialog() {
+    setActionDialog(null);
+  }
+
   async function handleChatMenuAction(action) {
     closeChatMenu();
 
@@ -2933,11 +2952,8 @@ function ChatPage({
         break;
 
       case "search":
-        setMessageSearch(" ".trim());
-        setTimeout(() => {
-          const value = prompt("Search messages in this chat");
-          if (value !== null) setMessageSearch(value.trim());
-        }, 0);
+        setMessageSearch("");
+        requestAnimationFrame(() => document.querySelector(".chat-message-search input")?.focus());
         break;
 
       case "select":
@@ -2945,64 +2961,54 @@ function ChatPage({
         break;
 
       case "mute": {
-        const choice = prompt("Mute notifications for: 1 hour / 8 hours / Always", "1 hour");
-        if (!choice) break;
-        const normalized = choice.trim().toLowerCase();
-        const duration =
-          normalized === "1 hour" || normalized === "1h"
-            ? 3600
-            : normalized === "8 hours" || normalized === "8h"
-              ? 28800
-              : normalized === "always"
-                ? null
-                : undefined;
-        if (duration === undefined) {
-          safeAlert("Choose 1 hour, 8 hours, or Always.");
-          break;
-        }
-        const conversationId = selected.realConversationId || selected.id;
-        const mutedUntil = duration === null ? null : new Date(Date.now() + duration * 1000).toISOString();
-        try {
-          const { error } = await supabase.from("chat_preferences").upsert({
-            user_id: profile.id,
-            conversation_id: conversationId,
-            muted_until: mutedUntil,
-          }, { onConflict: "user_id,conversation_id" });
-          if (error) throw error;
-        } catch (error) {
-          console.warn("HEXA mute preference:", error);
-        }
-        if (mutedUntil) localStorage.setItem(`hexa-muted-until:${selected.id}`, mutedUntil);
-        setMuted(current => current.includes(String(selected.id)) ? current : [...current, String(selected.id)]);
+        openActionDialog({
+          type: "choice",
+          title: "Mute notifications",
+          subtitle: "Choose how long HEXA should stay quiet for this chat.",
+          options: [
+            { label: "1 hour", value: "1h", icon: "◷" },
+            { label: "8 hours", value: "8h", icon: "◴" },
+            { label: "Always", value: "always", icon: "∞" },
+          ],
+          onConfirm: async (choice) => {
+            const duration = choice === "1h" ? 3600 : choice === "8h" ? 28800 : null;
+            const conversationId = selected.realConversationId || selected.id;
+            const mutedUntil = duration === null ? null : new Date(Date.now() + duration * 1000).toISOString();
+            try {
+              const { error } = await supabase.from("chat_preferences").upsert({ user_id: profile.id, conversation_id: conversationId, muted_until: mutedUntil }, { onConflict: "user_id,conversation_id" });
+              if (error) throw error;
+            } catch (error) { console.warn("HEXA mute preference:", error); }
+            if (mutedUntil) localStorage.setItem(`hexa-muted-until:${selected.id}`, mutedUntil);
+            setMuted(current => current.includes(String(selected.id)) ? current : [...current, String(selected.id)]);
+            safeAlert(`Notifications muted: ${choice === "always" ? "Always" : choice === "1h" ? "1 hour" : "8 hours"}.`, "success");
+          }
+        });
         break;
       }
 
       case "disappearing": {
-        const choice = prompt("Disappearing messages: Off / 24 hours / 7 days / 90 days", disappearing === "off" ? "Off" : disappearing);
-        if (!choice) break;
-        const normalized = choice.trim().toLowerCase();
-        const next =
-          normalized === "24 hours" || normalized === "24h" ? "24h" :
-          normalized === "7 days" || normalized === "7d" ? "7d" :
-          normalized === "90 days" || normalized === "90d" ? "90d" :
-          normalized === "off" ? "off" : null;
-        if (!next) {
-          safeAlert("Choose Off, 24 hours, 7 days, or 90 days.");
-          break;
-        }
-        setDisappearing(next);
-        const conversationId = selected.realConversationId || selected.id;
-        const seconds = next === "24h" ? 86400 : next === "7d" ? 604800 : next === "90d" ? 7776000 : 0;
-        try {
-          const { error } = await supabase.from("chat_preferences").upsert({
-            user_id: profile.id,
-            conversation_id: conversationId,
-            disappearing_seconds: seconds,
-          }, { onConflict: "user_id,conversation_id" });
-          if (error) throw error;
-        } catch (error) {
-          console.warn("HEXA disappearing preference:", error);
-        }
+        openActionDialog({
+          type: "choice",
+          title: "Disappearing messages",
+          subtitle: "New messages can automatically disappear after the selected period.",
+          options: [
+            { label: "Off", value: "off", icon: "○" },
+            { label: "24 hours", value: "24h", icon: "24" },
+            { label: "7 days", value: "7d", icon: "7" },
+            { label: "90 days", value: "90d", icon: "90" },
+          ],
+          selectedValue: disappearing,
+          onConfirm: async (next) => {
+            setDisappearing(next);
+            const conversationId = selected.realConversationId || selected.id;
+            const seconds = next === "24h" ? 86400 : next === "7d" ? 604800 : next === "90d" ? 7776000 : 0;
+            try {
+              const { error } = await supabase.from("chat_preferences").upsert({ user_id: profile.id, conversation_id: conversationId, disappearing_seconds: seconds }, { onConflict: "user_id,conversation_id" });
+              if (error) throw error;
+            } catch (error) { console.warn("HEXA disappearing preference:", error); }
+            safeAlert(`Disappearing messages: ${next === "off" ? "Off" : next === "24h" ? "24 hours" : next === "7d" ? "7 days" : "90 days"}.`, "success");
+          }
+        });
         break;
       }
 
@@ -3022,21 +3028,35 @@ function ChatPage({
       }
 
       case "list": {
-        const choice = prompt("Add chat to list: Family / School / New list", "Family");
-        if (!choice) break;
-        const normalized = choice.trim().toLowerCase();
-        let folder = "";
-        if (normalized === "family" || normalized === "school") folder = normalized[0].toUpperCase() + normalized.slice(1);
-        else if (normalized === "new list") { const name = prompt("Enter the new list name"); if (name?.trim()) folder = name.trim(); }
-        else { safeAlert("Choose Family, School, or New list."); break; }
-        if (folder) {
-          localStorage.setItem(`hexa-chat-list:${selected.id}`, folder);
-          try {
-            const conversationId = selected.realConversationId || selected.id;
-            const { error } = await supabase.from("chat_preferences").upsert({ user_id: profile.id, conversation_id: conversationId, folder }, { onConflict: "user_id,conversation_id" });
-            if (error) throw error;
-          } catch (error) { console.warn("HEXA chat folder preference:", error); }
-        }
+        openActionDialog({
+          type: "choice",
+          title: "Add chat to list",
+          subtitle: "Organize this conversation so it is easier to find later.",
+          options: [
+            { label: "Family", value: "Family", icon: "⌂" },
+            { label: "School", value: "School", icon: "▣" },
+            { label: "+ New list", value: "__new__", icon: "+" },
+          ],
+          onConfirm: async (value) => {
+            if (value === "__new__") {
+              openActionDialog({
+                type: "input", title: "Create new list", subtitle: "Give this list a short name.", inputPlaceholder: "List name", confirmLabel: "Create list",
+                onConfirm: async (name) => {
+                  const clean = String(name || "").trim();
+                  if (!clean) return;
+                  localStorage.setItem(`hexa-chat-list:${selected.id}`, clean);
+                  const conversationId = selected.realConversationId || selected.id;
+                  try { const { error } = await supabase.from("chat_preferences").upsert({ user_id: profile.id, conversation_id: conversationId, folder: clean }, { onConflict: "user_id,conversation_id" }); if (error) throw error; } catch (error) { console.warn("HEXA chat folder preference:", error); }
+                  safeAlert(`Added to ${clean}.`, "success");
+                }
+              });
+              return;
+            }
+            localStorage.setItem(`hexa-chat-list:${selected.id}`, value);
+            try { const conversationId = selected.realConversationId || selected.id; const { error } = await supabase.from("chat_preferences").upsert({ user_id: profile.id, conversation_id: conversationId, folder: value }, { onConflict: "user_id,conversation_id" }); if (error) throw error; } catch (error) { console.warn("HEXA chat folder preference:", error); }
+            safeAlert(`Added to ${value}.`, "success");
+          }
+        });
         break;
       }
 
@@ -3083,16 +3103,12 @@ function ChatPage({
         break;
 
       case "report": {
-        if (!window.confirm("Report this chat to HEXA?")) break;
-        try {
-          const { error } = await supabase.from("security_events").insert({
-            user_id: profile.id,
-            event_type: "chat_report",
-            metadata: { conversation_id: selected.realConversationId || selected.id, reported_user_id: selected.otherUserId || null }
-          });
-          if (error) throw error;
-          safeAlert("Report submitted to HEXA.");
-        } catch (error) { safeAlert(error?.message || "Unable to submit report."); }
+        openActionDialog({
+          type: "confirm", danger: true, title: "Report this chat?", subtitle: "HEXA will review the conversation details associated with your report.", confirmLabel: "Report chat",
+          onConfirm: async () => {
+            try { const { error } = await supabase.from("security_events").insert({ user_id: profile.id, event_type: "chat_report", metadata: { conversation_id: selected.realConversationId || selected.id, reported_user_id: selected.otherUserId || null } }); if (error) throw error; safeAlert("Report submitted to HEXA.", "success"); } catch (error) { safeAlert(error?.message || "Unable to submit report.", "danger"); }
+          }
+        });
         break;
       }
 
@@ -3105,16 +3121,12 @@ function ChatPage({
         break;
 
       case "delete":
-        if (window.confirm("Delete this chat from your chat list?")) {
-          try {
-            const conversationId = selected.realConversationId || selected.id;
-            const { error } = await supabase.from("conversation_members").delete().eq("conversation_id", conversationId).eq("user_id", profile.id);
-            if (error) throw error;
-            setConversations(current => current.filter(item => String(item.id) !== String(selected.id)));
-            setMessages([]);
-            setMobileConversationOpen(false);
-          } catch (error) { safeAlert(error?.message || "Unable to delete this chat."); }
-        }
+        openActionDialog({
+          type: "confirm", danger: true, title: "Delete this chat?", subtitle: "This removes the conversation from your HEXA chat list. This cannot be undone from the app.", confirmLabel: "Delete chat",
+          onConfirm: async () => {
+            try { const conversationId = selected.realConversationId || selected.id; const { error } = await supabase.from("conversation_members").delete().eq("conversation_id", conversationId).eq("user_id", profile.id); if (error) throw error; setConversations(current => current.filter(item => String(item.id) !== String(selected.id))); setMessages([]); setMobileConversationOpen(false); safeAlert("Chat deleted.", "success"); } catch (error) { safeAlert(error?.message || "Unable to delete this chat.", "danger"); }
+          }
+        });
         break;
 
       default:
@@ -3125,6 +3137,7 @@ function ChatPage({
   function clearChat() {
     setMessages([]);
     setChatSettingsOpen(false);
+    safeAlert("Chat cleared from this view.", "success");
   }
 
   /* ============================================================
@@ -3163,26 +3176,84 @@ function ChatPage({
     );
   }
 
-  async function deleteSelected() {
-    const selectedItems =
-      messages.filter(
-        item =>
-          selectedMessages.includes(
-            String(item.id)
-          )
-      );
+  function getSelectedMessageItems() {
+    const selectedSet = new Set(selectedMessages.map(String));
+    return messages.filter(item => selectedSet.has(String(item.id)));
+  }
 
-    for (
-      const item of selectedItems
-    ) {
-      await deleteMessage(
-        item,
-        item.sender_id ===
-          profile.id
-      );
+  function selectAllMessages() {
+    const selectable = messages.filter(item => !item.deleted_at);
+    if (!selectable.length) return;
+    setSelectedMessages(selectable.map(item => String(item.id)));
+    setSelectionMode(true);
+  }
+
+  async function copySelected() {
+    const items = getSelectedMessageItems();
+    if (!items.length) return;
+    const text = items.map(item => item.content || "").filter(Boolean).join("\n");
+    if (!text) { safeAlert("There is no text to copy in the selected messages."); return; }
+    try {
+      await navigator.clipboard.writeText(text);
+      safeAlert(`${items.length} message${items.length === 1 ? "" : "s"} copied.`);
+    } catch {
+      safeAlert("Unable to copy the selected messages on this device.");
+    }
+  }
+
+  async function runBulkMessageAction(action) {
+    const items = getSelectedMessageItems();
+    if (!items.length) return;
+
+    if (action === "star") {
+      for (const item of items) await toggleStar(item);
+      cancelSelection();
+      return;
     }
 
-    cancelSelection();
+    if (action === "pin") {
+      for (const item of items) await togglePin(item);
+      cancelSelection();
+      return;
+    }
+
+    if (action === "forward") {
+      if (items.length !== 1) {
+        safeAlert("Select one message to forward at a time.");
+        return;
+      }
+      openForward(items[0]);
+      cancelSelection();
+      return;
+    }
+
+    if (action === "copy") {
+      await copySelected();
+      return;
+    }
+
+    if (action === "delete") {
+      await deleteSelected();
+    }
+  }
+
+  async function deleteSelected() {
+    const selectedItems = getSelectedMessageItems();
+
+    if (!selectedItems.length) return;
+    const ownCount = selectedItems.filter(item => String(item.sender_id) === String(profile.id)).length;
+    const everyone = ownCount === selectedItems.length;
+    openActionDialog({
+      type: "confirm", danger: true,
+      title: everyone ? "Delete selected messages?" : "Delete selected messages for you?",
+      subtitle: everyone ? `You are about to remove ${selectedItems.length} message${selectedItems.length === 1 ? "" : "s"} for everyone.` : `You are about to remove ${selectedItems.length} message${selectedItems.length === 1 ? "" : "s"} from your view.`,
+      confirmLabel: "Delete",
+      onConfirm: async () => {
+        for (const item of selectedItems) await deleteMessage(item, everyone && String(item.sender_id) === String(profile.id));
+        cancelSelection();
+        safeAlert(`${selectedItems.length} message${selectedItems.length === 1 ? "" : "s"} deleted.`, "success");
+      }
+    });
   }
 
   /* ============================================================
@@ -3965,31 +4036,36 @@ function ChatPage({
 
         {selectionMode && (
           <div className="message-selection-toolbar">
+            <div className="selection-toolbar-leading">
+              <button type="button" className="selection-close" onClick={cancelSelection} aria-label="Exit selection mode">
+                ×
+              </button>
+              <div className="selection-count-block">
+                <strong>{selectedMessages.length}</strong>
+                <span>{selectedMessages.length === 1 ? "message selected" : "messages selected"}</span>
+              </div>
+            </div>
 
-            <strong>
-              {
-                selectedMessages.length
-              } selected
-            </strong>
-
-            <button
-              type="button"
-              onClick={
-                deleteSelected
-              }
-            >
-              🗑
-            </button>
-
-            <button
-              type="button"
-              onClick={
-                cancelSelection
-              }
-            >
-              Cancel
-            </button>
-
+            <div className="selection-toolbar-actions">
+              <button type="button" className="selection-tool" onClick={selectAllMessages} title="Select all">
+                <span>☑</span><small>All</small>
+              </button>
+              <button type="button" className="selection-tool" onClick={() => runBulkMessageAction("copy")} disabled={!selectedMessages.length} title="Copy">
+                <span>⧉</span><small>Copy</small>
+              </button>
+              <button type="button" className="selection-tool" onClick={() => runBulkMessageAction("star")} disabled={!selectedMessages.length} title="Star">
+                <span>☆</span><small>Star</small>
+              </button>
+              <button type="button" className="selection-tool" onClick={() => runBulkMessageAction("pin")} disabled={!selectedMessages.length} title="Pin">
+                <span>📌</span><small>Pin</small>
+              </button>
+              <button type="button" className="selection-tool" onClick={() => runBulkMessageAction("forward")} disabled={selectedMessages.length !== 1} title="Forward one message">
+                <span>↪</span><small>Forward</small>
+              </button>
+              <button type="button" className="selection-tool danger" onClick={() => runBulkMessageAction("delete")} disabled={!selectedMessages.length} title="Delete selected">
+                <span>🗑</span><small>Delete</small>
+              </button>
+            </div>
           </div>
         )}
 
@@ -4533,6 +4609,22 @@ function ChatPage({
         </div>
       )}
 
+      {actionDialog && (
+        <div className="hexa-action-dialog-overlay" onClick={closeActionDialog}>
+          <div className={`hexa-action-dialog ${actionDialog.danger ? "danger" : ""}`} onClick={event => event.stopPropagation()}>
+            <div className="hexa-action-dialog-glow" />
+            <div className="hexa-action-dialog-head">
+              <div className="hexa-action-dialog-badge">{actionDialog.danger ? "!" : actionDialog.type === "input" ? "✎" : "☰"}</div>
+              <div><strong>{actionDialog.title}</strong><span>{actionDialog.subtitle}</span></div>
+              <button type="button" className="hexa-action-dialog-close" onClick={closeActionDialog}>×</button>
+            </div>
+            {actionDialog.type === "choice" && <div className="hexa-choice-list">{actionDialog.options.map(option => <button key={option.value} type="button" className={`hexa-choice-card ${actionDialog.selectedValue === option.value ? "selected" : ""}`} onClick={async () => { closeActionDialog(); await actionDialog.onConfirm?.(option.value); }}><span className="hexa-choice-icon">{option.icon}</span><span className="hexa-choice-copy"><strong>{option.label}</strong><small>{actionDialog.selectedValue === option.value ? "Current setting" : "Tap to select"}</small></span><span className="hexa-choice-check">{actionDialog.selectedValue === option.value ? "✓" : "›"}</span></button>)}</div>}
+            {actionDialog.type === "input" && <ActionDialogInput config={actionDialog} close={closeActionDialog} />}
+            {actionDialog.type === "confirm" && <div className="hexa-confirm-body"><div className="hexa-confirm-icon">{actionDialog.danger ? "!" : "?"}</div><p>{actionDialog.subtitle}</p><div className="hexa-confirm-actions"><button type="button" className="hexa-dialog-secondary" onClick={closeActionDialog}>Cancel</button><button type="button" className={`hexa-dialog-primary ${actionDialog.danger ? "danger" : ""}`} onClick={async () => { closeActionDialog(); await actionDialog.onConfirm?.(); }}>{actionDialog.confirmLabel || "Continue"}</button></div></div>}
+          </div>
+        </div>
+      )}
+
       {/* ======================================================
           FORWARD MODAL
           ====================================================== */}
@@ -4554,16 +4646,10 @@ function ChatPage({
             }
           >
 
-            <div className="modal-header">
-
-              <div>
-                <strong>
-                  Forward message
-                </strong>
-
-                <span>
-                  Choose a conversation
-                </span>
+            <div className="modal-header forward-modal-header">
+              <div className="forward-title-wrap">
+                <div className="forward-title-icon">↪</div>
+                <div><strong>Forward message</strong><span>Choose where to send this message</span></div>
               </div>
 
               <button
@@ -4579,15 +4665,11 @@ function ChatPage({
 
             </div>
 
+            {forwardMessage && <div className="forward-preview-card"><div className="forward-preview-label">MESSAGE TO FORWARD</div><div className="forward-preview-body"><span className="forward-preview-type">{forwardMessage.message_type === "voice" ? "🎙" : forwardMessage.message_type === "image" ? "📷" : forwardMessage.message_type === "video" ? "🎬" : forwardMessage.message_type === "file" ? "📎" : "💬"}</span><div><strong>{String(forwardMessage.content || "Media").slice(0, 140)}</strong><small>{forwardMessage.created_at ? new Date(forwardMessage.created_at).toLocaleString() : ""}</small></div></div></div>}
+            <div className="forward-search-box">⌕<input aria-label="Search conversations to forward to" placeholder="Search chats" value={chatSearch} onChange={event => setChatSearch(event.target.value)} /></div>
             <div className="forward-list">
 
-              {conversations
-                .filter(
-                  conversation =>
-                    conversation.id !==
-                      "hexa-system-group"
-                )
-                .map(
+              {conversations.filter(conversation => conversation.id !== "hexa-system-group").filter(conversation => !chatSearch.trim() || `${conversation.name || ""} ${conversation.username || ""}`.toLowerCase().includes(chatSearch.trim().toLowerCase())).map(
                   conversation => (
                     <button
                       key={
@@ -4679,6 +4761,14 @@ function ChatPage({
 
             return (
               <>
+                <div className="message-action-sheet-head">
+                  <div>
+                    <span className="message-action-sheet-kicker">MESSAGE ACTIONS</span>
+                    <strong>{isMine ? "Your message" : "Message"}</strong>
+                  </div>
+                  <button type="button" className="message-action-sheet-close" onClick={() => setContextMenu(null)} aria-label="Close message actions">×</button>
+                </div>
+
                 <div className="message-action-reactions">
                   {quickReactions.map(emoji => (
                     <button
@@ -4771,7 +4861,7 @@ function ChatPage({
                     <span className="message-action-icon">☑</span>
                     <span className="message-action-copy">
                       <strong>Select</strong>
-                      <small>Select messages for bulk actions</small>
+                      <small>{selectionMode ? `${selectedMessages.length} currently selected` : "Choose several messages for bulk actions"}</small>
                     </span>
                   </button>
                 </div>
@@ -4798,6 +4888,10 @@ function ChatPage({
                       </span>
                     </button>
                   )}
+                </div>
+
+                <div className="message-action-footer">
+                  <span>Long-press a message for these actions</span>
                 </div>
               </>
             );
@@ -5405,17 +5499,112 @@ function StatusPage({ profile }) {
       {loading ? <div className="coming-card"><h2>Loading statuses…</h2></div> : statuses.map((s) => <button key={s.id} className={`status-card moments-story-card ${viewed[s.id] ? "seen" : "unseen"}`} onClick={() => openStatus(s)}><div className="status-preview">{s.media_url && s.media_type === "image" ? <img src={s.media_url} alt=""/> : s.media_url && s.media_type === "video" ? <video src={s.media_url} muted playsInline/> : <span>Aa</span>}</div><strong>{s.text || s.description || "Media status"}</strong><span>{counts[s.id] || 0} ❤️ · {counts[`${s.id}:views`] || 0} 👁</span></button>)}
     </div>
     {show && <div className="modal-backdrop" onClick={() => !posting && setShow(false)}><div className="status-modal" onClick={(e) => e.stopPropagation()}><div className="modal-header"><div><h2>Create Moment</h2><p>Share something with your contacts.</p></div><button type="button" onClick={() => !posting && setShow(false)}>×</button></div><form onSubmit={create}><textarea className="modal-input modal-textarea" value={text} onChange={(e) => setText(e.target.value)} placeholder="What's happening?" maxLength={HEXA_MAX_MESSAGE_LENGTH}/><input className="modal-input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Caption / description" maxLength={1000}/><button type="button" className="media-picker" onClick={() => fileRef.current?.click()} disabled={posting}><span>📷</span><div><strong>{file ? file.file.name : "Add photo or video"}</strong><small>Camera, gallery or laptop file</small></div></button><input ref={fileRef} hidden type="file" accept="image/*,video/*" capture="environment" onChange={pick}/>{file && <div className="status-media-preview">{file.kind === "video" ? <video controls src={file.url}/> : <img src={file.url} alt="Preview"/>}</div>}<button className="hero-primary" type="submit" disabled={posting}>{posting ? "Posting…" : "Post Moment"}</button></form></div></div>}
-    {viewer && <div className="story-viewer" onClick={() => setViewer(null)}><button className="story-close" onClick={() => setViewer(null)}>×</button><button className="story-nav story-prev" onClick={(e) => {e.stopPropagation();nextStatus(-1)}}>‹</button><div className="story-content" onClick={(e) => e.stopPropagation()}>{viewer.media_url && viewer.media_type === "video" ? <video controls autoPlay playsInline src={viewer.media_url}/> : viewer.media_url ? <img src={viewer.media_url} alt="Status"/> : <div className="story-text">{viewer.text}</div>}<div className="story-caption"><strong>{viewer.description || viewer.text || "Status"}</strong><span>{new Date(viewer.created_at).toLocaleString()}</span></div><div className="story-stats"><span>❤️ {likeCount}</span><span>👁 {viewCount}</span><span>💬 {commentCount}</span></div><div className="story-actions moments-story-actions">
-        <button onClick={() => toggleLike(viewer)}>{liked[viewer.id] ? "❤️" : "♡"}</button>
-        {['👍','😂','😮','😢','😡'].map((emoji) => <button key={emoji} className={reaction === emoji ? "active" : ""} onClick={() => reactToMoment(viewer, emoji)}>{emoji}</button>)}
-        <button onClick={() => loadComments(viewer.id)}>💬</button>
-        <button onClick={() => setShareOpen((x) => !x)}>↗</button>
+    {viewer && (
+      <div className="story-viewer" onClick={() => setViewer(null)}>
+        <button className="story-close" onClick={() => setViewer(null)}>×</button>
+        <button
+          className="story-nav story-prev"
+          onClick={(e) => {
+            e.stopPropagation();
+            nextStatus(-1);
+          }}
+        >
+          ‹
+        </button>
+
+        <div className="story-content" onClick={(e) => e.stopPropagation()}>
+          {viewer.media_url && viewer.media_type === "video" ? (
+            <video controls autoPlay playsInline src={viewer.media_url} />
+          ) : viewer.media_url ? (
+            <img src={viewer.media_url} alt="Moment" />
+          ) : (
+            <div className="story-text">{viewer.text}</div>
+          )}
+
+          <div className="story-caption">
+            <strong>{viewer.description || viewer.text || "Moment"}</strong>
+            <span>{new Date(viewer.created_at).toLocaleString()}</span>
+          </div>
+
+          <div className="story-stats">
+            <span>❤️ {likeCount}</span>
+            <span>👁 {viewCount}</span>
+            <span>💬 {commentCount}</span>
+          </div>
+
+          <div className="story-actions moments-story-actions">
+            <button type="button" onClick={() => toggleLike(viewer)}>
+              {liked[viewer.id] ? "❤️" : "♡"}
+            </button>
+            {['👍', '😂', '😮', '😢', '😡'].map((emoji) => (
+              <button
+                type="button"
+                key={emoji}
+                className={reaction === emoji ? "active" : ""}
+                onClick={() => reactToMoment(viewer, emoji)}
+              >
+                {emoji}
+              </button>
+            ))}
+            <button type="button" onClick={() => loadComments(viewer.id)}>💬</button>
+            <button type="button" onClick={() => setShareOpen((x) => !x)}>↗</button>
+          </div>
+
+          {shareOpen && (
+            <div
+              className="moments-share-menu"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button type="button" onClick={() => shareMoment(viewer)}>↗ Share Moment</button>
+              <button type="button" onClick={() => copyMomentLink(viewer)}>🔗 Copy link</button>
+              <button type="button" onClick={() => repostMoment(viewer)}>↻ Repost</button>
+            </div>
+          )}
+
+          <div className="status-comments">
+            <strong>Comments</strong>
+            <div className="status-comments-list">
+              {comments.map((c) => (
+                <div className="status-comment" key={c.id}>
+                  <Avatar
+                    src={c.profile?.avatar_url}
+                    name={c.profile?.full_name || c.profile?.username || "HEXA User"}
+                    size={32}
+                  />
+                  <div>
+                    <b>{c.profile?.full_name || c.profile?.username || "HEXA User"}</b>
+                    <p>{c.text}</p>
+                    <small>{new Date(c.created_at).toLocaleString()}</small>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {viewer.allow_replies !== false && (
+              <form className="status-comment-form" onSubmit={addComment}>
+                <input
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  placeholder="Write a comment…"
+                  maxLength={1000}
+                />
+                <button type="submit">Send</button>
+              </form>
+            )}
+          </div>
+        </div>
+
+        <button
+          className="story-nav story-next"
+          onClick={(e) => {
+            e.stopPropagation();
+            nextStatus(1);
+          }}
+        >
+          ›
+        </button>
       </div>
-      {shareOpen && <><div className="moments-share-menu" onClick={(e) => e.stopPropagation()}>
-        <button onClick={() => shareMoment(viewer)}>↗ Share Moment</button>
-        <button onClick={() => copyMomentLink(viewer)}>🔗 Copy link</button>
-        <button onClick={() => repostMoment(viewer)}>↻ Repost</button>
-      </div><div className="status-comments"><strong>Comments</strong><div className="status-comments-list">{comments.map((c) => <div className="status-comment" key={c.id}><Avatar src={c.profile?.avatar_url} name={c.profile?.full_name || c.profile?.username || "HEXA User"} size={32} /><div><b>{c.profile?.full_name || c.profile?.username || "HEXA User"}</b><p>{c.text}</p><small>{new Date(c.created_at).toLocaleString()}</small></div></div>)}</div>{viewer.allow_replies !== false && <form className="status-comment-form" onSubmit={addComment}><input value={commentText} onChange={(e) => setCommentText(e.target.value)} placeholder="Write a comment…" maxLength={1000} /><button type="submit">Send</button></form>}</div></>}</div><button className="story-nav story-next" onClick={(e) => {e.stopPropagation();nextStatus(1)}}>›</button></div>}
+    )}
   </section>;
 }
 
@@ -6226,6 +6415,21 @@ class HexaErrorBoundary extends React.Component {
   }
 }
 
+function ActionDialogInput({ config, close }) {
+  const [value, setValue] = useState("");
+  return (
+    <form className="hexa-input-dialog" onSubmit={async event => {
+      event.preventDefault();
+      if (!value.trim()) return;
+      close();
+      await config.onConfirm?.(value.trim());
+    }}>
+      <label><span>List name</span><input autoFocus value={value} onChange={event => setValue(event.target.value)} placeholder={config.inputPlaceholder || "Enter a name"} maxLength={40} /></label>
+      <div className="hexa-confirm-actions"><button type="button" className="hexa-dialog-secondary" onClick={close}>Cancel</button><button type="submit" className="hexa-dialog-primary">{config.confirmLabel || "Save"}</button></div>
+    </form>
+  );
+}
+
 function AuthenticatedHEXA({ session, onSignOut }) {
 
   const [profile,setProfile]=useState(null),[profileLoading,setProfileLoading]=useState(true),[activePage,setActivePage]=useState("chat"),[search,setSearch]=useState(""),[notifications,setNotifications]=useState([]),[showNotifications,setShowNotifications]=useState(false),[chatTarget,setChatTarget]=useState(null),[callTarget,setCallTarget]=useState(null);
@@ -6477,7 +6681,54 @@ export default function App() {
 
   return (
     <HexaErrorBoundary>
-      <style>{APP_STYLES}</style>
+      <style>{APP_STYLES + `
+
+/* ============================================================
+   HEXA ACTION SYSTEM — SELECTION + ACTION SURFACES
+   ============================================================ */
+.message-selection-toolbar{
+  position:absolute;
+  z-index:75;
+  top:10px;
+  left:10px;
+  right:10px;
+  min-height:64px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:8px 10px;
+  border:1px solid var(--hexa-border-strong);
+  border-radius:18px;
+  background:color-mix(in srgb,var(--hexa-panel) 94%,transparent);
+  box-shadow:0 20px 55px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.05);
+  backdrop-filter:blur(20px);
+}
+.selection-toolbar-leading{display:flex;align-items:center;gap:9px;min-width:0}.selection-close{width:40px;height:40px;flex:0 0 40px;border:1px solid var(--hexa-border);border-radius:13px;background:var(--hexa-panel-2);color:var(--hexa-text);font-size:25px;line-height:1;cursor:pointer}.selection-close:hover{background:var(--hexa-panel-3);transform:translateY(-1px)}
+.selection-count-block{display:grid;gap:2px;min-width:86px}.selection-count-block strong{font-size:17px;line-height:1}.selection-count-block span{font-size:10px;color:var(--hexa-muted);white-space:nowrap}
+.selection-toolbar-actions{display:flex;align-items:center;gap:4px;overflow:auto;scrollbar-width:none}.selection-toolbar-actions::-webkit-scrollbar{display:none}.selection-tool{width:48px;min-width:48px;height:48px;border:1px solid transparent;border-radius:13px;background:transparent;color:var(--hexa-text);display:grid;place-items:center;align-content:center;gap:1px;cursor:pointer}.selection-tool span{font-size:18px;line-height:1}.selection-tool small{font-size:8px;color:var(--hexa-muted);font-weight:800}.selection-tool:hover{background:var(--hexa-panel-3);border-color:var(--hexa-border)}.selection-tool:disabled{opacity:.34;cursor:not-allowed}.selection-tool.danger span,.selection-tool.danger small{color:var(--hexa-danger)}
+
+.message-action-sheet-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 5px 9px}.message-action-sheet-head>div{display:grid;gap:2px}.message-action-sheet-kicker{font-size:8px;letter-spacing:.12em;font-weight:900;color:var(--hexa-accent-2)}.message-action-sheet-head strong{font-size:14px}.message-action-sheet-close{width:30px;height:30px;border:1px solid var(--hexa-border);border-radius:10px;background:var(--hexa-panel-2);color:var(--hexa-text);font-size:20px;line-height:1;cursor:pointer}.message-action-sheet-close:hover{background:var(--hexa-panel-3)}
+.message-action-item{position:relative;min-height:54px}.message-action-item:active{transform:scale(.985)}.message-action-item:hover .message-action-icon{transform:translateY(-1px)}.message-action-icon{transition:transform .14s ease,background .14s ease}.message-action-copy small{max-width:220px}.message-action-footer{padding:8px 10px 3px;color:var(--hexa-muted);font-size:9px;text-align:center;opacity:.78}
+
+/* Better inline / hover actions */
+.message-tools{gap:2px!important;padding:4px!important;border-radius:13px!important;background:color-mix(in srgb,var(--hexa-panel) 94%,transparent)!important;box-shadow:0 10px 30px rgba(0,0,0,.18)!important;backdrop-filter:blur(14px)}.message-tools button{width:32px;height:30px;border-radius:9px!important;display:grid;place-items:center}.message-tools button:hover{background:var(--hexa-panel-3)!important}.reaction-picker{gap:2px!important;padding:5px!important;border-radius:14px!important;box-shadow:0 14px 35px rgba(0,0,0,.2)!important}.reaction-picker button{width:34px;height:34px;border:0;border-radius:9px;background:transparent}.reaction-picker button:hover{background:var(--hexa-panel-3)}
+
+/* Cleaner reply/edit surface */
+.reply-bar{min-height:52px!important;padding:8px 12px!important;background:var(--hexa-panel)!important;box-shadow:0 -8px 25px rgba(0,0,0,.08)}.reply-bar>div{min-width:0;border-left:3px solid var(--hexa-accent);padding-left:9px;display:grid;gap:3px}.reply-bar strong{font-size:10px;color:var(--hexa-accent-2)!important}.reply-bar span{max-width:min(68vw,560px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--hexa-text)!important}.reply-bar button{width:34px;height:34px;border-radius:10px;background:var(--hexa-panel-2);border:1px solid var(--hexa-border)!important;cursor:pointer}.reply-bar button:hover{background:var(--hexa-panel-3)}
+
+/* Polished chat menu and other action popovers */
+.chat-settings-popover.whatsapp-chat-menu{border-radius:20px!important;padding:7px!important;box-shadow:0 22px 60px rgba(0,0,0,.25)!important;backdrop-filter:blur(20px)}.whatsapp-chat-menu button{min-height:46px!important;border-radius:12px!important;padding:9px 11px!important}.whatsapp-chat-menu button:hover{transform:translateX(1px);background:var(--hexa-panel-3)!important}.whatsapp-chat-menu button>span{font-weight:700}.whatsapp-chat-menu button small{line-height:1.35}.whatsapp-chat-menu .danger-menu-item{background:rgba(220,70,70,.05)}.whatsapp-chat-menu .danger-menu-item:hover{background:rgba(220,70,70,.11)!important}
+
+[data-hexa-theme="white"] .message-selection-toolbar,[data-hexa-theme="white"] .message-action-sheet-head{background:#fff}.message-selection-toolbar{color:var(--hexa-text)}
+@media(max-width:700px){
+  .message-selection-toolbar{top:6px;left:6px;right:6px;border-radius:16px;padding:7px}.selection-count-block strong{font-size:15px}.selection-close{width:38px;height:38px;flex-basis:38px}.selection-tool{width:44px;min-width:44px;height:44px}.message-action-popover{box-shadow:0 -8px 50px rgba(0,0,0,.28)!important}
+}
+
+/* HEXA action outcome UI */
+.hexa-action-toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,18px);opacity:0;z-index:5000;display:flex;align-items:center;gap:9px;max-width:min(460px,calc(100vw - 28px));padding:11px 14px;border:1px solid var(--hexa-border-strong);border-radius:14px;background:color-mix(in srgb,var(--hexa-panel) 96%,transparent);color:var(--hexa-text);box-shadow:0 18px 50px rgba(0,0,0,.28);backdrop-filter:blur(18px);font-size:12px;font-weight:700;transition:opacity .18s ease,transform .18s ease}.hexa-action-toast.show{opacity:1;transform:translate(-50%,0)}.hexa-action-toast.success .hexa-toast-icon{background:rgba(40,200,120,.12);color:#22c77a}.hexa-action-toast.danger .hexa-toast-icon{background:rgba(240,80,90,.12);color:#f05a66}.hexa-toast-icon{width:24px;height:24px;border-radius:8px;background:rgba(127,127,127,.12);display:grid;place-items:center;font-weight:900}.hexa-action-dialog-overlay{position:fixed;inset:0;z-index:4000;background:rgba(3,6,11,.62);display:grid;place-items:center;padding:18px;backdrop-filter:blur(8px)}.hexa-action-dialog{position:relative;overflow:hidden;width:min(470px,100%);border:1px solid var(--hexa-border-strong);border-radius:24px;background:var(--hexa-panel);box-shadow:0 30px 100px rgba(0,0,0,.4);padding:18px}.hexa-action-dialog-glow{position:absolute;width:180px;height:180px;right:-80px;top:-90px;background:radial-gradient(circle,rgba(124,92,255,.24),transparent 70%);pointer-events:none}.hexa-action-dialog-head{position:relative;display:grid;grid-template-columns:42px 1fr 34px;gap:11px;align-items:center}.hexa-action-dialog-badge{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:rgba(124,92,255,.12);border:1px solid rgba(124,92,255,.22);font-weight:900;color:var(--hexa-accent-2)}.hexa-action-dialog.danger .hexa-action-dialog-badge{background:rgba(240,80,90,.10);border-color:rgba(240,80,90,.22);color:#ef6570}.hexa-action-dialog-head strong{display:block;font-size:15px}.hexa-action-dialog-head span{display:block;margin-top:3px;color:var(--hexa-muted);font-size:10px;line-height:1.4}.hexa-action-dialog-close{width:34px;height:34px;border:1px solid var(--hexa-border);border-radius:10px;background:var(--hexa-panel-2);color:var(--hexa-text);font-size:20px;cursor:pointer}.hexa-choice-list{display:grid;gap:7px;margin-top:16px}.hexa-choice-card{display:grid;grid-template-columns:40px 1fr 20px;gap:11px;align-items:center;padding:10px;border:1px solid var(--hexa-border);border-radius:15px;background:var(--hexa-panel-2);color:var(--hexa-text);text-align:left;cursor:pointer}.hexa-choice-card:hover{border-color:var(--hexa-border-strong);background:var(--hexa-panel-3);transform:translateY(-1px)}.hexa-choice-card.selected{border-color:rgba(124,92,255,.48);background:rgba(124,92,255,.09)}.hexa-choice-icon{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--hexa-panel);border:1px solid var(--hexa-border);font-weight:900}.hexa-choice-copy{display:grid;gap:3px}.hexa-choice-copy strong{font-size:12px}.hexa-choice-copy small{font-size:9px;color:var(--hexa-muted)}.hexa-choice-check{color:var(--hexa-muted);font-size:18px}.hexa-choice-card.selected .hexa-choice-check{color:var(--hexa-accent-2)}.hexa-input-dialog{display:grid;gap:14px;margin-top:16px}.hexa-input-dialog label{display:grid;gap:7px}.hexa-input-dialog label span{font-size:10px;color:var(--hexa-muted);font-weight:800;text-transform:uppercase;letter-spacing:.06em}.hexa-input-dialog input{width:100%;box-sizing:border-box;border:1px solid var(--hexa-border);border-radius:13px;padding:13px 14px;background:var(--hexa-panel-2);color:var(--hexa-text);outline:none}.hexa-input-dialog input:focus{border-color:var(--hexa-accent)}.hexa-confirm-body{margin-top:16px}.hexa-confirm-body p{margin:0;color:var(--hexa-muted);font-size:12px;line-height:1.55}.hexa-confirm-icon{width:48px;height:48px;border-radius:15px;display:grid;place-items:center;background:rgba(240,80,90,.10);color:#ef6570;font-size:20px;font-weight:900;margin-bottom:12px}.hexa-confirm-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.hexa-dialog-secondary,.hexa-dialog-primary{min-height:42px;padding:0 15px;border-radius:12px;border:1px solid var(--hexa-border);font-weight:800;cursor:pointer}.hexa-dialog-secondary{background:var(--hexa-panel-2);color:var(--hexa-text)}.hexa-dialog-primary{background:var(--hexa-accent);color:#fff;border-color:transparent}.hexa-dialog-primary.danger{background:#d94c58}.forward-modal{width:min(560px,calc(100vw - 24px))!important;border-radius:24px!important;padding:16px!important}.forward-modal-header{padding-bottom:12px!important}.forward-title-wrap{display:flex;align-items:center;gap:10px}.forward-title-icon{width:42px;height:42px;border-radius:13px;background:rgba(124,92,255,.10);border:1px solid rgba(124,92,255,.22);display:grid;place-items:center;font-size:21px;color:var(--hexa-accent-2)}.forward-preview-card{padding:11px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);border-radius:15px;margin:6px 0 10px}.forward-preview-label{font-size:8px;letter-spacing:.09em;color:var(--hexa-muted);font-weight:900;margin-bottom:8px}.forward-preview-body{display:flex;align-items:center;gap:10px}.forward-preview-type{width:36px;height:36px;display:grid;place-items:center;border-radius:11px;background:var(--hexa-panel);border:1px solid var(--hexa-border);font-size:18px}.forward-preview-body>div{min-width:0;display:grid;gap:3px}.forward-preview-body strong{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:390px}.forward-preview-body small{font-size:9px;color:var(--hexa-muted)}.forward-search-box{display:flex;align-items:center;gap:8px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);border-radius:13px;padding:0 11px;margin:8px 0}.forward-search-box input{width:100%;border:0;outline:0;background:transparent;color:var(--hexa-text);height:40px}.forward-list{display:grid!important;gap:5px!important;max-height:48vh!important;overflow:auto!important;padding-right:2px}.forward-list .person-result{display:grid!important;grid-template-columns:44px 1fr!important;gap:10px!important;align-items:center!important;padding:9px!important;border:1px solid transparent!important;border-radius:14px!important;background:transparent!important;text-align:left!important}.forward-list .person-result:hover{border-color:var(--hexa-border)!important;background:var(--hexa-panel-2)!important}.forward-list .person-result>div{min-width:0;display:grid;gap:3px}.forward-list .person-result strong{font-size:12px}.forward-list .person-result span{font-size:9px;color:var(--hexa-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}@media(max-width:640px){.hexa-action-dialog-overlay{padding:10px;align-items:end}.hexa-action-dialog{border-radius:22px 22px 18px 18px;padding:15px}.hexa-confirm-actions{display:grid;grid-template-columns:1fr 1fr}.hexa-dialog-secondary,.hexa-dialog-primary{width:100%}.forward-modal{max-height:86vh;overflow:auto}.forward-list{max-height:44vh!important}}
+
+`}</style>
 
       {session ? (
         <AuthenticatedHEXA
