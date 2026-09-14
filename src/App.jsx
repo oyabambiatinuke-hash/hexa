@@ -1,11 +1,9 @@
 import React, {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
-import { createRoot } from "react-dom/client";
 import { createClient } from "@supabase/supabase-js";
 import "./index.css";
 
@@ -39,7 +37,7 @@ const supabase = createClient(
 );
 
 /* =========================================================
-   THEMES / LANGUAGES
+   THEMES
    ========================================================= */
 
 const THEMES = {
@@ -50,6 +48,7 @@ const THEMES = {
     background: "#080b13",
     panel: "#0c101a",
   },
+
   Arctic: {
     primary: "#38bdf8",
     secondary: "#0ea5e9",
@@ -57,6 +56,7 @@ const THEMES = {
     background: "#071017",
     panel: "#0b151e",
   },
+
   Emerald: {
     primary: "#10b981",
     secondary: "#059669",
@@ -64,6 +64,7 @@ const THEMES = {
     background: "#07110e",
     panel: "#0b1713",
   },
+
   Sunset: {
     primary: "#f97316",
     secondary: "#ef4444",
@@ -71,6 +72,7 @@ const THEMES = {
     background: "#130b08",
     panel: "#19100d",
   },
+
   Cyber: {
     primary: "#06b6d4",
     secondary: "#8b5cf6",
@@ -78,6 +80,7 @@ const THEMES = {
     background: "#060b11",
     panel: "#0a1119",
   },
+
   Nebula: {
     primary: "#ec4899",
     secondary: "#8b5cf6",
@@ -95,6 +98,10 @@ const ACCENTS = {
   Orange: "#f97316",
   Pink: "#ec4899",
 };
+
+/* =========================================================
+   LANGUAGES
+   ========================================================= */
 
 const LANGUAGES = [
   ["en", "English"],
@@ -180,7 +187,7 @@ const LANGUAGES = [
 ];
 
 /* =========================================================
-   EMOJI
+   EMOJIS
    ========================================================= */
 
 const EMOJIS = [
@@ -232,13 +239,10 @@ const now = () =>
 
 const formatTime = (value) => {
   if (!value) return "";
-  return new Date(value).toLocaleTimeString(
-    [],
-    {
-      hour: "numeric",
-      minute: "2-digit",
-    }
-  );
+  return new Date(value).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 };
 
 const formatDate = (value) => {
@@ -247,15 +251,10 @@ const formatDate = (value) => {
 };
 
 const formatDuration = (seconds = 0) => {
-  const n = Math.max(
-    0,
-    Math.floor(seconds)
-  );
+  const n = Math.max(0, Math.floor(seconds));
   const minutes = Math.floor(n / 60);
   const remaining = n % 60;
-  return `${minutes}:${String(
-    remaining
-  ).padStart(2, "0")}`;
+  return `${minutes}:${String(remaining).padStart(2, "0")}`;
 };
 
 const initials = (name = "HEXA") =>
@@ -263,15 +262,10 @@ const initials = (name = "HEXA") =>
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
-    .map((x) =>
-      x[0]?.toUpperCase()
-    )
+    .map((part) => part[0]?.toUpperCase())
     .join("") || "H";
 
-const truncate = (
-  value,
-  length = 80
-) => {
+const truncate = (value, length = 80) => {
   const text = String(value || "");
   return text.length > length
     ? `${text.slice(0, length)}…`
@@ -284,70 +278,39 @@ const displayName = (profile) =>
   profile?.username ||
   "HEXA User";
 
-const messagePreview = (
-  message
-) => {
+const messagePreview = (message) => {
   if (!message) return "";
-  if (
-    message.message_type ===
-    "voice"
-  )
+  if (message.message_type === "voice")
     return "🎙 Voice message";
-  if (
-    message.message_type ===
-    "image"
-  )
+  if (message.message_type === "image")
     return "📷 Photo";
-  if (
-    message.message_type ===
-    "video"
-  )
+  if (message.message_type === "video")
     return "🎥 Video";
-  if (
-    message.message_type ===
-    "audio"
-  )
+  if (message.message_type === "audio")
     return "🎵 Audio";
-  if (
-    message.message_type ===
-    "file"
-  )
-    return `📎 ${
-      message.metadata?.fileName ||
-      "File"
-    }`;
-  if (
-    message.message_type ===
-    "gif"
-  )
+  if (message.message_type === "file")
+    return `📎 ${message.metadata?.fileName || "File"}`;
+  if (message.message_type === "gif")
     return "GIF";
-  return (
-    message.content ||
-    ""
-  );
+  if (message.message_type === "location")
+    return "📍 Location";
+  if (message.message_type === "contact")
+    return "👤 Contact";
+  return message.content || "";
 };
 
-const getLocal = (
-  key,
-  fallback
-) => {
+const getLocal = (key, fallback) => {
   try {
-    const raw =
-      localStorage.getItem(
-        `hexa:${key}`
-      );
-    return raw
-      ? JSON.parse(raw)
+    const value = localStorage.getItem(`hexa:${key}`);
+    return value
+      ? JSON.parse(value)
       : fallback;
   } catch {
     return fallback;
   }
 };
 
-const setLocal = (
-  key,
-  value
-) => {
+const setLocal = (key, value) => {
   try {
     localStorage.setItem(
       `hexa:${key}`,
@@ -394,7 +357,7 @@ function Avatar({
 }
 
 /* =========================================================
-   AUTH
+   AUTH SCREEN
    ========================================================= */
 
 function AuthScreen({
@@ -403,16 +366,16 @@ function AuthScreen({
   const [mode, setMode] =
     useState("signin");
 
-  const [email, setEmail] =
-    useState("");
-
-  const [password, setPassword] =
-    useState("");
-
   const [name, setName] =
     useState("");
 
   const [username, setUsername] =
+    useState("");
+
+  const [email, setEmail] =
+    useState("");
+
+  const [password, setPassword] =
     useState("");
 
   const [loading, setLoading] =
@@ -424,9 +387,7 @@ function AuthScreen({
   const [success, setSuccess] =
     useState("");
 
-  const submit = async (
-    event
-  ) => {
+  const submit = async (event) => {
     event.preventDefault();
 
     setLoading(true);
@@ -435,9 +396,7 @@ function AuthScreen({
 
     try {
       if (mode === "reset") {
-        const {
-          error: resetError,
-        } =
+        const { error: resetError } =
           await supabase.auth.resetPasswordForEmail(
             email.trim(),
             {
@@ -460,13 +419,10 @@ function AuthScreen({
           data,
           error: loginError,
         } =
-          await supabase.auth.signInWithPassword(
-            {
-              email:
-                email.trim(),
-              password,
-            }
-          );
+          await supabase.auth.signInWithPassword({
+            email: email.trim(),
+            password,
+          });
 
         if (loginError)
           throw loginError;
@@ -496,23 +452,21 @@ function AuthScreen({
         data,
         error: signupError,
       } =
-        await supabase.auth.signUp(
-          {
-            email:
-              email.trim(),
-            password,
-            options: {
-              data: {
-                username:
-                  cleanUsername,
-                full_name:
-                  name.trim(),
-                display_name:
-                  name.trim(),
-              },
+        await supabase.auth.signUp({
+          email:
+            email.trim(),
+          password,
+          options: {
+            data: {
+              username:
+                cleanUsername,
+              full_name:
+                name.trim(),
+              display_name:
+                name.trim(),
             },
-          }
-        );
+          },
+        });
 
       if (signupError)
         throw signupError;
@@ -531,53 +485,39 @@ function AuthScreen({
         errorObject?.message ||
         "Something went wrong.";
 
-      if (
+      setError(
         message
           .toLowerCase()
-          .includes(
-            "duplicate"
-          ) ||
-        message
-          .toLowerCase()
-          .includes(
-            "unique"
-          )
-      ) {
-        setError(
-          "That username or account information is already being used."
-        );
-      } else {
-        setError(message);
-      }
+          .includes("duplicate") ||
+          message
+            .toLowerCase()
+            .includes("unique")
+          ? "That username or account information is already being used."
+          : message
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  const continueGoogle =
-    async () => {
-      setLoading(true);
+  const continueGoogle = async () => {
+    setLoading(true);
+    setError("");
 
-      const {
-        error: googleError,
-      } =
-        await supabase.auth.signInWithOAuth(
-          {
-            provider: "google",
-            options: {
-              redirectTo:
-                window.location.origin,
-            },
-          }
-        );
+    const { error } =
+      await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo:
+            window.location.origin,
+        },
+      });
 
-      if (googleError) {
-        setError(
-          googleError.message
-        );
-        setLoading(false);
-      }
-    };
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="auth-page">
@@ -589,9 +529,7 @@ function AuthScreen({
 
           <div>
             <h1>HEXA</h1>
-            <span>
-              HEXA NEXUS
-            </span>
+            <span>HEXA NEXUS</span>
           </div>
         </div>
 
@@ -634,9 +572,7 @@ function AuthScreen({
               }
               disabled={loading}
             >
-              <strong>
-                G
-              </strong>
+              <strong>G</strong>
               Continue with Google
             </button>
 
@@ -651,31 +587,23 @@ function AuthScreen({
         <form onSubmit={submit}>
           {mode === "signup" && (
             <>
-              <label>
-                Full name
-              </label>
-
+              <label>Full name</label>
               <input
                 value={name}
                 onChange={(event) =>
                   setName(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
                 required
               />
 
-              <label>
-                Username
-              </label>
-
+              <label>Username</label>
               <input
                 value={username}
                 onChange={(event) =>
                   setUsername(
-                    event.target
-                      .value
+                    event.target.value
                       .toLowerCase()
                       .replace(
                         /[^a-z0-9_]/g,
@@ -689,10 +617,7 @@ function AuthScreen({
             </>
           )}
 
-          <label>
-            Email
-          </label>
-
+          <label>Email</label>
           <input
             type="email"
             value={email}
@@ -706,21 +631,17 @@ function AuthScreen({
 
           {mode !== "reset" && (
             <>
-              <label>
-                Password
-              </label>
-
+              <label>Password</label>
               <input
                 type="password"
                 value={password}
                 onChange={(event) =>
                   setPassword(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
-                required
                 minLength={6}
+                required
               />
             </>
           )}
@@ -782,7 +703,7 @@ function AuthScreen({
 }
 
 /* =========================================================
-   MAIN APP
+   MAIN HEXA APP
    ========================================================= */
 
 function HexaApp({
@@ -818,9 +739,6 @@ function HexaApp({
   const [notifications, setNotifications] =
     useState([]);
 
-  const [wallet, setWallet] =
-    useState(null);
-
   const [loading, setLoading] =
     useState(true);
 
@@ -830,10 +748,13 @@ function HexaApp({
   const [settingsOpen, setSettingsOpen] =
     useState(false);
 
+  const [callState, setCallState] =
+    useState(null);
+
   const [toast, setToast] =
     useState("");
 
-  const toastRef =
+  const toastTimer =
     useRef(null);
 
   const [theme, setTheme] =
@@ -866,12 +787,11 @@ function HexaApp({
   const flash = useCallback(
     (message) => {
       setToast(message);
-
       clearTimeout(
-        toastRef.current
+        toastTimer.current
       );
 
-      toastRef.current =
+      toastTimer.current =
         setTimeout(() => {
           setToast("");
         }, 3000);
@@ -901,38 +821,34 @@ function HexaApp({
   }, [language]);
 
   useEffect(() => {
-    const colors =
-      THEMES[
-        theme
-      ] ||
+    const selected =
+      THEMES[theme] ||
       THEMES.Cosmic;
 
     document.documentElement.style.setProperty(
       "--hexa-primary",
-      ACCENTS[
-        accent
-      ] ||
-        colors.primary
+      ACCENTS[accent] ||
+        selected.primary
     );
 
     document.documentElement.style.setProperty(
       "--hexa-secondary",
-      colors.secondary
+      selected.secondary
     );
 
     document.documentElement.style.setProperty(
       "--hexa-glow",
-      colors.glow
+      selected.glow
     );
 
     document.documentElement.style.setProperty(
       "--hexa-background",
-      colors.background
+      selected.background
     );
 
     document.documentElement.style.setProperty(
       "--hexa-panel",
-      colors.panel
+      selected.panel
     );
   }, [
     theme,
@@ -940,162 +856,153 @@ function HexaApp({
   ]);
 
   /* =======================================================
-     LOAD PROFILE
+     PROFILE
      ======================================================= */
 
-  const loadProfile =
-    useCallback(
-      async () => {
-        if (!userId)
-          return null;
+  const loadProfile = useCallback(
+    async () => {
+      if (!userId)
+        return null;
 
+      const {
+        data,
+        error,
+      } =
+        await supabase
+          .from("profiles")
+          .select("*")
+          .eq(
+            "id",
+            userId
+          )
+          .maybeSingle();
+
+      if (error) {
+        console.error(
+          "HEXA profile:",
+          error
+        );
+        return null;
+      }
+
+      if (data) {
+        setProfile(
+          data
+        );
+        return data;
+      }
+
+      const metadata =
+        session?.user
+          ?.user_metadata ||
+        {};
+
+      const email =
+        session?.user
+          ?.email ||
+        "";
+
+      let baseUsername =
+        String(
+          metadata.username ||
+            email.split("@")[0] ||
+            "hexauser"
+        )
+          .toLowerCase()
+          .replace(
+            /[^a-z0-9_]/g,
+            ""
+          )
+          .slice(
+            0,
+            24
+          ) ||
+        "hexauser";
+
+      let candidate =
+        baseUsername;
+
+      for (
+        let i = 0;
+        i < 30;
+        i += 1
+      ) {
         const {
-          data,
-          error,
+          data: exists,
         } =
           await supabase
-            .from(
-              "profiles"
-            )
-            .select("*")
+            .from("profiles")
+            .select("id")
             .eq(
-              "id",
-              userId
+              "username",
+              candidate
             )
             .maybeSingle();
 
-        if (error) {
-          console.error(
-            "Profile load:",
-            error
-          );
-          return null;
-        }
+        if (!exists)
+          break;
 
-        if (data) {
-          setProfile(data);
-          return data;
-        }
+        candidate =
+          `${baseUsername.slice(
+            0,
+            20
+          )}${Math.floor(
+            1000 +
+              Math.random() *
+                8999
+          )}`;
+      }
 
-        const metadata =
-          session?.user
-            ?.user_metadata ||
-          {};
-
-        const email =
-          session?.user
-            ?.email ||
-          "";
-
-        let base =
-          String(
-            metadata.username ||
-              email.split(
-                "@"
-              )[0] ||
-              "hexauser"
+      const {
+        data: created,
+        error: createError,
+      } =
+        await supabase
+          .from("profiles")
+          .upsert(
+            {
+              id: userId,
+              email,
+              username:
+                candidate,
+              full_name:
+                metadata.full_name ||
+                metadata.name ||
+                candidate,
+              display_name:
+                metadata.full_name ||
+                metadata.name ||
+                candidate,
+              updated_at:
+                now(),
+            },
+            {
+              onConflict:
+                "id",
+            }
           )
-            .toLowerCase()
-            .replace(
-              /[^a-z0-9_]/g,
-              ""
-            )
-            .slice(
-              0,
-              24
-            ) ||
-          "hexauser";
+          .select()
+          .single();
 
-        let candidate =
-          base;
+      if (createError) {
+        console.error(
+          "HEXA profile create:",
+          createError
+        );
+        return null;
+      }
 
-        for (
-          let index = 0;
-          index < 25;
-          index += 1
-        ) {
-          const {
-            data: existing,
-          } =
-            await supabase
-              .from(
-                "profiles"
-              )
-              .select("id")
-              .eq(
-                "username",
-                candidate
-              )
-              .maybeSingle();
+      setProfile(
+        created
+      );
 
-          if (!existing)
-            break;
-
-          candidate =
-            `${base.slice(
-              0,
-              20
-            )}${Math.floor(
-              1000 +
-                Math.random() *
-                  8999
-            )}`;
-        }
-
-        const payload = {
-          id: userId,
-          email,
-          username:
-            candidate,
-          full_name:
-            metadata.full_name ||
-            metadata.name ||
-            candidate,
-          display_name:
-            metadata.full_name ||
-            metadata.name ||
-            candidate,
-          updated_at:
-            now(),
-        };
-
-        const {
-          data: created,
-          error: createError,
-        } =
-          await supabase
-            .from(
-              "profiles"
-            )
-            .upsert(
-              payload,
-              {
-                onConflict:
-                  "id",
-              }
-            )
-            .select()
-            .single();
-
-        if (createError) {
-          console.error(
-            "Profile create:",
-            createError
-          );
-          return null;
-        }
-
-        setProfile(created);
-        return created;
-      },
-      [
-        userId,
-        session,
-      ]
-    );
+      return created;
+    },
+    [userId, session]
+  );
 
   /* =======================================================
-     ENSURE USER DATA
+     USER PRESENCE
      ======================================================= */
 
   const ensureUserRows =
@@ -1119,23 +1026,6 @@ function HexaApp({
               updated_at:
                 now(),
             }),
-
-          supabase
-            .from("wallets")
-            .upsert(
-              {
-                user_id:
-                  userId,
-                currency:
-                  "NGN",
-              },
-              {
-                onConflict:
-                  "user_id",
-                ignoreDuplicates:
-                  true,
-              }
-            ),
 
           supabase
             .from(
@@ -1247,7 +1137,7 @@ function HexaApp({
 
         if (error) {
           console.error(
-            "Conversation load:",
+            "HEXA conversations:",
             error
           );
           setConversations([]);
@@ -1292,14 +1182,7 @@ function HexaApp({
                     "profiles"
                   )
                   .select(
-                    `
-                      id,
-                      username,
-                      full_name,
-                      display_name,
-                      avatar_url,
-                      about
-                    `
+                    "id,username,full_name,display_name,avatar_url,about"
                   )
                   .eq(
                     "id",
@@ -1308,7 +1191,8 @@ function HexaApp({
                   .maybeSingle();
 
               item.otherProfile =
-                otherProfile;
+                otherProfile ||
+                null;
             }
           }
 
@@ -1317,20 +1201,9 @@ function HexaApp({
               lastMessage,
           } =
             await supabase
-              .from(
-                "messages"
-              )
+              .from("messages")
               .select(
-                `
-                  id,
-                  content,
-                  message_type,
-                  created_at,
-                  sender_id,
-                  status,
-                  metadata,
-                  deleted_at
-                `
+                "id,content,message_type,created_at,sender_id,status,metadata,deleted_at"
               )
               .eq(
                 "conversation_id",
@@ -1350,20 +1223,20 @@ function HexaApp({
             lastMessage ||
             null;
 
-          result.push(item);
+          result.push(
+            item
+          );
         }
 
         result.sort(
           (a, b) =>
             new Date(
-              b.lastMessage
-                ?.created_at ||
+              b.lastMessage?.created_at ||
                 b.updated_at ||
                 b.created_at
             ) -
             new Date(
-              a.lastMessage
-                ?.created_at ||
+              a.lastMessage?.created_at ||
                 a.updated_at ||
                 a.created_at
             )
@@ -1377,360 +1250,357 @@ function HexaApp({
     );
 
   /* =======================================================
-     MESSAGES
+     ROBUST MESSAGE LOADER
      ======================================================= */
 
- const loadMessages = useCallback(
-  async (conversationId) => {
-    if (!conversationId || !userId) {
-      setMessages([]);
-      return;
-    }
-
-    try {
-      /*
-       * IMPORTANT:
-       * Do NOT use the large nested:
-       *
-       * reply_to:reply_to_id(...)
-       * attachments:message_attachments(...)
-       * reactions:message_reactions(...)
-       *
-       * query here.
-       *
-       * One broken FK/relation can cause the ENTIRE
-       * messages request to fail.
-       */
-
-      const {
-        data: messageRows,
-        error: messageError,
-      } = await supabase
-        .from("messages")
-        .select("*")
-        .eq(
-          "conversation_id",
-          conversationId
-        )
-        .order(
-          "created_at",
-          { ascending: true }
-        );
-
-      if (messageError) {
-        console.error(
-          "HEXA messages load error:",
-          messageError
-        );
-
-        flash(
-          `Could not load messages: ${messageError.message}`
-        );
-
-        setMessages([]);
-        return;
-      }
-
-      const rows = messageRows || [];
-
-      if (!rows.length) {
-        setMessages([]);
-        return;
-      }
-
-      /*
-       * Load senders separately.
-       */
-      const senderIds = [
-        ...new Set(
-          rows
-            .map(
-              (message) =>
-                message.sender_id
-            )
-            .filter(Boolean)
-        ),
-      ];
-
-      let profileMap = {};
-
-      if (senderIds.length) {
-        const {
-          data: senderProfiles,
-          error: senderError,
-        } = await supabase
-          .from("profiles")
-          .select(
-            `
-              id,
-              username,
-              full_name,
-              display_name,
-              avatar_url
-            `
-          )
-          .in(
-            "id",
-            senderIds
-          );
-
-        if (!senderError) {
-          profileMap =
-            Object.fromEntries(
-              (senderProfiles ||
-                []).map(
-                (profile) => [
-                  profile.id,
-                  profile,
-                ]
-              )
-            );
+  const loadMessages =
+    useCallback(
+      async (
+        conversationId
+      ) => {
+        if (
+          !conversationId ||
+          !userId
+        ) {
+          setMessages([]);
+          return;
         }
-      }
 
-      /*
-       * Load attachments separately.
-       */
-      const messageIds =
-        rows.map(
-          (message) =>
-            message.id
-        );
+        try {
+          const {
+            data: messageRows,
+            error:
+              messageError,
+          } =
+            await supabase
+              .from(
+                "messages"
+              )
+              .select("*")
+              .eq(
+                "conversation_id",
+                conversationId
+              )
+              .order(
+                "created_at",
+                {
+                  ascending:
+                    true,
+                }
+              );
 
-      let attachmentMap = {};
+          if (messageError) {
+            console.error(
+              "HEXA message load:",
+              messageError
+            );
 
-      const {
-        data: attachments,
-        error: attachmentsError,
-      } = await supabase
-        .from(
-          "message_attachments"
-        )
-        .select("*")
-        .in(
-          "message_id",
-          messageIds
-        );
+            flash(
+              `Could not load messages: ${messageError.message}`
+            );
 
-      if (!attachmentsError) {
-        for (const attachment of
-          attachments || []) {
+            setMessages([]);
+            return;
+          }
+
+          const rows =
+            messageRows || [];
+
+          if (!rows.length) {
+            setMessages([]);
+            return;
+          }
+
+          const senderIds = [
+            ...new Set(
+              rows
+                .map(
+                  (message) =>
+                    message.sender_id
+                )
+                .filter(Boolean)
+            ),
+          ];
+
+          let profileMap =
+            {};
+
           if (
-            !attachmentMap[
-              attachment.message_id
-            ]
+            senderIds.length
           ) {
+            const {
+              data:
+                senderProfiles,
+            } =
+              await supabase
+                .from(
+                  "profiles"
+                )
+                .select(
+                  "id,username,full_name,display_name,avatar_url,about"
+                )
+                .in(
+                  "id",
+                  senderIds
+                );
+
+            profileMap =
+              Object.fromEntries(
+                (
+                  senderProfiles ||
+                  []
+                ).map(
+                  (item) => [
+                    item.id,
+                    item,
+                  ]
+                )
+              );
+          }
+
+          const messageIds =
+            rows.map(
+              (message) =>
+                message.id
+            );
+
+          let attachmentMap =
+            {};
+
+          const {
+            data:
+              attachments,
+          } =
+            await supabase
+              .from(
+                "message_attachments"
+              )
+              .select("*")
+              .in(
+                "message_id",
+                messageIds
+              );
+
+          for (
+            const attachment of
+              attachments ||
+              []
+          ) {
+            if (
+              !attachmentMap[
+                attachment.message_id
+              ]
+            ) {
+              attachmentMap[
+                attachment.message_id
+              ] = [];
+            }
+
             attachmentMap[
               attachment.message_id
-            ] = [];
+            ].push(
+              attachment
+            );
           }
 
-          attachmentMap[
-            attachment.message_id
-          ].push(
-            attachment
-          );
-        }
-      }
+          let reactionMap =
+            {};
 
-      /*
-       * Load reactions separately.
-       */
-      let reactionMap = {};
+          const {
+            data:
+              reactions,
+          } =
+            await supabase
+              .from(
+                "message_reactions"
+              )
+              .select(
+                "message_id,user_id,reaction,created_at"
+              )
+              .in(
+                "message_id",
+                messageIds
+              );
 
-      const {
-        data: reactions,
-        error: reactionsError,
-      } = await supabase
-        .from(
-          "message_reactions"
-        )
-        .select(
-          "message_id,user_id,reaction,created_at"
-        )
-        .in(
-          "message_id",
-          messageIds
-        );
-
-      if (!reactionsError) {
-        for (const reaction of
-          reactions || []) {
-          if (
-            !reactionMap[
-              reaction.message_id
-            ]
+          for (
+            const reaction of
+              reactions ||
+              []
           ) {
+            if (
+              !reactionMap[
+                reaction.message_id
+              ]
+            ) {
+              reactionMap[
+                reaction.message_id
+              ] = [];
+            }
+
             reactionMap[
               reaction.message_id
-            ] = [];
+            ].push(
+              reaction
+            );
           }
 
-          reactionMap[
-            reaction.message_id
-          ].push(
-            reaction
-          );
-        }
-      }
-
-      /*
-       * Load reply messages separately.
-       */
-      const replyIds = [
-        ...new Set(
-          rows
-            .map(
-              (message) =>
-                message.reply_to_id
-            )
-            .filter(Boolean)
-        ),
-      ];
-
-      let replyMap = {};
-
-      if (replyIds.length) {
-        const {
-          data: replies,
-        } = await supabase
-          .from("messages")
-          .select("*")
-          .in(
-            "id",
-            replyIds
-          );
-
-        for (const reply of
-          replies || []) {
-          replyMap[
-            reply.id
-          ] = {
-            ...reply,
-            sender:
-              profileMap[
-                reply.sender_id
-              ] ||
-              null,
-            attachments:
-              attachmentMap[
-                reply.id
-              ] || [],
-            reactions:
-              reactionMap[
-                reply.id
-              ] || [],
-          };
-        }
-      }
-
-      /*
-       * Build the final message objects.
-       */
-      const completeMessages =
-        rows.map(
-          (message) => ({
-            ...message,
-
-            sender:
-              profileMap[
-                message.sender_id
-              ] || null,
-
-            attachments:
-              attachmentMap[
-                message.id
-              ] || [],
-
-            reactions:
-              reactionMap[
-                message.id
-              ] || [],
-
-            reply_to:
-              message.reply_to_id
-                ? replyMap[
-                    message
-                      .reply_to_id
-                  ] || null
-                : null,
-          })
-        );
-
-      setMessages(
-        completeMessages
-      );
-
-      /*
-       * Mark messages from the other person
-       * as read.
-       */
-      const unread =
-        completeMessages.filter(
-          (message) =>
-            message.sender_id !==
-              userId &&
-            message.status !==
-              "read"
-        );
-
-      if (unread.length) {
-        await Promise.allSettled(
-          unread.map(
-            (message) =>
-              supabase
-                .from(
-                  "message_reads"
+          const replyIds = [
+            ...new Set(
+              rows
+                .map(
+                  (message) =>
+                    message.reply_to_id
                 )
-                .upsert({
-                  message_id:
-                    message.id,
-                  user_id:
-                    userId,
-                  read_at:
-                    now(),
-                })
-          )
-        );
+                .filter(Boolean)
+            ),
+          ];
 
-        await supabase
-          .from("messages")
-          .update({
-            read_at:
-              now(),
-            status:
-              "read",
-          })
-          .in(
-            "id",
-            unread.map(
-              (message) =>
-                message.id
-            )
+          let replyMap =
+            {};
+
+          if (
+            replyIds.length
+          ) {
+            const {
+              data:
+                replies,
+            } =
+              await supabase
+                .from(
+                  "messages"
+                )
+                .select("*")
+                .in(
+                  "id",
+                  replyIds
+                );
+
+            for (
+              const reply of
+                replies ||
+                []
+            ) {
+              replyMap[
+                reply.id
+              ] = {
+                ...reply,
+                sender:
+                  profileMap[
+                    reply.sender_id
+                  ] ||
+                  null,
+                attachments:
+                  attachmentMap[
+                    reply.id
+                  ] ||
+                  [],
+                reactions:
+                  reactionMap[
+                    reply.id
+                  ] ||
+                  [],
+              };
+            }
+          }
+
+          const complete =
+            rows.map(
+              (message) => ({
+                ...message,
+                sender:
+                  profileMap[
+                    message.sender_id
+                  ] ||
+                  null,
+                attachments:
+                  attachmentMap[
+                    message.id
+                  ] ||
+                  [],
+                reactions:
+                  reactionMap[
+                    message.id
+                  ] ||
+                  [],
+                reply_to:
+                  message.reply_to_id
+                    ? replyMap[
+                        message.reply_to_id
+                      ] ||
+                      null
+                    : null,
+              })
+            );
+
+          setMessages(
+            complete
           );
-      }
-    } catch (error) {
-      console.error(
-        "HEXA loadMessages fatal error:",
-        error
-      );
 
-      setMessages([]);
+          const unread =
+            complete.filter(
+              (message) =>
+                message.sender_id !==
+                userId
+            );
 
-      flash(
-        error?.message ||
-          "Could not load messages."
-      );
-    }
-  },
-  [
-    userId,
-    flash,
-  ]
-);
+          if (
+            unread.length
+          ) {
+            await Promise.allSettled(
+              unread.map(
+                (message) =>
+                  supabase
+                    .from(
+                      "message_reads"
+                    )
+                    .upsert({
+                      message_id:
+                        message.id,
+                      user_id:
+                        userId,
+                      read_at:
+                        now(),
+                    })
+              )
+            );
+
+            await supabase
+              .from(
+                "messages"
+              )
+              .update({
+                read_at:
+                  now(),
+                status:
+                  "read",
+              })
+              .in(
+                "id",
+                unread.map(
+                  (message) =>
+                    message.id
+                )
+              );
+          }
+        } catch (error) {
+          console.error(
+            "HEXA message loader:",
+            error
+          );
+
+          setMessages([]);
+
+          flash(
+            error?.message ||
+              "Could not load messages."
+          );
+        }
+      },
+      [userId, flash]
+    );
 
   /* =======================================================
-     OTHER DATA
+     COMMUNITIES
      ======================================================= */
 
   const loadCommunities =
@@ -1767,20 +1637,24 @@ function HexaApp({
         setCommunities(
           (data || [])
             .filter(
-              (row) =>
-                row.communities
+              (item) =>
+                item.communities
             )
             .map(
-              (row) => ({
-                ...row.communities,
+              (item) => ({
+                ...item.communities,
                 is_admin:
-                  row.is_admin,
+                  item.is_admin,
               })
             )
         );
       },
       [userId]
     );
+
+  /* =======================================================
+     CHANNELS
+     ======================================================= */
 
   const loadChannels =
     useCallback(
@@ -1828,12 +1702,7 @@ function HexaApp({
                 "conversations"
               )
               .select(
-                `
-                  id,
-                  name,
-                  avatar_url,
-                  type
-                `
+                "id,name,avatar_url,type"
               )
               .eq(
                 "id",
@@ -1853,16 +1722,19 @@ function HexaApp({
             handle:
               row
                 .channel_profiles
-                ?.handle,
+                ?.handle ||
+              "",
             description:
               row
                 .channel_profiles
-                ?.description,
+                ?.description ||
+              "",
             avatar_url:
               row
                 .channel_profiles
                 ?.avatar_url ||
-              conversation?.avatar_url,
+              conversation?.avatar_url ||
+              null,
             verified:
               !!row
                 .channel_profiles
@@ -1876,6 +1748,10 @@ function HexaApp({
       },
       [userId]
     );
+
+  /* =======================================================
+     MOMENTS
+     ======================================================= */
 
   const loadMoments =
     useCallback(
@@ -1914,45 +1790,16 @@ function HexaApp({
               }
             );
 
-        const result = [];
-
-        for (
-          const moment of
-            data || []
-        ) {
-          const {
-            data: view,
-          } =
-            await supabase
-              .from(
-                "status_views"
-              )
-              .select(
-                "status_id"
-              )
-              .eq(
-                "status_id",
-                moment.id
-              )
-              .eq(
-                "viewer_id",
-                userId
-              )
-              .maybeSingle();
-
-          result.push({
-            ...moment,
-            seen:
-              !!view,
-          });
-        }
-
         setMoments(
-          result
+          data || []
         );
       },
       [userId]
     );
+
+  /* =======================================================
+     NOTIFICATIONS
+     ======================================================= */
 
   const loadNotifications =
     useCallback(
@@ -1988,35 +1835,13 @@ function HexaApp({
       [userId]
     );
 
-  const loadWallet =
-    useCallback(
-      async () => {
-        if (!userId)
-          return;
-
-        const {
-          data,
-        } =
-          await supabase
-            .from("wallets")
-            .select("*")
-            .eq(
-              "user_id",
-              userId
-            )
-            .maybeSingle();
-
-        setWallet(data);
-      },
-      [userId]
-    );
-
   /* =======================================================
-     INITIAL LOAD
+     INITIAL BOOT
      ======================================================= */
 
   useEffect(() => {
-    let cancelled = false;
+    let cancelled =
+      false;
 
     const boot =
       async () => {
@@ -2034,12 +1859,10 @@ function HexaApp({
           loadChannels(),
           loadMoments(),
           loadNotifications(),
-          loadWallet(),
         ]);
 
-        if (!cancelled) {
+        if (!cancelled)
           setLoading(false);
-        }
       };
 
     boot();
@@ -2056,7 +1879,6 @@ function HexaApp({
     loadChannels,
     loadMoments,
     loadNotifications,
-    loadWallet,
   ]);
 
   useEffect(() => {
@@ -2082,12 +1904,12 @@ function HexaApp({
     if (!userId)
       return;
 
-    const channel =
+    const realtime =
       supabase.channel(
         `hexa-live-${userId}`
       );
 
-    channel
+    realtime
       .on(
         "postgres_changes",
         {
@@ -2136,7 +1958,7 @@ function HexaApp({
 
     return () => {
       supabase.removeChannel(
-        channel
+        realtime
       );
     };
   }, [
@@ -2159,8 +1981,9 @@ function HexaApp({
           !target?.id ||
           target.id ===
             userId
-        )
-          return;
+        ) {
+          return null;
+        }
 
         const {
           data: existing,
@@ -2185,16 +2008,17 @@ function HexaApp({
           setActiveConversationId(
             existing.id
           );
+
           setSection("chat");
 
           return existing;
         }
 
-        const conversationId =
+        const id =
           makeId();
 
         const {
-          data: created,
+          data: conversation,
           error,
         } =
           await supabase
@@ -2202,8 +2026,7 @@ function HexaApp({
               "conversations"
             )
             .insert({
-              id:
-                conversationId,
+              id,
               type:
                 "direct",
               user_a:
@@ -2227,7 +2050,7 @@ function HexaApp({
 
         const {
           error:
-            membersError,
+            memberError,
         } =
           await supabase
             .from(
@@ -2236,7 +2059,7 @@ function HexaApp({
             .insert([
               {
                 conversation_id:
-                  conversationId,
+                  id,
                 user_id:
                   userId,
                 is_admin:
@@ -2244,7 +2067,7 @@ function HexaApp({
               },
               {
                 conversation_id:
-                  conversationId,
+                  id,
                 user_id:
                   target.id,
                 is_admin:
@@ -2252,9 +2075,9 @@ function HexaApp({
               },
             ]);
 
-        if (membersError) {
+        if (memberError) {
           flash(
-            membersError.message
+            memberError.message
           );
           return null;
         }
@@ -2262,14 +2085,14 @@ function HexaApp({
         await loadConversations();
 
         setActiveConversationId(
-          conversationId
+          id
         );
 
         setSection(
           "chat"
         );
 
-        return created;
+        return conversation;
       },
       [
         userId,
@@ -2279,7 +2102,7 @@ function HexaApp({
     );
 
   /* =======================================================
-     GROUP
+     GROUP CREATION
      ======================================================= */
 
   const createGroup =
@@ -2300,7 +2123,8 @@ function HexaApp({
           makeId();
 
         const {
-          data: conversation,
+          data:
+            conversation,
           error,
         } =
           await supabase
@@ -2328,7 +2152,7 @@ function HexaApp({
           return null;
         }
 
-        const memberIds =
+        const ids =
           Array.from(
             new Set([
               userId,
@@ -2340,29 +2164,29 @@ function HexaApp({
 
         const {
           error:
-            membersError,
+            memberError,
         } =
           await supabase
             .from(
               "conversation_members"
             )
             .insert(
-              memberIds.map(
-                (memberId) => ({
+              ids.map(
+                (idValue) => ({
                   conversation_id:
                     id,
                   user_id:
-                    memberId,
+                    idValue,
                   is_admin:
-                    memberId ===
+                    idValue ===
                     userId,
                 })
               )
             );
 
-        if (membersError) {
+        if (memberError) {
           flash(
-            membersError.message
+            memberError.message
           );
           return null;
         }
@@ -2401,179 +2225,8 @@ function HexaApp({
       ]
     );
 
-  const sendMessage = useCallback(
-  async ({
-    content = "",
-    messageType = "text",
-    replyToId = null,
-    metadata = {},
-    attachment = null,
-    forwardedFromId = null,
-    expiresAt = null,
-    viewOnce = false,
-  }) => {
-    if (
-      !userId ||
-      !activeConversationId
-    ) {
-      return null;
-    }
-
-    const defaults = {
-      text: "",
-      voice: "🎙 Voice message",
-      image: "📷 Photo",
-      video: "🎥 Video",
-      audio: "🎵 Audio",
-      file: "📎 File",
-      gif: "GIF",
-      poll: "📊 Poll",
-      location: "📍 Location",
-      contact: "👤 Contact",
-      system: "System message",
-    };
-
-    let safeContent =
-      typeof content ===
-      "string"
-        ? content.trim()
-        : "";
-
-    /*
-     * Your database has content NOT NULL.
-     */
-    if (!safeContent) {
-      safeContent =
-        defaults[
-          messageType
-        ] ||
-        "Message";
-    }
-
-    const messageId =
-      makeId();
-
-    const {
-      data: inserted,
-      error,
-    } = await supabase
-      .from("messages")
-      .insert({
-        id: messageId,
-        sender_id: userId,
-        conversation_id:
-          activeConversationId,
-        content: safeContent,
-        message_type:
-          messageType,
-        status: "sent",
-        client_message_id:
-          makeId(),
-        reply_to_id:
-          replyToId || null,
-        forwarded_from_id:
-          forwardedFromId ||
-          null,
-        metadata:
-          metadata || {},
-        expires_at:
-          expiresAt || null,
-        view_once:
-          !!viewOnce,
-        delivered_at:
-          now(),
-      })
-      .select("*")
-      .single();
-
-    if (error) {
-      console.error(
-        "HEXA send error:",
-        error
-      );
-
-      flash(
-        error.message
-      );
-
-      return null;
-    }
-
-    if (attachment) {
-      const {
-        error:
-          attachmentError,
-      } = await supabase
-        .from(
-          "message_attachments"
-        )
-        .insert({
-          id: makeId(),
-          message_id:
-            inserted.id,
-          user_id:
-            userId,
-          file_name:
-            attachment.fileName ||
-            "attachment",
-          file_path:
-            attachment.filePath ||
-            null,
-          file_url:
-            attachment.fileUrl ||
-            null,
-          mime_type:
-            attachment.mimeType ||
-            "application/octet-stream",
-          file_size:
-            attachment.fileSize ||
-            0,
-          width:
-            attachment.width ||
-            null,
-          height:
-            attachment.height ||
-            null,
-          duration:
-            attachment.duration ||
-            null,
-          thumbnail_url:
-            attachment.thumbnailUrl ||
-            null,
-        });
-
-      if (attachmentError) {
-        console.error(
-          "Attachment error:",
-          attachmentError
-        );
-      }
-    }
-
-    /*
-     * IMPORTANT:
-     * Reload immediately.
-     * Do not depend on Realtime to make your
-     * just-sent message appear.
-     */
-    await loadMessages(
-      activeConversationId
-    );
-
-    await loadConversations();
-
-    return inserted;
-  },
-  [
-    userId,
-    activeConversationId,
-    loadMessages,
-    loadConversations,
-    flash,
-  ]
-);
   /* =======================================================
-     UPLOAD
+     FILE UPLOAD
      ======================================================= */
 
   const uploadFile =
@@ -2588,12 +2241,12 @@ function HexaApp({
         )
           return null;
 
-        const sizeMb =
+        const size =
           file.size /
           (1024 * 1024);
 
         if (
-          sizeMb >
+          size >
           MAX_ATTACHMENT_MB
         ) {
           flash(
@@ -2658,11 +2311,7 @@ function HexaApp({
             "",
           fileName:
             file.name ||
-            path
-              .split(
-                "/"
-              )
-              .pop(),
+            path.split("/").pop(),
           mimeType:
             file.type ||
             "application/octet-stream",
@@ -2672,6 +2321,200 @@ function HexaApp({
       },
       [
         userId,
+        flash,
+      ]
+    );
+
+  /* =======================================================
+     SEND MESSAGE
+     ======================================================= */
+
+  const sendMessage =
+    useCallback(
+      async ({
+        content = "",
+        messageType = "text",
+        replyToId = null,
+        metadata = {},
+        attachment = null,
+        forwardedFromId = null,
+        expiresAt = null,
+        viewOnce = false,
+      }) => {
+        if (
+          !userId ||
+          !activeConversationId
+        ) {
+          return null;
+        }
+
+        const defaults = {
+          text: "",
+          voice:
+            "🎙 Voice message",
+          image:
+            "📷 Photo",
+          video:
+            "🎥 Video",
+          audio:
+            "🎵 Audio",
+          file:
+            "📎 File",
+          gif:
+            "GIF",
+          poll:
+            "📊 Poll",
+          location:
+            "📍 Location",
+          contact:
+            "👤 Contact",
+          system:
+            "System message",
+        };
+
+        let safeContent =
+          typeof content ===
+          "string"
+            ? content.trim()
+            : "";
+
+        if (!safeContent) {
+          safeContent =
+            defaults[
+              messageType
+            ] ||
+            "Message";
+        }
+
+        const messageId =
+          makeId();
+
+        const {
+          data: inserted,
+          error,
+        } =
+          await supabase
+            .from(
+              "messages"
+            )
+            .insert({
+              id:
+                messageId,
+              sender_id:
+                userId,
+              conversation_id:
+                activeConversationId,
+              content:
+                safeContent,
+              message_type:
+                messageType,
+              status:
+                "sent",
+              client_message_id:
+                makeId(),
+              reply_to_id:
+                replyToId ||
+                null,
+              forwarded_from_id:
+                forwardedFromId ||
+                null,
+              metadata:
+                metadata || {},
+              expires_at:
+                expiresAt ||
+                null,
+              view_once:
+                !!viewOnce,
+              delivered_at:
+                now(),
+            })
+            .select("*")
+            .single();
+
+        if (error) {
+          console.error(
+            "HEXA send message:",
+            error
+          );
+
+          flash(
+            error.message
+          );
+
+          return null;
+        }
+
+        if (attachment) {
+          const {
+            error:
+              attachmentError,
+          } =
+            await supabase
+              .from(
+                "message_attachments"
+              )
+              .insert({
+                id:
+                  makeId(),
+                message_id:
+                  inserted.id,
+                user_id:
+                  userId,
+                file_name:
+                  attachment.fileName ||
+                  "attachment",
+                file_path:
+                  attachment.filePath ||
+                  null,
+                file_url:
+                  attachment.fileUrl ||
+                  null,
+                mime_type:
+                  attachment.mimeType ||
+                  "application/octet-stream",
+                file_size:
+                  attachment.fileSize ||
+                  0,
+                width:
+                  attachment.width ||
+                  null,
+                height:
+                  attachment.height ||
+                  null,
+                duration:
+                  attachment.duration ||
+                  null,
+                thumbnail_url:
+                  attachment.thumbnailUrl ||
+                  null,
+              });
+
+          if (attachmentError) {
+            console.error(
+              "HEXA attachment:",
+              attachmentError
+            );
+          }
+        }
+
+        /*
+         * Force an immediate refresh.
+         * Realtime is supplementary, not the only way
+         * messages get onto the screen.
+         */
+        await loadMessages(
+          activeConversationId
+        );
+
+        await loadConversations();
+
+        return inserted;
+      },
+      [
+        userId,
+        activeConversationId,
+        loadMessages,
+        loadConversations,
         flash,
       ]
     );
@@ -2695,7 +2538,7 @@ function HexaApp({
         if (!uploaded)
           return;
 
-        let messageType =
+        let type =
           "file";
 
         if (
@@ -2703,26 +2546,27 @@ function HexaApp({
             "image/"
           )
         ) {
-          messageType =
+          type =
             "image";
         } else if (
           file.type.startsWith(
             "video/"
           )
         ) {
-          messageType =
+          type =
             "video";
         } else if (
           file.type.startsWith(
             "audio/"
           )
         ) {
-          messageType =
+          type =
             "audio";
         }
 
         await sendMessage({
-          messageType,
+          messageType:
+            type,
           metadata: {
             url:
               uploaded.fileUrl,
@@ -2730,8 +2574,6 @@ function HexaApp({
               uploaded.fileName,
             mimeType:
               uploaded.mimeType,
-            size:
-              uploaded.fileSize,
           },
           attachment:
             uploaded,
@@ -2754,7 +2596,8 @@ function HexaApp({
         reaction
       ) => {
         const {
-          data: existing,
+          data:
+            existing,
         } =
           await supabase
             .from(
@@ -2893,13 +2736,19 @@ function HexaApp({
         )
           return;
 
+        const clean =
+          content.trim();
+
+        if (!clean)
+          return;
+
         await supabase
           .from(
             "messages"
           )
           .update({
             content:
-              content.trim(),
+              clean,
             edited_at:
               now(),
           })
@@ -2941,10 +2790,7 @@ function HexaApp({
           "Message starred."
         );
       },
-      [
-        userId,
-        flash,
-      ]
+      [userId, flash]
     );
 
   const pinMessage =
@@ -2979,10 +2825,7 @@ function HexaApp({
           "Message pinned."
         );
       },
-      [
-        userId,
-        flash,
-      ]
+      [userId, flash]
     );
 
   const forwardMessage =
@@ -2993,44 +2836,362 @@ function HexaApp({
       ) => {
         if (
           !targetConversationId
-        ) {
+        )
+          return;
+
+        const {
+          error,
+        } =
+          await supabase
+            .from(
+              "messages"
+            )
+            .insert({
+              id:
+                makeId(),
+              sender_id:
+                userId,
+              conversation_id:
+                targetConversationId,
+              content:
+                message.content ||
+                messagePreview(
+                  message
+                ),
+              message_type:
+                message.message_type,
+              metadata:
+                message.metadata ||
+                {},
+              forwarded_from_id:
+                message.id,
+              status:
+                "sent",
+            });
+
+        if (error) {
           flash(
-            "Choose a chat to forward this message to."
+            error.message
           );
           return;
         }
-
-        await supabase
-          .from(
-            "messages"
-          )
-          .insert({
-            id:
-              makeId(),
-            sender_id:
-              userId,
-            conversation_id:
-              targetConversationId,
-            content:
-              message.content,
-            message_type:
-              message.message_type,
-            metadata:
-              message.metadata ||
-              {},
-            forwarded_from_id:
-              message.id,
-            status:
-              "sent",
-          });
 
         flash(
           "Message forwarded."
         );
       },
+      [userId, flash]
+    );
+
+  /* =======================================================
+     GROUP CALLS + DIRECT CALLS
+     ======================================================= */
+
+  const startCall =
+    useCallback(
+      async ({
+        conversation,
+        type = "voice",
+      }) => {
+        if (
+          !conversation ||
+          !userId
+        )
+          return;
+
+        /* DIRECT */
+
+        if (
+          conversation.type ===
+          "direct"
+        ) {
+          const calleeId =
+            conversation
+              .otherProfile
+              ?.id;
+
+          if (!calleeId) {
+            flash(
+              "Call recipient not found."
+            );
+            return;
+          }
+
+          const {
+            data: call,
+            error,
+          } =
+            await supabase
+              .from(
+                "calls"
+              )
+              .insert({
+                conversation_id:
+                  conversation.id,
+                caller_id:
+                  userId,
+                callee_id:
+                  calleeId,
+                type,
+                status:
+                  "ringing",
+                rate_kobo_per_second:
+                  CALL_RATE_KOBO_PER_SECOND,
+                currency:
+                  "NGN",
+              })
+              .select()
+              .single();
+
+          if (error) {
+            flash(
+              error.message
+            );
+            return;
+          }
+
+          await supabase
+            .from(
+              "call_participants"
+            )
+            .upsert({
+              call_id:
+                call.id,
+              user_id:
+                userId,
+              joined_at:
+                now(),
+              muted:
+                false,
+              video_enabled:
+                type ===
+                "video",
+            });
+
+          await supabase
+            .from(
+              "call_participants"
+            )
+            .upsert({
+              call_id:
+                call.id,
+              user_id:
+                calleeId,
+              muted:
+                false,
+              video_enabled:
+                type ===
+                "video",
+            });
+
+          setCallState({
+            ...call,
+            isGroup:
+              false,
+            peer:
+              conversation
+                .otherProfile,
+          });
+
+          return;
+        }
+
+        /* GROUP */
+
+        if (
+          conversation.type ===
+          "group"
+        ) {
+          const {
+            data: members,
+            error:
+              memberError,
+          } =
+            await supabase
+              .from(
+                "conversation_members"
+              )
+              .select(
+                "user_id,is_admin"
+              )
+              .eq(
+                "conversation_id",
+                conversation.id
+              );
+
+          if (memberError) {
+            flash(
+              memberError.message
+            );
+            return;
+          }
+
+          const memberIds =
+            Array.from(
+              new Set(
+                (members || [])
+                  .map(
+                    (member) =>
+                      member.user_id
+                  )
+                  .filter(Boolean)
+              )
+            );
+
+          if (
+            !memberIds.includes(
+              userId
+            )
+          ) {
+            memberIds.push(
+              userId
+            );
+          }
+
+          const firstOther =
+            memberIds.find(
+              (id) =>
+                id !==
+                userId
+            ) ||
+            userId;
+
+          const {
+            data: call,
+            error,
+          } =
+            await supabase
+              .from(
+                "calls"
+              )
+              .insert({
+                conversation_id:
+                  conversation.id,
+                caller_id:
+                  userId,
+                callee_id:
+                  firstOther,
+                type,
+                status:
+                  "ringing",
+                rate_kobo_per_second:
+                  CALL_RATE_KOBO_PER_SECOND,
+                currency:
+                  "NGN",
+                metadata: {
+                  is_group_call:
+                    true,
+                  group_member_ids:
+                    memberIds,
+                },
+              })
+              .select()
+              .single();
+
+          if (error) {
+            flash(
+              error.message
+            );
+            return;
+          }
+
+          const participantRows =
+            memberIds.map(
+              (
+                memberId
+              ) => ({
+                call_id:
+                  call.id,
+                user_id:
+                  memberId,
+                joined_at:
+                  memberId ===
+                  userId
+                    ? now()
+                    : null,
+                muted:
+                  false,
+                video_enabled:
+                  type ===
+                  "video",
+              })
+            );
+
+          const {
+            error:
+              participantError,
+          } =
+            await supabase
+              .from(
+                "call_participants"
+              )
+              .upsert(
+                participantRows
+              );
+
+          if (
+            participantError
+          ) {
+            flash(
+              participantError.message
+            );
+            return;
+          }
+
+          await supabase
+            .from("messages")
+            .insert({
+              id:
+                makeId(),
+              conversation_id:
+                conversation.id,
+              sender_id:
+                userId,
+              content:
+                `${displayName(
+                  profile
+                )} started a ${
+                  type ===
+                  "video"
+                    ? "video"
+                    : "voice"
+                } group call.`,
+              message_type:
+                "system",
+              status:
+                "sent",
+              metadata: {
+                call_id:
+                  call.id,
+                is_group_call:
+                  true,
+              },
+            });
+
+          await loadMessages(
+            conversation.id
+          );
+
+          setCallState({
+            ...call,
+            isGroup:
+              true,
+            groupMembers:
+              memberIds,
+          });
+
+          return;
+        }
+
+        flash(
+          "This conversation cannot start calls."
+        );
+      },
       [
         userId,
+        profile,
         flash,
+        loadMessages,
       ]
     );
 
@@ -3178,6 +3339,21 @@ function HexaApp({
           return;
         }
 
+        const cleanHandle =
+          String(
+            handle ||
+              name
+          )
+            .replace(
+              /^@/,
+              ""
+            )
+            .toLowerCase()
+            .replace(
+              /[^a-z0-9_]/g,
+              ""
+            );
+
         await supabase
           .from(
             "channel_profiles"
@@ -3186,19 +3362,7 @@ function HexaApp({
             channel_id:
               channelId,
             handle:
-              String(
-                handle ||
-                  name
-              )
-                .replace(
-                  /^@/,
-                  ""
-                )
-                .toLowerCase()
-                .replace(
-                  /[^a-z0-9_]/g,
-                  ""
-                ),
+              cleanHandle,
             description:
               String(
                 description ||
@@ -3307,7 +3471,6 @@ function HexaApp({
 
           mediaUrl =
             uploaded.fileUrl;
-
           mediaType =
             uploaded.mimeType;
         }
@@ -3334,11 +3497,10 @@ function HexaApp({
               metadata: {},
             });
 
-        if (error) {
+        if (error)
           flash(
             error.message
           );
-        }
       },
       [
         userId,
@@ -3376,7 +3538,6 @@ function HexaApp({
 
           mediaUrl =
             uploaded.fileUrl;
-
           mediaType =
             uploaded.mimeType;
         }
@@ -3482,336 +3643,11 @@ function HexaApp({
           "Reaction sent."
         );
       },
-      [
-        userId,
-        flash,
-      ]
+      [userId, flash]
     );
 
   /* =======================================================
-     CALLS
-     ======================================================= */
-
-  const [callState, setCallState] =
-    useState(null);
-
- const startCall = useCallback(
-  async ({
-    conversation,
-    type = "voice",
-  }) => {
-    if (
-      !conversation ||
-      !userId
-    ) {
-      return;
-    }
-
-    /*
-     * DIRECT CALL
-     */
-    if (
-      conversation.type ===
-      "direct"
-    ) {
-      const calleeId =
-        conversation
-          .otherProfile
-          ?.id;
-
-      if (!calleeId) {
-        flash(
-          "No call recipient was found."
-        );
-        return;
-      }
-
-      const {
-        data: call,
-        error,
-      } =
-        await supabase
-          .from("calls")
-          .insert({
-            conversation_id:
-              conversation.id,
-            caller_id:
-              userId,
-            callee_id:
-              calleeId,
-            type,
-            status:
-              "ringing",
-            rate_kobo_per_second:
-              CALL_RATE_KOBO_PER_SECOND,
-            currency:
-              "NGN",
-          })
-          .select("*")
-          .single();
-
-      if (error) {
-        flash(
-          error.message
-        );
-        return;
-      }
-
-      await supabase
-        .from(
-          "call_participants"
-        )
-        .upsert({
-          call_id:
-            call.id,
-          user_id:
-            userId,
-          joined_at:
-            now(),
-          muted: false,
-          video_enabled:
-            type === "video",
-        });
-
-      await supabase
-        .from(
-          "call_participants"
-        )
-        .upsert({
-          call_id:
-            call.id,
-          user_id:
-            calleeId,
-          muted: false,
-          video_enabled:
-            type === "video",
-        });
-
-      setCallState({
-        ...call,
-        direction:
-          "outgoing",
-        peer:
-          conversation
-            .otherProfile,
-        isGroup:
-          false,
-      });
-
-      return;
-    }
-
-    /*
-     * GROUP CALL
-     */
-    if (
-      conversation.type ===
-      "group"
-    ) {
-      const {
-        data: members,
-        error:
-          memberError,
-      } =
-        await supabase
-          .from(
-            "conversation_members"
-          )
-          .select(
-            "user_id,is_admin"
-          )
-          .eq(
-            "conversation_id",
-            conversation.id
-          );
-
-      if (memberError) {
-        flash(
-          memberError.message
-        );
-        return;
-      }
-
-      const memberIds =
-        [
-          ...new Set(
-            (members || [])
-              .map(
-                (member) =>
-                  member.user_id
-              )
-              .filter(Boolean)
-          ),
-        ];
-
-      if (
-        !memberIds.includes(
-          userId
-        )
-      ) {
-        memberIds.push(
-          userId
-        );
-      }
-
-      /*
-       * The existing calls schema has caller_id /
-       * callee_id. Use the first other group member
-       * as the compatibility callee, while the real
-       * group membership lives in call_participants.
-       */
-      const firstOtherMember =
-        memberIds.find(
-          (id) =>
-            id !== userId
-        ) || userId;
-
-      const {
-        data: groupCall,
-        error:
-          callError,
-      } =
-        await supabase
-          .from("calls")
-          .insert({
-            conversation_id:
-              conversation.id,
-            caller_id:
-              userId,
-            callee_id:
-              firstOtherMember,
-            type,
-            status:
-              "ringing",
-            rate_kobo_per_second:
-              CALL_RATE_KOBO_PER_SECOND,
-            currency:
-              "NGN",
-            metadata: {
-              is_group_call:
-                true,
-              group_member_ids:
-                memberIds,
-            },
-          })
-          .select("*")
-          .single();
-
-      if (callError) {
-        flash(
-          callError.message
-        );
-        return;
-      }
-
-      /*
-       * Add EVERY member to the call.
-       */
-      const participantRows =
-        memberIds.map(
-          (memberId) => ({
-            call_id:
-              groupCall.id,
-            user_id:
-              memberId,
-            joined_at:
-              memberId ===
-              userId
-                ? now()
-                : null,
-            muted: false,
-            video_enabled:
-              type ===
-              "video",
-          })
-        );
-
-      const {
-        error:
-          participantError,
-      } =
-        await supabase
-          .from(
-            "call_participants"
-          )
-          .upsert(
-            participantRows
-          );
-
-      if (
-        participantError
-      ) {
-        flash(
-          participantError.message
-        );
-        return;
-      }
-
-      /*
-       * Send a system message into the group.
-       */
-      await supabase
-        .from("messages")
-        .insert({
-          id: makeId(),
-          conversation_id:
-            conversation.id,
-          sender_id:
-            userId,
-          content:
-            `📞 ${displayName(
-              profile
-            )} started a ${
-              type ===
-              "video"
-                ? "video"
-                : "voice"
-            } group call.`,
-          message_type:
-            "system",
-          status:
-            "sent",
-          metadata: {
-            call_id:
-              groupCall.id,
-            is_group_call:
-              true,
-          },
-        });
-
-      /*
-       * Open the caller's group-call screen.
-       */
-      setCallState({
-        ...groupCall,
-        direction:
-          "outgoing",
-        isGroup:
-          true,
-        groupMembers:
-          memberIds,
-      });
-
-      flash(
-        `Group ${type} call started for ${memberIds.length} members.`
-      );
-
-      return;
-    }
-
-    flash(
-      "This conversation type cannot start a call."
-    );
-  },
-  [
-    userId,
-    profile,
-    flash,
-  ]
-);
-
-  /* =======================================================
-     RENDER
+     ACTIVE CHAT
      ======================================================= */
 
   const activeConversation =
@@ -3823,9 +3659,13 @@ function HexaApp({
 
   const unreadCount =
     notifications.filter(
-      (item) =>
-        !item.read_at
+      (notification) =>
+        !notification.read_at
     ).length;
+
+  /* =======================================================
+     LOADING
+     ======================================================= */
 
   if (loading) {
     return (
@@ -3836,19 +3676,27 @@ function HexaApp({
   return (
     <div className="hexa-shell">
       <Sidebar
-        section={section}
+        section={
+          section
+        }
         setSection={
           setSection
         }
         unreadCount={
           unreadCount
         }
-        profile={profile}
+        profile={
+          profile
+        }
         onProfile={() =>
-          setProfileOpen(true)
+          setProfileOpen(
+            true
+          )
         }
         onSettings={() =>
-          setSettingsOpen(true)
+          setSettingsOpen(
+            true
+          )
         }
       />
 
@@ -3856,8 +3704,12 @@ function HexaApp({
         {section ===
           "chat" && (
           <ChatWorkspace
-            userId={userId}
-            profile={profile}
+            userId={
+              userId
+            }
+            profile={
+              profile
+            }
             conversations={
               conversations
             }
@@ -3906,12 +3758,17 @@ function HexaApp({
             createGroup={
               createGroup
             }
-            flash={flash}
+            flash={
+              flash
+            }
             loadMessages={
               loadMessages
             }
             loadConversations={
               loadConversations
+            }
+            startCall={
+              startCall
             }
           />
         )}
@@ -3964,7 +3821,9 @@ function HexaApp({
             followChannel={
               followChannel
             }
-            userId={userId}
+            userId={
+              userId
+            }
           />
         )}
 
@@ -3986,10 +3845,9 @@ function HexaApp({
             profile={
               profile
             }
-            wallet={
-              wallet
+            flash={
+              flash
             }
-            flash={flash}
           />
         )}
 
@@ -4002,13 +3860,6 @@ function HexaApp({
             reload={
               loadNotifications
             }
-          />
-        )}
-
-        {section ===
-          "wallet" && (
-          <WalletPage
-            wallet={wallet}
           />
         )}
       </main>
@@ -4082,7 +3933,9 @@ function HexaApp({
               null
             )
           }
-          flash={flash}
+          flash={
+            flash
+          }
         />
       )}
 
@@ -4143,11 +3996,6 @@ function Sidebar({
       "🔔",
       "Notifications",
     ],
-    [
-      "wallet",
-      "₦",
-      "Wallet",
-    ],
   ];
 
   return (
@@ -4156,8 +4004,9 @@ function Sidebar({
         <div className="brand-mark">
           H
         </div>
-
-        <span>HEXA</span>
+        <span>
+          HEXA
+        </span>
       </div>
 
       <nav>
@@ -4189,7 +4038,8 @@ function Sidebar({
 
               {id ===
                 "notifications" &&
-                unreadCount > 0 && (
+                unreadCount >
+                  0 && (
                   <span className="notification-badge">
                     {unreadCount >
                     99
@@ -4211,15 +4061,13 @@ function Sidebar({
         >
           <Avatar
             src={
-              profile
-                ?.avatar_url
+              profile?.avatar_url
             }
             name={displayName(
               profile
             )}
             size={34}
           />
-
           <span>
             Profile
           </span>
@@ -4234,7 +4082,6 @@ function Sidebar({
           <span className="nav-icon">
             ⚙️
           </span>
-
           <span>
             Settings
           </span>
@@ -4270,6 +4117,7 @@ function ChatWorkspace({
   flash,
   loadMessages,
   loadConversations,
+  startCall,
 }) {
   const [search, setSearch] =
     useState("");
@@ -4286,7 +4134,7 @@ function ChatWorkspace({
   const filtered =
     conversations.filter(
       (conversation) => {
-        const name =
+        const title =
           conversation.type ===
           "direct"
             ? displayName(
@@ -4295,7 +4143,7 @@ function ChatWorkspace({
             : conversation.name ||
               "";
 
-        return name
+        return title
           .toLowerCase()
           .includes(
             search
@@ -4306,7 +4154,7 @@ function ChatWorkspace({
 
   const findUser =
     async () => {
-      const value =
+      const clean =
         username
           .trim()
           .replace(
@@ -4315,7 +4163,7 @@ function ChatWorkspace({
           )
           .toLowerCase();
 
-      if (!value)
+      if (!clean)
         return;
 
       const {
@@ -4326,24 +4174,17 @@ function ChatWorkspace({
             "profiles"
           )
           .select(
-            `
-              id,
-              username,
-              full_name,
-              display_name,
-              avatar_url,
-              about
-            `
+            "id,username,full_name,display_name,avatar_url,about"
           )
           .eq(
             "username",
-            value
+            clean
           )
           .maybeSingle();
 
       if (!data) {
         flash(
-          "That HEXA username was not found."
+          "HEXA user not found."
         );
         return;
       }
@@ -4408,12 +4249,9 @@ function ChatWorkspace({
 
         <div className="search-box">
           🔎
-
           <input
             value={search}
-            onChange={(
-              event
-            ) =>
+            onChange={(event) =>
               setSearch(
                 event.target.value
               )
@@ -4429,14 +4267,11 @@ function ChatWorkspace({
               <div>
                 💬
               </div>
-
               <h3>
                 No conversations
               </h3>
-
               <p>
-                Start a new
-                conversation.
+                Start a new chat.
               </p>
             </div>
           ) : (
@@ -4483,8 +4318,9 @@ function ChatWorkspace({
             </h2>
 
             <p>
-              Select a chat to start
-              messaging.
+              Select a
+              conversation to
+              start messaging.
             </p>
           </div>
         ) : (
@@ -4545,6 +4381,9 @@ function ChatWorkspace({
             loadConversations={
               loadConversations
             }
+            startCall={
+              startCall
+            }
           />
         )}
       </section>
@@ -4564,7 +4403,9 @@ function ChatWorkspace({
 
           <input
             autoFocus
-            value={username}
+            value={
+              username
+            }
             onChange={(
               event
             ) =>
@@ -4609,12 +4450,11 @@ function ChatWorkspace({
           onCreate={async ({
             name,
           }) => {
-            await createGroup(
-              {
-                name,
-                members: [],
-              }
-            );
+            await createGroup({
+              name,
+              members:
+                [],
+            });
 
             setGroupOpen(
               false
@@ -4695,7 +4535,7 @@ function ConversationRow({
 }
 
 /* =========================================================
-   CONVERSATION
+   CONVERSATION VIEW
    ========================================================= */
 
 function ConversationView({
@@ -4717,6 +4557,7 @@ function ConversationView({
   flash,
   loadMessages,
   loadConversations,
+  startCall,
 }) {
   const [text, setText] =
     useState("");
@@ -4727,10 +4568,10 @@ function ConversationView({
   const [editingMessage, setEditingMessage] =
     useState(null);
 
-  const [emojiOpen, setEmojiOpen] =
+  const [chatMenuOpen, setChatMenuOpen] =
     useState(false);
 
-  const [chatMenuOpen, setChatMenuOpen] =
+  const [emojiOpen, setEmojiOpen] =
     useState(false);
 
   const [searchOpen, setSearchOpen] =
@@ -4751,9 +4592,6 @@ function ConversationView({
   const [recordSeconds, setRecordSeconds] =
     useState(0);
 
-  const [pollOpen, setPollOpen] =
-    useState(false);
-
   const mediaRecorderRef =
     useRef(null);
 
@@ -4763,14 +4601,11 @@ function ConversationView({
   const chunksRef =
     useRef([]);
 
-  const recorderTimer =
+  const recordTimerRef =
     useRef(null);
 
   const fileInput =
     useRef(null);
-
-  const listNameRef =
-    useRef("");
 
   const title =
     conversation.type ===
@@ -4804,50 +4639,71 @@ function ConversationView({
       : messages;
 
   /* -------------------------------------------------------
-     SEND TEXT
+     VOICE UPLOAD
      ------------------------------------------------------- */
 
-  const sendText =
-    async () => {
-      const clean =
-        text.trim();
+  const uploadVoice =
+    async (file) => {
+      const path =
+        `${userId}/messages/voice-${Date.now()}-${makeId()}.webm`;
 
-      if (!clean)
-        return;
+      const {
+        error,
+      } =
+        await supabase.storage
+          .from(
+            MEDIA_BUCKET
+          )
+          .upload(
+            path,
+            file,
+            {
+              cacheControl:
+                "3600",
+              upsert:
+                false,
+              contentType:
+                file.type ||
+                "audio/webm",
+            }
+          );
 
-      if (
-        editingMessage
-      ) {
-        await editMessage(
-          editingMessage,
-          clean
+      if (error) {
+        flash(
+          error.message
         );
-
-        setEditingMessage(
-          null
-        );
-        setText("");
-        return;
+        return null;
       }
 
-      await sendMessage({
-        content:
-          clean,
-        messageType:
-          "text",
-        replyToId:
-          replyingTo?.id ||
-          null,
-      });
+      const {
+        data,
+      } =
+        supabase.storage
+          .from(
+            MEDIA_BUCKET
+          )
+          .getPublicUrl(
+            path
+          );
 
-      setText("");
-      setReplyingTo(
-        null
-      );
+      return {
+        filePath:
+          path,
+        fileUrl:
+          data?.publicUrl ||
+          "",
+        fileName:
+          file.name,
+        mimeType:
+          file.type ||
+          "audio/webm",
+        fileSize:
+          file.size,
+      };
     };
 
   /* -------------------------------------------------------
-     VOICE MESSAGE
+     RECORD
      ------------------------------------------------------- */
 
   const startRecording =
@@ -4876,7 +4732,9 @@ function ConversationView({
         const recorder =
           new MediaRecorder(
             stream,
-            { mimeType }
+            {
+              mimeType,
+            }
           );
 
         mediaRecorderRef.current =
@@ -4886,9 +4744,7 @@ function ConversationView({
           [];
 
         recorder.ondataavailable =
-          (
-            event
-          ) => {
+          (event) => {
             if (
               event.data?.size
             ) {
@@ -4901,7 +4757,7 @@ function ConversationView({
         recorder.onstop =
           async () => {
             clearInterval(
-              recorderTimer.current
+              recordTimerRef.current
             );
 
             stream
@@ -4915,28 +4771,35 @@ function ConversationView({
               false
             );
 
+            const duration =
+              recordSeconds;
+
             const blob =
               new Blob(
                 chunksRef.current,
                 {
-                  type: mimeType,
+                  type:
+                    mimeType,
                 }
               );
 
             chunksRef.current =
               [];
 
-            if (!blob.size)
+            if (!blob.size) {
+              setRecordSeconds(
+                0
+              );
               return;
+            }
 
             const file =
               new File(
-                [
-                  blob,
-                ],
+                [blob],
                 `voice-${Date.now()}.webm`,
                 {
-                  type: mimeType,
+                  type:
+                    mimeType,
                 }
               );
 
@@ -4945,8 +4808,12 @@ function ConversationView({
                 file
               );
 
-            if (!uploaded)
+            if (!uploaded) {
+              setRecordSeconds(
+                0
+              );
               return;
+            }
 
             await sendMessage({
               messageType:
@@ -4958,11 +4825,12 @@ function ConversationView({
                   uploaded.fileName,
                 mimeType:
                   uploaded.mimeType,
-                duration:
-                  recordSeconds,
+                duration,
               },
-              attachment:
-                uploaded,
+              attachment: {
+                ...uploaded,
+                duration,
+              },
               replyToId:
                 replyingTo?.id ||
                 null,
@@ -4976,7 +4844,9 @@ function ConversationView({
             );
           };
 
-        recorder.start(250);
+        recorder.start(
+          250
+        );
 
         setRecording(
           true
@@ -4986,7 +4856,7 @@ function ConversationView({
           0
         );
 
-        recorderTimer.current =
+        recordTimerRef.current =
           setInterval(
             () =>
               setRecordSeconds(
@@ -5011,7 +4881,7 @@ function ConversationView({
   const cancelRecording =
     () => {
       clearInterval(
-        recorderTimer.current
+        recordTimerRef.current
       );
 
       mediaRecorderRef.current =
@@ -5036,192 +4906,53 @@ function ConversationView({
       );
     };
 
-  const uploadVoice =
-    async (file) => {
-      const path =
-        `${userId}/messages/voice-${Date.now()}-${makeId()}.webm`;
-
-      const {
-        error,
-      } =
-        await supabase.storage
-          .from(
-            MEDIA_BUCKET
-          )
-          .upload(
-            path,
-            file,
-            {
-              cacheControl:
-                "3600",
-              upsert:
-                false,
-              contentType:
-                file.type,
-            }
-          );
-
-      if (error) {
-        flash(
-          error.message
-        );
-        return null;
-      }
-
-      const {
-        data,
-      } =
-        supabase.storage
-          .from(
-            MEDIA_BUCKET
-          )
-          .getPublicUrl(
-            path
-          );
-
-      return {
-        filePath:
-          path,
-        fileUrl:
-          data.publicUrl,
-        fileName:
-          file.name,
-        mimeType:
-          file.type,
-        fileSize:
-          file.size,
-      };
-    };
-
-  const handleFile =
-    async (event) => {
-      const file =
-        event.target.files?.[0];
-
-      event.target.value =
-        "";
-
-      if (!file) return;
-
-      await sendFile(file);
-    };
-
   /* -------------------------------------------------------
-     SELECTION
+     TEXT
      ------------------------------------------------------- */
 
-  const toggleSelected =
-    (messageId) => {
-      setSelectedMessages(
-        (current) =>
-          current.includes(
-            messageId
-          )
-            ? current.filter(
-                (id) =>
-                  id !==
-                  messageId
-              )
-            : [
-                ...current,
-                messageId,
-              ]
-      );
-    };
+  const sendText =
+    async () => {
+      const clean =
+        text.trim();
 
-  const finishSelect =
-    () => {
-      setSelectMode(false);
-      setSelectedMessages([]);
+      if (!clean)
+        return;
+
+      if (
+        editingMessage
+      ) {
+        await editMessage(
+          editingMessage,
+          clean
+        );
+
+        setEditingMessage(
+          null
+        );
+        setText("");
+
+        return;
+      }
+
+      await sendMessage({
+        content:
+          clean,
+        messageType:
+          "text",
+        replyToId:
+          replyingTo?.id ||
+          null,
+      });
+
+      setText("");
+      setReplyingTo(
+        null
+      );
     };
 
   /* -------------------------------------------------------
      CHAT ACTIONS
      ------------------------------------------------------- */
-
-  const handleClearChat =
-    async () => {
-      const confirmed =
-        window.confirm(
-          "Clear this chat from your account?"
-        );
-
-      if (!confirmed)
-        return;
-
-      await Promise.all(
-        messages.map(
-          (message) =>
-            supabase
-              .from(
-                "message_user_actions"
-              )
-              .upsert({
-                message_id:
-                  message.id,
-                user_id:
-                  userId,
-                action:
-                  "delete_for_me",
-              })
-        )
-      );
-
-      await loadMessages(
-        conversation.id
-      );
-
-      setChatMenuOpen(
-        false
-      );
-
-      flash(
-        "Chat cleared."
-      );
-    };
-
-  const handleDeleteChat =
-    async () => {
-      const confirmed =
-        window.confirm(
-          "Delete this chat from your chat list?"
-        );
-
-      if (!confirmed)
-        return;
-
-      const {
-        error,
-      } =
-        await supabase
-          .from(
-            "conversation_members"
-          )
-          .delete()
-          .eq(
-            "conversation_id",
-            conversation.id
-          )
-          .eq(
-            "user_id",
-            userId
-          );
-
-      if (error) {
-        flash(
-          error.message
-        );
-        return;
-      }
-
-      setChatMenuOpen(
-        false
-      );
-
-      await loadConversations();
-
-      onBack();
-    };
 
   const handleMute =
     async (
@@ -5267,7 +4998,7 @@ function ConversationView({
 
       flash(
         seconds === null
-          ? "Notifications muted forever."
+          ? "Notifications muted permanently."
           : "Notifications muted."
       );
     };
@@ -5349,12 +5080,18 @@ function ConversationView({
       action,
       name,
     }) => {
+      if (!name?.trim())
+        return;
+
       if (
         action ===
         "add"
       ) {
+        let folder;
+
         const {
-          data: folder,
+          data:
+            existing,
         } =
           await supabase
             .from(
@@ -5373,12 +5110,12 @@ function ConversationView({
             )
             .maybeSingle();
 
-        let folderId =
-          folder?.id;
+        folder =
+          existing;
 
-        if (!folderId) {
+        if (!folder) {
           const {
-            data: created,
+            data,
             error,
           } =
             await supabase
@@ -5401,8 +5138,8 @@ function ConversationView({
             return;
           }
 
-          folderId =
-            created.id;
+          folder =
+            data;
         }
 
         const {
@@ -5414,7 +5151,7 @@ function ConversationView({
             )
             .upsert({
               folder_id:
-                folderId,
+                folder.id,
               conversation_id:
                 conversation.id,
             });
@@ -5429,18 +5166,15 @@ function ConversationView({
         flash(
           `Added chat to ${name}.`
         );
-        return;
       }
 
       if (
         action ===
         "create"
       ) {
-        if (!name?.trim())
-          return;
-
         const {
-          data: created,
+          data:
+            folder,
           error,
         } =
           await supabase
@@ -5469,7 +5203,7 @@ function ConversationView({
           )
           .upsert({
             folder_id:
-              created.id,
+              folder.id,
             conversation_id:
               conversation.id,
           });
@@ -5481,8 +5215,8 @@ function ConversationView({
     };
 
   const handleExport =
-    async () => {
-      const text =
+    () => {
+      const output =
         messages
           .map(
             (message) =>
@@ -5503,7 +5237,7 @@ function ConversationView({
 
       const blob =
         new Blob(
-          [text],
+          [output],
           {
             type:
               "text/plain;charset=utf-8",
@@ -5525,7 +5259,7 @@ function ConversationView({
 
       anchor.download =
         `${title.replace(
-          /[^a-z0-9-_]+/gi,
+          /[^a-z0-9_-]+/gi,
           "_"
         )}-chat.txt`;
 
@@ -5544,89 +5278,88 @@ function ConversationView({
       );
     };
 
-  const handleCallLink =
-    async () => {
-      const link =
-        `${window.location.origin}/call/${conversation.id}`;
-
-      try {
-        await navigator.clipboard.writeText(
-          link
-        );
-
-        flash(
-          "Call link copied."
-        );
-      } catch {
-        flash(
-          link
-        );
-      }
-
-      setChatMenuOpen(
-        false
-      );
-    };
-
-  const handleContactInfo =
-    () => {
-      setChatMenuOpen(
-        false
-      );
-
-      if (
-        conversation.type ===
-        "direct"
-      ) {
-        alert(
-          [
-            title,
-            `@${conversation.otherProfile?.username || ""}`,
-            "",
-            conversation.otherProfile
-              ?.about ||
-              "No about information.",
-          ].join("\n")
-        );
-      } else {
-        alert(
-          `${title}\n\nGroup information will show members, admins, permissions and invite settings.`
-        );
-      }
-    };
-
-  const handleReport =
+  const handleClear =
     async () => {
       const confirmed =
         window.confirm(
-          `Report ${title}?`
+          "Clear this chat from your account?"
         );
 
       if (!confirmed)
         return;
 
-      await supabase
-        .from(
-          "security_events"
+      await Promise.all(
+        messages.map(
+          (message) =>
+            supabase
+              .from(
+                "message_user_actions"
+              )
+              .upsert({
+                message_id:
+                  message.id,
+                user_id:
+                  userId,
+                action:
+                  "delete_for_me",
+              })
         )
-        .insert({
-          user_id:
-            userId,
-          event_type:
-            "chat_report",
-          metadata: {
-            conversation_id:
-              conversation.id,
-          },
-        });
+      );
+
+      await loadMessages(
+        conversation.id
+      );
 
       setChatMenuOpen(
         false
       );
 
       flash(
-        "Report submitted."
+        "Chat cleared."
       );
+    };
+
+  const handleDelete =
+    async () => {
+      const confirmed =
+        window.confirm(
+          "Delete this chat from your chat list?"
+        );
+
+      if (!confirmed)
+        return;
+
+      const {
+        error,
+      } =
+        await supabase
+          .from(
+            "conversation_members"
+          )
+          .delete()
+          .eq(
+            "conversation_id",
+            conversation.id
+          )
+          .eq(
+            "user_id",
+            userId
+          );
+
+      if (error) {
+        flash(
+          error.message
+        );
+        return;
+      }
+
+      await loadConversations();
+
+      setChatMenuOpen(
+        false
+      );
+
+      onBack();
     };
 
   const handleBlock =
@@ -5636,7 +5369,7 @@ function ConversationView({
         "direct"
       ) {
         flash(
-          "Blocking is only available for direct contacts."
+          "Blocking is only available for direct chats."
         );
         return;
       }
@@ -5677,10 +5410,89 @@ function ConversationView({
       );
     };
 
+  const handleReport =
+    async () => {
+      const confirmed =
+        window.confirm(
+          `Report ${title}?`
+        );
+
+      if (!confirmed)
+        return;
+
+      await supabase
+        .from(
+          "security_events"
+        )
+        .insert({
+          user_id:
+            userId,
+          event_type:
+            "chat_report",
+          metadata: {
+            conversation_id:
+              conversation.id,
+          },
+        });
+
+      setChatMenuOpen(
+        false
+      );
+
+      flash(
+        "Report submitted."
+      );
+    };
+
+  const handleCallLink =
+    async () => {
+      const link =
+        `${window.location.origin}/call/${conversation.id}`;
+
+      try {
+        await navigator.clipboard.writeText(
+          link
+        );
+
+        flash(
+          "Call link copied."
+        );
+      } catch {
+        flash(
+          link
+        );
+      }
+
+      setChatMenuOpen(
+        false
+      );
+    };
+
+  /* -------------------------------------------------------
+     SELECT MODE
+     ------------------------------------------------------- */
+
+  const toggleSelect =
+    (messageId) => {
+      setSelectedMessages(
+        (current) =>
+          current.includes(
+            messageId
+          )
+            ? current.filter(
+                (id) =>
+                  id !==
+                  messageId
+              )
+            : [
+                ...current,
+                messageId,
+              ]
+      );
+    };
+
   return (
     <div className="conversation-view">
-      {/* HEADER */}
-
       <header className="conversation-header">
         <button
           className="mobile-back"
@@ -5719,6 +5531,13 @@ function ConversationView({
               <button
                 className="icon-button"
                 title="Voice call"
+                onClick={() =>
+                  startCall({
+                    conversation,
+                    type:
+                      "voice",
+                  })
+                }
               >
                 📞
               </button>
@@ -5726,15 +5545,18 @@ function ConversationView({
               <button
                 className="icon-button"
                 title="Video call"
+                onClick={() =>
+                  startCall({
+                    conversation,
+                    type:
+                      "video",
+                  })
+                }
               >
                 📹
               </button>
             </>
           )}
-
-          {/* =================================================
-              THREE-DOT MENU
-              ================================================= */}
 
           <div className="relative-menu">
             <button
@@ -5755,9 +5577,28 @@ function ConversationView({
                 conversation={
                   conversation
                 }
-                onContactInfo={
-                  handleContactInfo
-                }
+                onContactInfo={() => {
+                  setChatMenuOpen(
+                    false
+                  );
+
+                  alert(
+                    conversation.type ===
+                      "direct"
+                      ? [
+                          title,
+                          `@${conversation.otherProfile?.username || ""}`,
+                          "",
+                          conversation
+                            .otherProfile
+                            ?.about ||
+                            "No about information.",
+                        ].join(
+                          "\n"
+                        )
+                      : `${title}\n\nGroup info`
+                  );
+                }}
                 onSearch={() => {
                   setChatMenuOpen(
                     false
@@ -5798,13 +5639,30 @@ function ConversationView({
                 onCallLink={
                   handleCallLink
                 }
-                onNewGroupCall={() => {
+                onNewGroupCall={async () => {
                   setChatMenuOpen(
                     false
                   );
 
-                  flash(
-                    "New group call started. Select participants from your group."
+                  await startCall(
+                    {
+                      conversation,
+                      type:
+                        "voice",
+                    }
+                  );
+                }}
+                onNewGroupVideoCall={async () => {
+                  setChatMenuOpen(
+                    false
+                  );
+
+                  await startCall(
+                    {
+                      conversation,
+                      type:
+                        "video",
+                    }
                   );
                 }}
                 onReport={
@@ -5814,18 +5672,16 @@ function ConversationView({
                   handleBlock
                 }
                 onClearChat={
-                  handleClearChat
+                  handleClear
                 }
                 onDeleteChat={
-                  handleDeleteChat
+                  handleDelete
                 }
               />
             )}
           </div>
         </div>
       </header>
-
-      {/* SEARCH */}
 
       {searchOpen && (
         <div className="chat-search-bar">
@@ -5848,9 +5704,7 @@ function ConversationView({
             value={
               messageSearch
             }
-            onChange={(
-              event
-            ) =>
+            onChange={(event) =>
               setMessageSearch(
                 event.target.value
               )
@@ -5860,21 +5714,26 @@ function ConversationView({
         </div>
       )}
 
-      {/* SELECT MODE BAR */}
-
       {selectMode && (
         <div className="select-toolbar">
           <button
             className="icon-button"
-            onClick={
-              finishSelect
-            }
+            onClick={() => {
+              setSelectMode(
+                false
+              );
+              setSelectedMessages(
+                []
+              );
+            }}
           >
             ←
           </button>
 
           <strong>
-            {selectedMessages.length}{" "}
+            {
+              selectedMessages.length
+            }{" "}
             selected
           </strong>
 
@@ -5889,26 +5748,18 @@ function ConversationView({
                 });
               }
 
-              finishSelect();
+              setSelectMode(
+                false
+              );
+              setSelectedMessages(
+                []
+              );
             }}
           >
             🗑
           </button>
-
-          <button
-            className="icon-button"
-            onClick={() => {
-              flash(
-                "Selected messages can be forwarded or exported."
-              );
-            }}
-          >
-            📤
-          </button>
         </div>
       )}
-
-      {/* MESSAGES */}
 
       <div className="message-area">
         {filteredMessages.length ===
@@ -5947,7 +5798,7 @@ function ConversationView({
                 onClick={
                   selectMode
                     ? () =>
-                        toggleSelected(
+                        toggleSelect(
                           message.id
                         )
                     : undefined
@@ -5962,11 +5813,14 @@ function ConversationView({
                   }
                   onReply={(
                     target
-                  ) =>
+                  ) => {
+                    setEditingMessage(
+                      null
+                    );
                     setReplyingTo(
                       target
-                    )
-                  }
+                    );
+                  }}
                   onReact={
                     reactToMessage
                   }
@@ -6006,8 +5860,6 @@ function ConversationView({
         )}
       </div>
 
-      {/* REPLY */}
-
       {replyingTo && (
         <div className="reply-composer-preview">
           <div className="reply-preview-accent" />
@@ -6045,8 +5897,6 @@ function ConversationView({
         </div>
       )}
 
-      {/* EDIT */}
-
       {editingMessage && (
         <div className="reply-composer-preview">
           <div className="reply-preview-accent" />
@@ -6078,8 +5928,6 @@ function ConversationView({
           </button>
         </div>
       )}
-
-      {/* COMPOSER */}
 
       <div className="composer">
         {recording ? (
@@ -6141,26 +5989,33 @@ function ConversationView({
 
             <input
               ref={fileInput}
-              type="file"
               hidden
+              type="file"
               accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.txt"
-              onChange={
-                handleFile
-              }
+              onChange={async (
+                event
+              ) => {
+                const file =
+                  event.target.files?.[0];
+
+                event.target.value =
+                  "";
+
+                if (file)
+                  await sendFile(
+                    file
+                  );
+              }}
             />
 
             <textarea
               value={text}
-              onChange={(
-                event
-              ) =>
+              onChange={(event) =>
                 setText(
                   event.target.value
                 )
               }
-              onKeyDown={(
-                event
-              ) => {
+              onKeyDown={(event) => {
                 if (
                   event.key ===
                     "Enter" &&
@@ -6190,10 +6045,10 @@ function ConversationView({
             ) : (
               <button
                 className="icon-button"
+                title="Voice message"
                 onClick={
                   startRecording
                 }
-                title="Voice message"
               >
                 🎙
               </button>
@@ -6204,27 +6059,10 @@ function ConversationView({
 
       {emojiOpen && (
         <EmojiPicker
-          onSelect={(
-            emoji
-          ) =>
+          onSelect={(emoji) =>
             setText(
               (value) =>
                 `${value}${emoji}`
-            )
-          }
-        />
-      )}
-
-      {pollOpen && (
-        <PollModal
-          onClose={() =>
-            setPollOpen(
-              false
-            )
-          }
-          onCreate={() =>
-            setPollOpen(
-              false
             )
           }
         />
@@ -6234,7 +6072,7 @@ function ConversationView({
 }
 
 /* =========================================================
-   WHATSAPP CHAT THREE-DOT MENU
+   CHAT THREE-DOT MENU
    ========================================================= */
 
 function ChatHeaderMenu({
@@ -6250,47 +6088,38 @@ function ChatHeaderMenu({
   onCloseChat,
   onCallLink,
   onNewGroupCall,
+  onNewGroupVideoCall,
   onReport,
   onBlock,
   onClearChat,
   onDeleteChat,
 }) {
-  const [
-    submenu,
-    setSubmenu,
-  ] = useState(null);
+  const [submenu, setSubmenu] =
+    useState(null);
 
-  const [
-    newListName,
-    setNewListName,
-  ] = useState("");
-
-  const lists = [
-    "Family",
-    "School",
-  ];
+  const [newListName, setNewListName] =
+    useState("");
 
   const toggle =
-    (name) =>
-      setSubmenu(
-        (current) =>
-          current === name
-            ? null
-            : name
+    (value) =>
+      setSubmenu((current) =>
+        current === value
+          ? null
+          : value
       );
 
   const createList =
     async () => {
-      const clean =
+      const name =
         newListName.trim();
 
-      if (!clean)
+      if (!name)
         return;
 
-      await onList?.({
+      await onList({
         action:
           "create",
-        name: clean,
+        name,
       });
 
       setNewListName("");
@@ -6358,31 +6187,34 @@ function ChatHeaderMenu({
           "mute" && (
           <div className="submenu">
             <button
-              onClick={() => {
+              onClick={() =>
                 onMute(
-                  60 * 60
-                );
-              }}
+                  60 *
+                    60
+                )
+              }
             >
               1 hour
             </button>
 
             <button
-              onClick={() => {
+              onClick={() =>
                 onMute(
-                  8 * 60 * 60
-                );
-              }}
+                  8 *
+                    60 *
+                    60
+                )
+              }
             >
               8 hours
             </button>
 
             <button
-              onClick={() => {
+              onClick={() =>
                 onMute(
                   null
-                );
-              }}
+                )
+              }
             >
               Always
             </button>
@@ -6399,11 +6231,9 @@ function ChatHeaderMenu({
           }
         >
           <span>⏱</span>
-
           <span>
             Disappearing messages
           </span>
-
           <span className="submenu-arrow">
             ›
           </span>
@@ -6473,11 +6303,9 @@ function ChatHeaderMenu({
           }
         >
           <span>📁</span>
-
           <span>
             Add to list
           </span>
-
           <span className="submenu-arrow">
             ›
           </span>
@@ -6486,7 +6314,10 @@ function ChatHeaderMenu({
         {submenu ===
           "lists" && (
           <div className="submenu list-submenu">
-            {lists.map(
+            {[
+              "Family",
+              "School",
+            ].map(
               (list) => (
                 <button
                   key={list}
@@ -6497,6 +6328,7 @@ function ChatHeaderMenu({
                       name:
                         list,
                     });
+
                     setSubmenu(
                       null
                     );
@@ -6512,19 +6344,12 @@ function ChatHeaderMenu({
                 value={
                   newListName
                 }
-                onChange={(
-                  event
-                ) =>
+                onChange={(event) =>
                   setNewListName(
-                    event
-                      .target
-                      .value
+                    event.target.value
                   )
                 }
-                placeholder="New list name"
-                onKeyDown={(
-                  event
-                ) => {
+                onKeyDown={(event) => {
                   if (
                     event.key ===
                     "Enter"
@@ -6532,6 +6357,7 @@ function ChatHeaderMenu({
                     createList();
                   }
                 }}
+                placeholder="New list name"
               />
 
               <button
@@ -6579,16 +6405,32 @@ function ChatHeaderMenu({
         </span>
       </button>
 
-      <button
-        onClick={
-          onNewGroupCall
-        }
-      >
-        <span>👥</span>
-        <span>
-          New group call
-        </span>
-      </button>
+      {conversation.type ===
+        "group" && (
+        <>
+          <button
+            onClick={
+              onNewGroupCall
+            }
+          >
+            <span>📞</span>
+            <span>
+              New group voice call
+            </span>
+          </button>
+
+          <button
+            onClick={
+              onNewGroupVideoCall
+            }
+          >
+            <span>📹</span>
+            <span>
+              New group video call
+            </span>
+          </button>
+        </>
+      )}
 
       <div className="menu-divider" />
 
@@ -6675,14 +6517,14 @@ function MessageBubble({
   ] = useState(false);
 
   const [
-    audioSpeed,
-    setAudioSpeed,
-  ] = useState(1);
-
-  const [
     forwardOpen,
     setForwardOpen,
   ] = useState(false);
+
+  const [
+    speed,
+    setSpeed,
+  ] = useState(1);
 
   const reply =
     message.reply_to;
@@ -6690,12 +6532,8 @@ function MessageBubble({
   const attachment =
     message.attachments?.[0];
 
-  const metadata =
-    message.metadata ||
-    {};
-
   const url =
-    metadata.url ||
+    message.metadata?.url ||
     attachment?.file_url;
 
   if (
@@ -6787,9 +6625,9 @@ function MessageBubble({
             "image" &&
             url && (
               <img
+                className="message-media"
                 src={url}
                 alt=""
-                className="message-media"
               />
             )}
 
@@ -6797,9 +6635,9 @@ function MessageBubble({
             "video" &&
             url && (
               <video
+                className="message-media"
                 src={url}
                 controls
-                className="message-media"
               />
             )}
 
@@ -6810,29 +6648,27 @@ function MessageBubble({
                 <audio
                   controls
                   src={url}
-                  onPlay={(
-                    event
-                  ) => {
+                  onPlay={(event) => {
                     event.currentTarget.playbackRate =
-                      audioSpeed;
+                      speed;
                   }}
                 />
 
                 <button
                   className="voice-speed"
-                  onClick={() => {
-                    setAudioSpeed(
-                      audioSpeed ===
+                  onClick={() =>
+                    setSpeed(
+                      speed ===
                         1
                         ? 1.5
-                        : audioSpeed ===
+                        : speed ===
                           1.5
                         ? 2
                         : 1
-                    );
-                  }}
+                    )
+                  }
                 >
-                  {audioSpeed}×
+                  {speed}×
                 </button>
               </div>
             )}
@@ -6857,15 +6693,20 @@ function MessageBubble({
 
                 <div>
                   <strong>
-                    {metadata.fileName ||
-                      attachment?.file_name ||
+                    {message
+                      .metadata
+                      ?.fileName ||
+                      attachment
+                        ?.file_name ||
                       "Attachment"}
                   </strong>
 
                   <small>
-                    {metadata.mimeType ||
-                      attachment?.mime_type ||
-                      ""}
+                    {
+                      message
+                        .metadata
+                        ?.mimeType
+                    }
                   </small>
                 </div>
               </a>
@@ -6875,9 +6716,9 @@ function MessageBubble({
             "gif" &&
             url && (
               <img
+                className="message-gif"
                 src={url}
                 alt="GIF"
-                className="message-gif"
               />
             )}
 
@@ -7101,9 +6942,7 @@ function MessageBubble({
             ].map(
               (reaction) => (
                 <button
-                  key={
-                    reaction
-                  }
+                  key={reaction}
                   onClick={() => {
                     onReact(
                       message.id,
@@ -7133,10 +6972,7 @@ function MessageBubble({
                   item.id !==
                   message.conversation_id
               )
-              .slice(
-                0,
-                8
-              )
+              .slice(0, 8)
               .map(
                 (item) => (
                   <button
@@ -7177,20 +7013,20 @@ function MessageBubble({
         )}
       </div>
 
-      {message.reactions
-        ?.length > 0 && (
+      {message.reactions?.length >
+        0 && (
         <div className="message-reactions">
           {Object.entries(
             message.reactions.reduce(
               (
                 result,
-                item
+                reaction
               ) => {
                 result[
-                  item.reaction
+                  reaction.reaction
                 ] =
                   (result[
-                    item.reaction
+                    reaction.reaction
                   ] || 0) + 1;
 
                 return result;
@@ -7225,7 +7061,7 @@ function MessageBubble({
 }
 
 /* =========================================================
-   EMOJI
+   EMOJI PICKER
    ========================================================= */
 
 function EmojiPicker({
@@ -7293,26 +7129,31 @@ function GroupModal({
   return (
     <Modal
       title="New group"
-      onClose={onClose}
+      onClose={
+        onClose
+      }
     >
       <label>
         Group name
       </label>
 
       <input
+        autoFocus
         value={name}
         onChange={(event) =>
           setName(
             event.target.value
           )
         }
-        placeholder="Group name"
+        placeholder="HEXA Group"
       />
 
       <div className="modal-actions">
         <button
           className="secondary-button"
-          onClick={onClose}
+          onClick={
+            onClose
+          }
         >
           Cancel
         </button>
@@ -7354,7 +7195,7 @@ function MomentsPage({
   const [viewer, setViewer] =
     useState(null);
 
-  const input =
+  const fileInput =
     useRef(null);
 
   const publish =
@@ -7385,8 +7226,9 @@ function MomentsPage({
           </h1>
 
           <p>
-            Share photos, videos and
-            updates for 24 hours.
+            Share updates that
+            disappear after 24
+            hours.
           </p>
         </div>
       </header>
@@ -7417,7 +7259,7 @@ function MomentsPage({
         />
 
         <input
-          ref={input}
+          ref={fileInput}
           hidden
           type="file"
           accept="image/*,video/*"
@@ -7433,15 +7275,17 @@ function MomentsPage({
           <button
             className="secondary-button"
             onClick={() =>
-              input.current?.click()
+              fileInput.current?.click()
             }
           >
-            📷 Media
+            📷 Photo/video
           </button>
 
           <button
             className="primary-button"
-            onClick={publish}
+            onClick={
+              publish
+            }
           >
             Publish
           </button>
@@ -7458,7 +7302,7 @@ function MomentsPage({
           </h2>
 
           <p>
-            Your updates will
+            Your stories will
             appear here.
           </p>
         </div>
@@ -7467,11 +7311,7 @@ function MomentsPage({
           {moments.map(
             (moment) => (
               <button
-                className={
-                  moment.seen
-                    ? "moment-card seen"
-                    : "moment-card"
-                }
+                className="moment-card"
                 key={
                   moment.id
                 }
@@ -7496,7 +7336,7 @@ function MomentsPage({
                     {truncate(
                       moment.text ||
                         "Moment",
-                      100
+                      90
                     )}
                   </div>
                 )}
@@ -7648,7 +7488,7 @@ function CommunitiesPage({
   createCommunity,
   createCommunityGroup,
 }) {
-  const [open, setOpen] =
+  const [createOpen, setCreateOpen] =
     useState(false);
 
   const [selected, setSelected] =
@@ -7669,7 +7509,7 @@ function CommunitiesPage({
           </h1>
 
           <p>
-            Bring groups and people
+            Bring related groups
             together.
           </p>
         </div>
@@ -7677,7 +7517,9 @@ function CommunitiesPage({
         <button
           className="primary-button"
           onClick={() =>
-            setOpen(true)
+            setCreateOpen(
+              true
+            )
           }
         >
           + Create community
@@ -7687,7 +7529,9 @@ function CommunitiesPage({
       {communities.length ===
       0 ? (
         <div className="empty-large">
-          <div>👥</div>
+          <div>
+            👥
+          </div>
 
           <h2>
             Build your first
@@ -7736,22 +7580,22 @@ function CommunitiesPage({
         </div>
       )}
 
-      {open && (
+      {createOpen && (
         <Modal
           title="Create community"
           onClose={() =>
-            setOpen(false)
+            setCreateOpen(
+              false
+            )
           }
         >
           <label>
-            Name
+            Community name
           </label>
 
           <input
             value={name}
-            onChange={(
-              event
-            ) =>
+            onChange={(event) =>
               setName(
                 event.target.value
               )
@@ -7766,9 +7610,7 @@ function CommunitiesPage({
             value={
               description
             }
-            onChange={(
-              event
-            ) =>
+            onChange={(event) =>
               setDescription(
                 event.target.value
               )
@@ -7779,7 +7621,9 @@ function CommunitiesPage({
             <button
               className="secondary-button"
               onClick={() =>
-                setOpen(false)
+                setCreateOpen(
+                  false
+                )
               }
             >
               Cancel
@@ -7788,16 +7632,16 @@ function CommunitiesPage({
             <button
               className="primary-button"
               onClick={async () => {
-                await createCommunity(
-                  {
-                    name,
-                    description,
-                  }
-                );
+                await createCommunity({
+                  name,
+                  description,
+                });
 
                 setName("");
                 setDescription("");
-                setOpen(false);
+                setCreateOpen(
+                  false
+                );
               }}
             >
               Create
@@ -7812,7 +7656,9 @@ function CommunitiesPage({
             selected
           }
           onClose={() =>
-            setSelected(null)
+            setSelected(
+              null
+            )
           }
           createCommunityGroup={
             createCommunityGroup
@@ -7910,10 +7756,10 @@ function CommunityDetail({
 
           {community.is_admin && (
             <input
-              value={groupName}
-              onChange={(
-                event
-              ) =>
+              value={
+                groupName
+              }
+              onChange={(event) =>
                 setGroupName(
                   event.target.value
                 )
@@ -7924,7 +7770,7 @@ function CommunityDetail({
 
           <div className="community-placeholder">
             Groups connected
-            to this community
+            to the community
             appear here.
           </div>
         </div>
@@ -7944,15 +7790,11 @@ function ChannelsPage({
   followChannel,
   userId,
 }) {
-  const [
-    createOpen,
-    setCreateOpen,
-  ] = useState(false);
+  const [createOpen, setCreateOpen] =
+    useState(false);
 
-  const [
-    selected,
-    setSelected,
-  ] = useState(null);
+  const [selected, setSelected] =
+    useState(null);
 
   const [name, setName] =
     useState("");
@@ -7960,10 +7802,8 @@ function ChannelsPage({
   const [handle, setHandle] =
     useState("");
 
-  const [
-    description,
-    setDescription,
-  ] = useState("");
+  const [description, setDescription] =
+    useState("");
 
   return (
     <div className="page">
@@ -7974,7 +7814,8 @@ function ChannelsPage({
           </h1>
 
           <p>
-            Follow creators and
+            Follow creators,
+            businesses and
             organizations.
           </p>
         </div>
@@ -8008,7 +7849,7 @@ function ChannelsPage({
               </div>
 
               <h3>
-                No followed channels
+                No channels yet
               </h3>
             </div>
           ) : (
@@ -8103,14 +7944,12 @@ function ChannelsPage({
           }
         >
           <label>
-            Name
+            Channel name
           </label>
 
           <input
             value={name}
-            onChange={(
-              event
-            ) =>
+            onChange={(event) =>
               setName(
                 event.target.value
               )
@@ -8123,13 +7962,12 @@ function ChannelsPage({
 
           <input
             value={handle}
-            onChange={(
-              event
-            ) =>
+            onChange={(event) =>
               setHandle(
                 event.target.value
               )
             }
+            placeholder="@hexanews"
           />
 
           <label>
@@ -8140,9 +7978,7 @@ function ChannelsPage({
             value={
               description
             }
-            onChange={(
-              event
-            ) =>
+            onChange={(event) =>
               setDescription(
                 event.target.value
               )
@@ -8164,13 +8000,11 @@ function ChannelsPage({
             <button
               className="primary-button"
               onClick={async () => {
-                await createChannel(
-                  {
-                    name,
-                    handle,
-                    description,
-                  }
-                );
+                await createChannel({
+                  name,
+                  handle,
+                  description,
+                });
 
                 setCreateOpen(
                   false
@@ -8198,11 +8032,11 @@ function ChannelFeed({
   const [text, setText] =
     useState("");
 
-  const [isAdmin, setIsAdmin] =
-    useState(false);
-
   const [file, setFile] =
     useState(null);
+
+  const [isAdmin, setIsAdmin] =
+    useState(false);
 
   const loadPosts =
     useCallback(
@@ -8329,9 +8163,7 @@ function ChannelFeed({
         <div className="channel-composer">
           <textarea
             value={text}
-            onChange={(
-              event
-            ) =>
+            onChange={(event) =>
               setText(
                 event.target.value
               )
@@ -8342,9 +8174,7 @@ function ChannelFeed({
           <input
             type="file"
             accept="image/*,video/*"
-            onChange={(
-              event
-            ) =>
+            onChange={(event) =>
               setFile(
                 event.target.files?.[0] ||
                   null
@@ -8355,18 +8185,17 @@ function ChannelFeed({
           <button
             className="primary-button"
             onClick={async () => {
-              await createChannelPost(
-                {
-                  channelId:
-                    channel.id,
-                  text,
-                  file,
-                }
-              );
+              await createChannelPost({
+                channelId:
+                  channel.id,
+                text,
+                file,
+              });
 
               setText("");
               setFile(null);
-              loadPosts();
+
+              await loadPosts();
             }}
           >
             Publish
@@ -8375,70 +8204,81 @@ function ChannelFeed({
       )}
 
       <div className="channel-posts">
-        {posts.map(
-          (post) => (
-            <article
-              key={
-                post.id
-              }
-              className="channel-post"
-            >
-              <div className="post-author">
-                <Avatar
-                  src={
-                    post
-                      .profiles
-                      ?.avatar_url
-                  }
-                  name={displayName(
-                    post.profiles
-                  )}
-                  size={42}
-                />
-
-                <div>
-                  <strong>
-                    {displayName(
+        {posts.length ===
+        0 ? (
+          <div className="empty-large">
+            <div>
+              📡
+            </div>
+            <h3>
+              No posts yet
+            </h3>
+          </div>
+        ) : (
+          posts.map(
+            (post) => (
+              <article
+                className="channel-post"
+                key={
+                  post.id
+                }
+              >
+                <div className="post-author">
+                  <Avatar
+                    src={
+                      post
+                        .profiles
+                        ?.avatar_url
+                    }
+                    name={displayName(
                       post.profiles
                     )}
-                  </strong>
+                    size={42}
+                  />
 
-                  <span>
-                    {formatTime(
-                      post.created_at
-                    )}
-                  </span>
+                  <div>
+                    <strong>
+                      {displayName(
+                        post.profiles
+                      )}
+                    </strong>
+
+                    <span>
+                      {formatTime(
+                        post.created_at
+                      )}
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              {post.text && (
-                <p>
-                  {
-                    post.text
-                  }
-                </p>
-              )}
+                {post.text && (
+                  <p>
+                    {
+                      post.text
+                    }
+                  </p>
+                )}
 
-              {post.media_url && (
-                post.media_type?.startsWith(
-                  "video"
-                ) ? (
-                  <video
-                    src={
-                      post.media_url
-                    }
-                    controls
-                  />
-                ) : (
-                  <img
-                    src={
-                      post.media_url
-                    }
-                    alt=""
-                  />
-                )
-              )}
-            </article>
+                {post.media_url &&
+                  (post.media_type?.startsWith(
+                    "video"
+                  ) ? (
+                    <video
+                      src={
+                        post.media_url
+                      }
+                      controls
+                    />
+                  ) : (
+                    <img
+                      src={
+                        post.media_url
+                      }
+                      alt=""
+                    />
+                  ))}
+              </article>
+            )
           )
         )}
       </div>
@@ -8447,7 +8287,7 @@ function ChannelFeed({
 }
 
 /* =========================================================
-   CALLS
+   CALLS PAGE
    ========================================================= */
 
 function CallsPage({
@@ -8478,17 +8318,18 @@ function CallsPage({
         </h2>
 
         <p>
-          WebRTC voice and video
-          calling.
+          Real-time HEXA
+          voice and video
+          calls.
         </p>
 
         <small>
-          Rate: ₦
+          ₦
           {(
             CALL_RATE_KOBO_PER_SECOND /
             100
           ).toFixed(2)}
-          / second
+          {" / second"}
         </small>
       </div>
 
@@ -8572,11 +8413,14 @@ function CallOverlay({
   onClose,
   flash,
 }) {
+  const [accepted, setAccepted] =
+    useState(
+      call.status ===
+        "accepted"
+    );
+
   const [seconds, setSeconds] =
     useState(0);
-
-  const [accepted, setAccepted] =
-    useState(false);
 
   const [muted, setMuted] =
     useState(false);
@@ -8597,15 +8441,17 @@ function CallOverlay({
     useRef(null);
 
   useEffect(() => {
-    let active = true;
+    let active =
+      true;
 
-    const setup =
+    const init =
       async () => {
         try {
           const media =
             await navigator.mediaDevices.getUserMedia(
               {
-                audio: true,
+                audio:
+                  true,
                 video:
                   call.type ===
                   "video",
@@ -8626,7 +8472,7 @@ function CallOverlay({
               media;
           }
 
-          const pc =
+          const rtc =
             new RTCPeerConnection({
               iceServers:
                 [
@@ -8658,13 +8504,13 @@ function CallOverlay({
             });
 
           pcRef.current =
-            pc;
+            rtc;
 
           media
             .getTracks()
             .forEach(
               (track) =>
-                pc.addTrack(
+                rtc.addTrack(
                   track,
                   media
                 )
@@ -8672,12 +8518,12 @@ function CallOverlay({
         } catch (error) {
           flash(
             error?.message ||
-              "Could not start call."
+              "Could not access camera or microphone."
           );
         }
       };
 
-    setup();
+    init();
 
     return () => {
       active =
@@ -8714,7 +8560,7 @@ function CallOverlay({
       );
   }, [accepted]);
 
-  const answer =
+  const accept =
     async () => {
       setAccepted(
         true
@@ -8732,6 +8578,22 @@ function CallOverlay({
           "id",
           call.id
         );
+
+      await supabase
+        .from(
+          "call_participants"
+        )
+        .upsert({
+          call_id:
+            call.id,
+          user_id:
+            userId,
+          joined_at:
+            now(),
+          muted,
+          video_enabled:
+            videoEnabled,
+        });
     };
 
   const end =
@@ -8769,8 +8631,10 @@ function CallOverlay({
       <div className="call-window">
         <div className="call-topbar">
           <strong>
-            {call.type ===
-            "video"
+            {call.isGroup
+              ? "Group call"
+              : call.type ===
+                "video"
               ? "Video call"
               : "Voice call"}
           </strong>
@@ -8802,17 +8666,33 @@ function CallOverlay({
                   call.peer
                     ?.avatar_url
                 }
-                name={displayName(
-                  call.peer
-                )}
+                name={
+                  call.isGroup
+                    ? "Group"
+                    : displayName(
+                        call.peer
+                      )
+                }
                 size={120}
               />
 
               <h2>
-                {displayName(
-                  call.peer
-                )}
+                {call.isGroup
+                  ? "HEXA Group"
+                  : displayName(
+                      call.peer
+                    )}
               </h2>
+
+              {call.isGroup && (
+                <p>
+                  {call
+                    .groupMembers
+                    ?.length ||
+                    0}{" "}
+                  participants
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -8821,7 +8701,9 @@ function CallOverlay({
           {!accepted && (
             <button
               className="call-control accept"
-              onClick={answer}
+              onClick={
+                accept
+              }
             >
               ✓
             </button>
@@ -8857,9 +8739,7 @@ function CallOverlay({
                 className="call-control"
                 onClick={() =>
                   setVideoEnabled(
-                    (
-                      value
-                    ) =>
+                    (value) =>
                       !value
                   )
                 }
@@ -8889,7 +8769,6 @@ function CallOverlay({
 
 function KoraPage({
   profile,
-  wallet,
   flash,
 }) {
   const [input, setInput] =
@@ -8958,10 +8837,11 @@ function KoraPage({
             }
           );
 
-        if (!response.ok)
+        if (!response.ok) {
           throw new Error(
-            "Kora endpoint is unavailable."
+            "Kora server endpoint is unavailable."
           );
+        }
 
         const data =
           await response.json();
@@ -9052,8 +8932,7 @@ function KoraPage({
 
           {loading && (
             <div className="kora-typing">
-              Kora is
-              thinking…
+              Kora is thinking…
             </div>
           )}
         </div>
@@ -9061,16 +8940,12 @@ function KoraPage({
         <div className="kora-composer">
           <input
             value={input}
-            onChange={(
-              event
-            ) =>
+            onChange={(event) =>
               setInput(
                 event.target.value
               )
             }
-            onKeyDown={(
-              event
-            ) => {
+            onKeyDown={(event) => {
               if (
                 event.key ===
                 "Enter"
@@ -9089,22 +8964,6 @@ function KoraPage({
             ➤
           </button>
         </div>
-      </div>
-
-      <div className="kora-plan">
-        <span>
-          Wallet
-        </span>
-
-        <strong>
-          ₦
-          {(
-            Number(
-              wallet?.balance_kobo ||
-                0
-            ) / 100
-          ).toLocaleString()}
-        </strong>
       </div>
     </div>
   );
@@ -9156,8 +9015,9 @@ function NotificationsPage({
       {notifications.length ===
       0 ? (
         <div className="empty-large">
-          <div>🔔</div>
-
+          <div>
+            🔔
+          </div>
           <h2>
             No notifications
           </h2>
@@ -9216,75 +9076,7 @@ function NotificationsPage({
 }
 
 /* =========================================================
-   WALLET
-   ========================================================= */
-
-function WalletPage({
-  wallet,
-}) {
-  const balance =
-    Number(
-      wallet?.balance_kobo ||
-        0
-    ) / 100;
-
-  return (
-    <div className="page">
-      <header className="page-header">
-        <div>
-          <h1>
-            HEXA Wallet
-          </h1>
-
-          <p>
-            Calls, credits and
-            transactions.
-          </p>
-        </div>
-      </header>
-
-      <div className="wallet-card">
-        <span>
-          Available
-          balance
-        </span>
-
-        <strong>
-          ₦
-          {balance.toLocaleString(
-            undefined,
-            {
-              minimumFractionDigits:
-                2,
-            }
-          )}
-        </strong>
-
-        <button className="primary-button">
-          + Add funds
-        </button>
-      </div>
-
-      <div className="wallet-actions">
-        <button>
-          💳 Add money
-        </button>
-
-        <button>
-          📜 Transactions
-        </button>
-
-        <button>
-          ⭐ Buy Kora
-          credits
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* =========================================================
-   PROFILE
+   PROFILE MODAL
    ========================================================= */
 
 function ProfileModal({
@@ -9325,11 +9117,11 @@ function ProfileModal({
         ""
     );
 
-  const photoInput =
-    useRef(null);
-
   const [saving, setSaving] =
     useState(false);
+
+  const input =
+    useRef(null);
 
   const save =
     async () => {
@@ -9347,7 +9139,7 @@ function ProfileModal({
           )
         ) {
           throw new Error(
-            "Username must be 3–30 letters, numbers or underscores."
+            "Username must be 3–30 characters."
           );
         }
 
@@ -9400,19 +9192,23 @@ function ProfileModal({
   return (
     <Modal
       title="Your profile"
-      onClose={onClose}
+      onClose={
+        onClose
+      }
     >
       <div className="profile-center">
         <Avatar
-          src={avatarUrl}
-          name={name}
+          src={
+            avatarUrl
+          }
+          name={
+            name
+          }
           size={92}
         />
 
         <input
-          ref={
-            photoInput
-          }
+          ref={input}
           hidden
           type="file"
           accept="image/*"
@@ -9431,22 +9227,20 @@ function ProfileModal({
                 "avatars"
               );
 
-            if (uploaded) {
+            if (uploaded)
               setAvatarUrl(
                 uploaded.fileUrl
               );
-            }
           }}
         />
 
         <button
           className="secondary-button"
           onClick={() =>
-            photoInput.current?.click()
+            input.current?.click()
           }
         >
-          Change profile
-          photo
+          Change profile photo
         </button>
       </div>
 
@@ -9455,7 +9249,9 @@ function ProfileModal({
       </label>
 
       <input
-        value={name}
+        value={
+          name
+        }
         onChange={(event) =>
           setName(
             event.target.value
@@ -9468,7 +9264,9 @@ function ProfileModal({
       </label>
 
       <input
-        value={username}
+        value={
+          username
+        }
         onChange={(event) =>
           setUsername(
             event.target.value
@@ -9486,13 +9284,17 @@ function ProfileModal({
       </label>
 
       <textarea
-        value={about}
+        value={
+          about
+        }
         onChange={(event) =>
           setAbout(
             event.target.value
           )
         }
-        maxLength={200}
+        maxLength={
+          200
+        }
       />
 
       <label>
@@ -9500,7 +9302,9 @@ function ProfileModal({
       </label>
 
       <input
-        value={phone}
+        value={
+          phone
+        }
         onChange={(event) =>
           setPhone(
             event.target.value
@@ -9583,14 +9387,14 @@ function SettingsModal({
     ]).then(
       ([
         privacyResult,
-        notificationsResult,
+        notificationResult,
       ]) => {
         setPrivacy(
           privacyResult.data
         );
 
         setNotifications(
-          notificationsResult.data
+          notificationResult.data
         );
       }
     );
@@ -9655,7 +9459,9 @@ function SettingsModal({
   return (
     <Modal
       title="Settings"
-      onClose={onClose}
+      onClose={
+        onClose
+      }
     >
       <div className="settings-section">
         <h3>
@@ -9667,10 +9473,10 @@ function SettingsModal({
         </label>
 
         <select
-          value={theme}
-          onChange={(
-            event
-          ) =>
+          value={
+            theme
+          }
+          onChange={(event) =>
             setTheme(
               event.target.value
             )
@@ -9695,10 +9501,10 @@ function SettingsModal({
         </label>
 
         <select
-          value={accent}
-          onChange={(
-            event
-          ) =>
+          value={
+            accent
+          }
+          onChange={(event) =>
             setAccent(
               event.target.value
             )
@@ -9725,26 +9531,28 @@ function SettingsModal({
         </h3>
 
         <select
-          value={language}
-          onChange={(
-            event
-          ) =>
+          value={
+            language
+          }
+          onChange={(event) =>
             setLanguage(
               event.target.value
             )
           }
-          size={7}
+          size={
+            7
+          }
         >
           {LANGUAGES.map(
             ([
               code,
-              name,
+              nativeName,
             ]) => (
               <option
                 key={code}
                 value={code}
               >
-                {name}
+                {nativeName}
               </option>
             )
           )}
@@ -9845,8 +9653,12 @@ function SettingsModal({
             key,
           ]) => (
             <SettingToggle
-              key={key}
-              label={label}
+              key={
+                key
+              }
+              label={
+                label
+              }
               value={
                 notifications?.[
                   key
@@ -9873,8 +9685,7 @@ function SettingsModal({
         <div className="account-row">
           <Avatar
             src={
-              profile
-                ?.avatar_url
+              profile?.avatar_url
             }
             name={displayName(
               profile
@@ -9901,6 +9712,10 @@ function SettingsModal({
     </Modal>
   );
 }
+
+/* =========================================================
+   SETTING TOGGLE
+   ========================================================= */
 
 function SettingToggle({
   label,
@@ -9930,58 +9745,6 @@ function SettingToggle({
         <span />
       </span>
     </button>
-  );
-}
-
-/* =========================================================
-   POLL MODAL
-   ========================================================= */
-
-function PollModal({
-  onClose,
-  onCreate,
-}) {
-  return (
-    <Modal
-      title="Create poll"
-      onClose={onClose}
-    >
-      <label>
-        Question
-      </label>
-
-      <input placeholder="Your question" />
-
-      <label>
-        Option 1
-      </label>
-
-      <input />
-
-      <label>
-        Option 2
-      </label>
-
-      <input />
-
-      <div className="modal-actions">
-        <button
-          className="secondary-button"
-          onClick={onClose}
-        >
-          Cancel
-        </button>
-
-        <button
-          className="primary-button"
-          onClick={
-            onCreate
-          }
-        >
-          Create poll
-        </button>
-      </div>
-    </Modal>
   );
 }
 
@@ -10053,7 +9816,8 @@ function Root() {
     useState(true);
 
   useEffect(() => {
-    let mounted = true;
+    let mounted =
+      true;
 
     supabase.auth
       .getSession()
@@ -10065,7 +9829,7 @@ function Root() {
             return;
 
           setSession(
-            data.session ||
+            data?.session ||
               null
           );
 
@@ -10081,10 +9845,10 @@ function Root() {
       supabase.auth.onAuthStateChange(
         (
           _event,
-          newSession
+          nextSession
         ) => {
           setSession(
-            newSession ||
+            nextSession ||
               null
           );
         }
@@ -10116,7 +9880,9 @@ function Root() {
 
   return (
     <HexaApp
-      session={session}
+      session={
+        session
+      }
     />
   );
 }
@@ -10150,7 +9916,7 @@ body,
   width: 100%;
   height: 100%;
   overflow: hidden;
-  font-family: Inter, system-ui, sans-serif;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 body {
@@ -10183,7 +9949,7 @@ button:disabled {
 input,
 textarea,
 select {
-  color: #fff;
+  color: white;
   background: #111522;
   border: 1px solid #252b3a;
   border-radius: 12px;
@@ -10202,8 +9968,8 @@ input {
 }
 
 textarea {
-  padding: 12px;
   min-height: 90px;
+  padding: 12px;
   resize: vertical;
 }
 
@@ -10213,6 +9979,8 @@ label {
   color: #aeb7c8;
   font-size: 13px;
 }
+
+/* SHELL */
 
 .hexa-shell {
   width: 100%;
@@ -10249,10 +10017,11 @@ label {
 .brand-mark {
   width: 46px;
   height: 46px;
-  border-radius: 14px;
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
+  border-radius: 14px;
+  color: white;
   font-weight: 900;
   background:
     linear-gradient(
@@ -10307,12 +10076,12 @@ label {
   min-width: 22px;
   height: 22px;
   padding: 0 6px;
-  border-radius: 99px;
   display: flex;
-  align-items: center;
   justify-content: center;
-  background: #ef4444;
+  align-items: center;
+  border-radius: 99px;
   color: white;
+  background: #ef4444;
   font-size: 11px;
 }
 
@@ -10327,6 +10096,8 @@ label {
   min-width: 0;
   min-height: 0;
 }
+
+/* GENERAL */
 
 .page {
   width: 100%;
@@ -10384,17 +10155,20 @@ label {
 .icon-button {
   width: 40px;
   height: 40px;
+  flex-shrink: 0;
   border: 0;
   border-radius: 10px;
-  background: transparent;
   color: #aeb7c8;
+  background: transparent;
   font-size: 19px;
 }
 
 .icon-button:hover {
-  background: #171c2a;
   color: white;
+  background: #171c2a;
 }
+
+/* AVATAR */
 
 .avatar-wrap {
   position: relative;
@@ -10428,15 +10202,17 @@ label {
   bottom: 1px;
   width: 11px;
   height: 11px;
-  border-radius: 50%;
   border: 2px solid #0b0f18;
+  border-radius: 50%;
   background: #22c55e;
 }
 
+/* CHAT */
+
 .chat-workspace {
-  display: flex;
   width: 100%;
   height: 100%;
+  display: flex;
 }
 
 .chat-list {
@@ -10450,8 +10226,8 @@ label {
 
 .section-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   padding: 18px;
 }
 
@@ -10477,8 +10253,8 @@ label {
   align-items: center;
   gap: 9px;
   border-radius: 11px;
-  background: #151a26;
   color: #778196;
+  background: #151a26;
 }
 
 .search-box input {
@@ -10554,11 +10330,11 @@ label {
   height: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
   justify-content: center;
+  align-items: center;
+  padding: 30px;
   color: #778296;
   text-align: center;
-  padding: 30px;
 }
 
 .no-chat-selected h2,
@@ -10570,10 +10346,11 @@ label {
 .hexagon {
   width: 85px;
   height: 85px;
-  border-radius: 25px;
   display: flex;
   justify-content: center;
   align-items: center;
+  border-radius: 25px;
+  color: white;
   background:
     linear-gradient(
       135deg,
@@ -10586,6 +10363,8 @@ label {
   font-size: 30px;
   font-weight: 900;
 }
+
+/* CONVERSATION */
 
 .conversation-view {
   position: relative;
@@ -10606,8 +10385,8 @@ label {
 }
 
 .conversation-title {
-  min-width: 0;
   flex: 1;
+  min-width: 0;
 }
 
 .conversation-title strong,
@@ -10677,6 +10456,10 @@ label {
     );
 }
 
+.message-bubble.deleted {
+  color: #747f91;
+}
+
 .message-text {
   margin: 3px 0;
   white-space: pre-wrap;
@@ -10696,32 +10479,15 @@ label {
   color: #38bdf8;
 }
 
-.message-more-button {
-  position: absolute;
-  right: -31px;
-  bottom: 2px;
-  width: 25px;
-  height: 25px;
-  border: 0;
-  border-radius: 8px;
-  color: #7c8799;
-  background: transparent;
-}
-
-.message-line.mine .message-more-button {
-  left: -31px;
-  right: auto;
-}
-
 .quoted-message {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   margin-bottom: 7px;
   padding: 7px 9px;
   border-left: 3px solid var(--hexa-primary);
   border-radius: 6px;
   background: rgba(0,0,0,.18);
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
   cursor: pointer;
 }
 
@@ -10731,11 +10497,11 @@ label {
 }
 
 .quoted-message span {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
   color: #a8b2c2;
   font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .message-highlight {
@@ -10763,22 +10529,22 @@ label {
 }
 
 .file-message {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   min-width: 230px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 5px;
   color: white;
   text-decoration: none;
-  padding: 5px;
 }
 
 .file-message > span {
   width: 42px;
   height: 42px;
-  border-radius: 11px;
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
+  border-radius: 11px;
   background: #20283a;
 }
 
@@ -10813,10 +10579,27 @@ label {
   font-size: 11px;
 }
 
+.message-more-button {
+  position: absolute;
+  right: -31px;
+  bottom: 2px;
+  width: 25px;
+  height: 25px;
+  border: 0;
+  border-radius: 8px;
+  color: #7c8799;
+  background: transparent;
+}
+
+.message-line.mine .message-more-button {
+  right: auto;
+  left: -31px;
+}
+
 .message-reactions {
   display: flex;
-  gap: 4px;
   flex-wrap: wrap;
+  gap: 4px;
 }
 
 .message-reactions button,
@@ -10828,40 +10611,6 @@ label {
   background: #111722;
 }
 
-.reaction-picker,
-.forward-picker {
-  position: absolute;
-  right: 0;
-  bottom: 30px;
-  z-index: 100;
-  min-width: 190px;
-  padding: 7px;
-  border: 1px solid #2d3547;
-  border-radius: 12px;
-  background: #111722;
-  box-shadow: 0 20px 55px rgba(0,0,0,.45);
-}
-
-.forward-picker strong {
-  display: block;
-  padding: 7px;
-  margin-bottom: 4px;
-}
-
-.forward-picker button {
-  width: 100%;
-  min-height: 38px;
-  border: 0;
-  border-radius: 8px;
-  color: white;
-  background: transparent;
-  text-align: left;
-}
-
-.forward-picker button:hover {
-  background: #1a2130;
-}
-
 .popup-menu {
   position: absolute;
   z-index: 150;
@@ -10871,11 +10620,6 @@ label {
   border-radius: 14px;
   background: #111722;
   box-shadow: 0 20px 55px rgba(0,0,0,.45);
-}
-
-.message-menu {
-  right: 0;
-  bottom: 32px;
 }
 
 .popup-menu button {
@@ -10892,6 +10636,37 @@ label {
 .popup-menu button:hover {
   background: #1a2130;
 }
+
+.message-menu {
+  right: 0;
+  bottom: 32px;
+}
+
+.reaction-picker,
+.forward-picker {
+  position: absolute;
+  right: 0;
+  bottom: 30px;
+  z-index: 200;
+  min-width: 190px;
+  padding: 7px;
+  border: 1px solid #2d3547;
+  border-radius: 12px;
+  background: #111722;
+  box-shadow: 0 20px 55px rgba(0,0,0,.45);
+}
+
+.forward-picker strong {
+  display: block;
+  margin-bottom: 4px;
+  padding: 7px;
+}
+
+.forward-picker button {
+  min-height: 38px;
+}
+
+/* HEADER MENU */
 
 .whatsapp-chat-menu {
   top: 45px;
@@ -10941,8 +10716,8 @@ label {
   position: absolute;
   top: 0;
   right: calc(100% + 6px);
-  width: 220px;
   z-index: 160;
+  width: 220px;
   padding: 6px;
   border: 1px solid #2d3547;
   border-radius: 12px;
@@ -10984,38 +10759,7 @@ label {
   color: #fca5a5 !important;
 }
 
-.chat-search-bar {
-  min-height: 58px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  border-bottom: 1px solid #202535;
-  background: #0f141f;
-}
-
-.chat-search-bar input {
-  flex: 1;
-}
-
-.select-toolbar {
-  min-height: 58px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 12px;
-  border-bottom: 1px solid #202535;
-  background: #101620;
-}
-
-.select-toolbar strong {
-  flex: 1;
-}
-
-.message-selected-row {
-  border-radius: 12px;
-  background: rgba(139,92,246,.12);
-}
+/* REPLY */
 
 .reply-composer-preview {
   min-height: 61px;
@@ -11048,10 +10792,33 @@ label {
 
 .reply-preview-content span {
   overflow: hidden;
-  white-space: nowrap;
   text-overflow: ellipsis;
+  white-space: nowrap;
   color: #8c97aa;
 }
+
+/* SELECT MODE */
+
+.select-toolbar {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid #202535;
+  background: #101620;
+}
+
+.select-toolbar strong {
+  flex: 1;
+}
+
+.message-selected-row {
+  border-radius: 12px;
+  background: rgba(139,92,246,.12);
+}
+
+/* COMPOSER */
 
 .composer {
   min-height: 68px;
@@ -11152,6 +10919,24 @@ label {
   background: #20283a;
 }
 
+/* SEARCH */
+
+.chat-search-bar {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-bottom: 1px solid #202535;
+  background: #0f141f;
+}
+
+.chat-search-bar input {
+  flex: 1;
+}
+
+/* CHANNELS */
+
 .channel-layout {
   min-height: calc(100% - 100px);
   display: flex;
@@ -11204,8 +10989,8 @@ label {
 
 .channel-header {
   display: flex;
-  gap: 13px;
   align-items: flex-start;
+  gap: 13px;
   padding: 22px;
   border-bottom: 1px solid #242c3c;
 }
@@ -11262,6 +11047,8 @@ label {
   font-size: 11px;
 }
 
+/* CALLS */
+
 .calls-info {
   max-width: 650px;
   margin: 40px auto;
@@ -11314,10 +11101,10 @@ label {
 .call-overlay {
   position: fixed;
   inset: 0;
-  z-index: 300;
+  z-index: 500;
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
   background: rgba(0,0,0,.72);
   backdrop-filter: blur(12px);
 }
@@ -11344,7 +11131,9 @@ label {
 
 .call-stage {
   flex: 1;
-  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   overflow: hidden;
   background: #050910;
 }
@@ -11356,7 +11145,6 @@ label {
 }
 
 .voice-call-avatar {
-  height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -11391,6 +11179,8 @@ label {
 .call-control.active {
   background: var(--hexa-primary);
 }
+
+/* KORA */
 
 .kora-hero {
   padding-top: 20px;
@@ -11483,15 +11273,7 @@ label {
   background: var(--hexa-primary);
 }
 
-.kora-plan {
-  width: min(850px, 100%);
-  display: flex;
-  justify-content: space-between;
-  margin: auto;
-  padding: 16px;
-  border-radius: 14px;
-  background: #111722;
-}
+/* NOTIFICATIONS */
 
 .notification-list {
   max-width: 850px;
@@ -11526,45 +11308,15 @@ label {
   font-size: 11px;
 }
 
-.wallet-card {
-  max-width: 700px;
-  margin: 40px auto 15px;
-  padding: 30px;
-  border: 1px solid #2a3344;
-  border-radius: 22px;
-  background:
-    linear-gradient(
-      135deg,
-      rgba(124,58,237,.18),
-      #101621
-    );
-}
-
-.wallet-card strong {
-  display: block;
-  margin: 8px 0 22px;
-  font-size: 42px;
-}
-
-.wallet-actions {
-  max-width: 700px;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  margin: auto;
-}
-
-.wallet-actions button {
-  padding: 14px;
-  border: 1px solid #2a3344;
-  border-radius: 13px;
-  color: white;
-  background: #111722;
-}
+/* COMMUNITIES */
 
 .community-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns:
+    repeat(
+      auto-fill,
+      minmax(220px, 1fr)
+    );
   gap: 13px;
 }
 
@@ -11575,6 +11327,15 @@ label {
   color: white;
   background: #111722;
   text-align: left;
+}
+
+.community-card p {
+  color: #7e899e;
+}
+
+.community-card span {
+  color: #a78bfa;
+  font-size: 12px;
 }
 
 .community-icon {
@@ -11595,24 +11356,16 @@ label {
   font-size: 38px;
 }
 
-.community-card p {
-  color: #7e899e;
-}
-
-.community-card span {
-  color: #a78bfa;
-  font-size: 12px;
-}
-
 .fullscreen-overlay {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: 300;
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
   padding: 25px;
   background: rgba(0,0,0,.78);
+  backdrop-filter: blur(10px);
 }
 
 .detail-panel {
@@ -11656,13 +11409,15 @@ label {
 }
 
 .community-placeholder {
-  padding: 30px;
   margin-top: 12px;
+  padding: 30px;
   border-radius: 13px;
   color: #788398;
   background: #151b28;
   text-align: center;
 }
+
+/* MOMENTS */
 
 .moments-row {
   display: flex;
@@ -11680,10 +11435,6 @@ label {
   border-radius: 16px;
   color: white;
   background: #171d2b;
-}
-
-.moment-card.seen {
-  opacity: .6;
 }
 
 .moment-card > img {
@@ -11800,13 +11551,15 @@ label {
   background: #171f2e;
 }
 
+/* MODAL */
+
 .modal-overlay {
   position: fixed;
   inset: 0;
   z-index: 400;
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
   padding: 20px;
   background: rgba(0,0,0,.72);
   backdrop-filter: blur(8px);
@@ -11875,28 +11628,12 @@ label {
   color: #aeb7c8;
 }
 
-.account-row {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-}
-
-.account-row strong,
-.account-row span {
-  display: block;
-}
-
-.account-row span {
-  color: #7d8799;
-  font-size: 12px;
-}
-
 .setting-toggle {
   width: 100%;
   min-height: 48px;
   display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: center;
   border: 0;
   border-bottom: 1px solid #222938;
   color: white;
@@ -11927,6 +11664,24 @@ label {
   transform: translateX(18px);
 }
 
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.account-row strong,
+.account-row span {
+  display: block;
+}
+
+.account-row span {
+  color: #7d8799;
+  font-size: 12px;
+}
+
+/* AUTH */
+
 .auth-page {
   width: 100%;
   height: 100%;
@@ -11935,6 +11690,13 @@ label {
   align-items: center;
   overflow-y: auto;
   padding: 20px;
+  background:
+    radial-gradient(
+      circle at 30% 20%,
+      var(--hexa-glow),
+      transparent 35%
+    ),
+    #070a11;
 }
 
 .auth-card {
@@ -11943,6 +11705,7 @@ label {
   border: 1px solid #292f40;
   border-radius: 22px;
   background: rgba(14,18,29,.95);
+  box-shadow: 0 30px 100px rgba(0,0,0,.45);
 }
 
 .brand-large {
@@ -11992,6 +11755,11 @@ label {
   background: #151a25;
 }
 
+.google-button strong {
+  margin-right: 10px;
+  color: #60a5fa;
+}
+
 .or {
   display: flex;
   align-items: center;
@@ -12034,6 +11802,8 @@ label {
   text-align: center;
 }
 
+/* LOADING */
+
 .loading-screen {
   width: 100%;
   height: 100%;
@@ -12073,13 +11843,19 @@ label {
   position: fixed;
   right: 18px;
   bottom: 18px;
-  z-index: 600;
+  z-index: 700;
   max-width: 380px;
   padding: 12px 15px;
   border: 1px solid #313a4e;
   border-radius: 12px;
   color: white;
   background: #151c29;
+}
+
+/* MOBILE */
+
+.mobile-back {
+  display: none;
 }
 
 @media (max-width: 1000px) {
@@ -12106,10 +11882,6 @@ label {
   .chat-list {
     width: 340px;
   }
-}
-
-.mobile-back {
-  display: none;
 }
 
 @media (max-width: 700px) {
@@ -12173,8 +11945,16 @@ label {
     padding: 17px;
   }
 
+  .page-header {
+    align-items: flex-start;
+  }
+
   .message-wrap {
     max-width: 84%;
+  }
+
+  .message-more-button {
+    display: none;
   }
 
   .channel-layout {
@@ -12191,10 +11971,6 @@ label {
   }
 
   .community-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .wallet-actions {
     grid-template-columns: 1fr;
   }
 
@@ -12217,20 +11993,15 @@ label {
     grid-template-columns: repeat(8, 1fr);
   }
 
-  .message-more-button {
-    display: none;
-  }
-
   .whatsapp-chat-menu {
-    right: 0;
     width: min(285px, calc(100vw - 25px));
     min-width: min(285px, calc(100vw - 25px));
   }
 
   .submenu {
     position: fixed;
-    right: 12px;
     top: auto;
+    right: 12px;
     bottom: 80px;
   }
 }
@@ -12239,5 +12010,11 @@ label {
 document.head.appendChild(
   style
 );
+
+/* =========================================================
+   IMPORTANT:
+   main.jsx already mounts <App />.
+   Therefore App.jsx ONLY exports the component.
+   ========================================================= */
 
 export default Root;
