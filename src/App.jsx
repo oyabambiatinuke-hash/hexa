@@ -1655,6 +1655,7 @@ function ChatPage({
   );
 
   const [pinnedPanelOpen, setPinnedPanelOpen] = useState(false);
+  const [savedPanelOpen, setSavedPanelOpen] = useState(false);
 
   const [muted, setMuted] = useState(
     () =>
@@ -3849,6 +3850,7 @@ function ChatPage({
               aria-label="Pinned messages"
               onClick={() => {
                 setPinnedPanelOpen(value => !value);
+                setSavedPanelOpen(false);
                 setQuickActionsOpen(false);
                 setChatSettingsOpen(false);
               }}
@@ -3857,6 +3859,26 @@ function ChatPage({
               {messages.filter(message => pinned.includes(String(message.id))).length > 0 && (
                 <span className="pinned-header-count">
                   {messages.filter(message => pinned.includes(String(message.id))).length}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              className={savedPanelOpen ? "quick-actions-trigger active" : "quick-actions-trigger"}
+              title="Saved messages"
+              aria-label="Saved messages"
+              onClick={() => {
+                setSavedPanelOpen(value => !value);
+                setPinnedPanelOpen(false);
+                setQuickActionsOpen(false);
+                setChatSettingsOpen(false);
+              }}
+            >
+              ☆
+              {messages.filter(message => starred.includes(String(message.id))).length > 0 && (
+                <span className="saved-header-count">
+                  {messages.filter(message => starred.includes(String(message.id))).length}
                 </span>
               )}
             </button>
@@ -4009,6 +4031,48 @@ function ChatPage({
               </div>
             )}
 
+          </div>
+        )}
+
+        {savedPanelOpen && (
+          <div className="hexa-saved-panel">
+            <div className="hexa-saved-head">
+              <div>
+                <span className="hexa-saved-kicker">PERSONAL SHORTCUT</span>
+                <strong>☆ Saved messages</strong>
+                <small>Keep important messages easy to find in this conversation.</small>
+              </div>
+              <button type="button" onClick={() => setSavedPanelOpen(false)} aria-label="Close saved messages">×</button>
+            </div>
+            {(() => {
+              const currentSaved = messages.filter(message => starred.includes(String(message.id)));
+              if (!currentSaved.length) {
+                return (
+                  <div className="hexa-saved-empty">
+                    <div>☆</div>
+                    <strong>No saved messages yet</strong>
+                    <span>Use Message actions → Star to save an important message for later.</span>
+                  </div>
+                );
+              }
+              return (
+                <div className="hexa-saved-list">
+                  {currentSaved.slice(-12).reverse().map(item => (
+                    <div className="hexa-saved-item" key={item.id}>
+                      <button type="button" className="hexa-saved-jump" onClick={() => openPinnedMessage(item)}>
+                        <span className="hexa-saved-icon">☆</span>
+                        <span className="hexa-saved-copy">
+                          <strong>{String(item.sender_id) === String(profile.id) ? "You" : (selected?.name || "Contact")}</strong>
+                          <span>{item.content || (item.message_type === "image" ? "📷 Photo" : item.message_type === "video" ? "🎥 Video" : item.message_type === "voice" ? "🎙 Voice message" : "Message")}</span>
+                          <small>{item.created_at ? new Date(item.created_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : ""}</small>
+                        </span>
+                      </button>
+                      <button type="button" className="hexa-saved-remove" title="Remove from saved" onClick={() => toggleStar(item)}>×</button>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -8991,6 +9055,7 @@ const HEXA_COMPOSER_CSS = `
 `;
 
 const HEXA_PINNED_MESSAGES_CSS = `
+.hexa-saved-panel{position:relative;z-index:12;border-bottom:1px solid var(--hexa-border);background:var(--hexa-panel);box-shadow:0 10px 28px rgba(0,0,0,.08);animation:hexaSavedDrop .18s ease-out}.hexa-saved-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:13px 16px;border-bottom:1px solid var(--hexa-border)}.hexa-saved-head>div{min-width:0;display:flex;flex-direction:column;gap:3px}.hexa-saved-kicker{font-size:9px;font-weight:900;letter-spacing:.12em;color:var(--hexa-accent);text-transform:uppercase}.hexa-saved-head strong{font-size:13px;color:var(--hexa-text)}.hexa-saved-head small{font-size:10px;color:var(--hexa-muted)}.hexa-saved-head>button{width:32px;height:32px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:10px;font-size:18px;cursor:pointer}.hexa-saved-list{max-height:280px;overflow:auto;padding:7px 10px}.hexa-saved-item{display:flex;align-items:stretch;gap:6px;border-radius:13px}.hexa-saved-item:hover{background:var(--hexa-panel-2)}.hexa-saved-jump{flex:1;display:flex;align-items:center;gap:10px;min-width:0;border:0;background:transparent;color:inherit;text-align:left;padding:10px 8px;border-radius:12px;cursor:pointer}.hexa-saved-icon{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;background:rgba(124,92,255,.10);flex:0 0 auto;font-size:18px}.hexa-saved-copy{min-width:0;display:flex;flex-direction:column;gap:2px}.hexa-saved-copy strong,.hexa-saved-copy span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hexa-saved-copy strong{font-size:11px;color:var(--hexa-text)}.hexa-saved-copy span{font-size:12px;color:var(--hexa-text)}.hexa-saved-copy small{font-size:9px;color:var(--hexa-muted)}.hexa-saved-remove{width:32px;margin:7px 5px 7px 0;border:0;background:transparent;color:var(--hexa-muted);border-radius:9px;cursor:pointer;font-size:17px}.hexa-saved-remove:hover{background:rgba(255,70,70,.10);color:#f87171}.hexa-saved-empty{padding:24px 18px 26px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--hexa-muted)}.hexa-saved-empty>div{width:42px;height:42px;display:grid;place-items:center;border-radius:13px;background:rgba(124,92,255,.10);font-size:22px}.hexa-saved-empty strong{color:var(--hexa-text);font-size:12px}.hexa-saved-empty span{font-size:10px;max-width:350px}.saved-header-count{position:absolute;transform:translate(10px,-10px);min-width:16px;height:16px;padding:0 4px;display:grid;place-items:center;border-radius:999px;background:var(--hexa-accent);color:#fff;font-size:8px;font-weight:900;border:2px solid var(--hexa-panel)}@keyframes hexaSavedDrop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}[data-hexa-theme="white"] .hexa-saved-panel{background:#fff;border-color:rgba(0,0,0,.10);box-shadow:0 12px 28px rgba(0,0,0,.07)}[data-hexa-theme="white"] .hexa-saved-head>button{background:#f7f7f8;color:#111;border-color:rgba(0,0,0,.12)}[data-hexa-theme="white"] .hexa-saved-item:hover{background:#f7f7f8}[data-hexa-theme="white"] .saved-header-count{border-color:#fff}@media(max-width:700px){.hexa-saved-head{padding:11px 12px}.hexa-saved-list{max-height:220px}.hexa-saved-copy span{font-size:11px}.saved-header-count{transform:translate(8px,-8px)}}
 .hexa-pinned-panel{position:relative;z-index:12;border-bottom:1px solid var(--hexa-border);background:var(--hexa-panel);box-shadow:0 10px 28px rgba(0,0,0,.08);animation:hexaPinnedDrop .18s ease-out}.hexa-pinned-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:13px 16px;border-bottom:1px solid var(--hexa-border)}.hexa-pinned-head>div{min-width:0;display:flex;flex-direction:column;gap:3px}.hexa-pinned-kicker{font-size:9px;font-weight:900;letter-spacing:.12em;color:var(--hexa-accent);text-transform:uppercase}.hexa-pinned-head strong{font-size:13px;color:var(--hexa-text)}.hexa-pinned-head small{font-size:10px;color:var(--hexa-muted)}.hexa-pinned-head>button{width:32px;height:32px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:10px;font-size:18px;cursor:pointer}.hexa-pinned-list{max-height:260px;overflow:auto;padding:7px 10px}.hexa-pinned-item{display:flex;align-items:stretch;gap:6px;border-radius:13px}.hexa-pinned-item:hover{background:var(--hexa-panel-2)}.hexa-pinned-jump{flex:1;display:flex;align-items:center;gap:10px;min-width:0;border:0;background:transparent;color:inherit;text-align:left;padding:10px 8px;border-radius:12px;cursor:pointer}.hexa-pinned-icon{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;background:rgba(124,92,255,.10);flex:0 0 auto}.hexa-pinned-copy{min-width:0;display:flex;flex-direction:column;gap:2px}.hexa-pinned-copy strong,.hexa-pinned-copy span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hexa-pinned-copy strong{font-size:11px;color:var(--hexa-text)}.hexa-pinned-copy span{font-size:12px;color:var(--hexa-text)}.hexa-pinned-copy small{font-size:9px;color:var(--hexa-muted)}.hexa-pinned-unpin{width:32px;margin:7px 5px 7px 0;border:0;background:transparent;color:var(--hexa-muted);border-radius:9px;cursor:pointer;font-size:17px}.hexa-pinned-unpin:hover{background:rgba(255,70,70,.10);color:#f87171}.hexa-pinned-empty{padding:24px 18px 26px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--hexa-muted)}.hexa-pinned-empty>div{width:42px;height:42px;display:grid;place-items:center;border-radius:13px;background:rgba(124,92,255,.10);font-size:20px}.hexa-pinned-empty strong{color:var(--hexa-text);font-size:12px}.hexa-pinned-empty span{font-size:10px;max-width:350px}.pinned-header-count{position:absolute;transform:translate(10px,-10px);min-width:16px;height:16px;padding:0 4px;display:grid;place-items:center;border-radius:999px;background:var(--hexa-accent);color:#fff;font-size:8px;font-weight:900;border:2px solid var(--hexa-panel)}.hexa-pinned-highlight .message-bubble{animation:hexaPinnedHighlight 1.8s ease}.hexa-pinned-highlight{position:relative;z-index:2}@keyframes hexaPinnedDrop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}@keyframes hexaPinnedHighlight{0%{box-shadow:0 0 0 0 rgba(124,92,255,0)}20%{box-shadow:0 0 0 5px rgba(124,92,255,.25)}100%{box-shadow:0 0 0 0 rgba(124,92,255,0)}}[data-hexa-theme="white"] .hexa-pinned-panel{background:#fff;border-color:rgba(0,0,0,.10);box-shadow:0 12px 28px rgba(0,0,0,.07)}[data-hexa-theme="white"] .hexa-pinned-head>button{background:#f7f7f8;color:#111;border-color:rgba(0,0,0,.12)}[data-hexa-theme="white"] .hexa-pinned-item:hover{background:#f7f7f8}[data-hexa-theme="white"] .pinned-header-count{border-color:#fff}@media(max-width:700px){.hexa-pinned-head{padding:11px 12px}.hexa-pinned-list{max-height:220px}.hexa-pinned-copy span{font-size:11px}.pinned-header-count{transform:translate(8px,-8px)}}
 `;
 
