@@ -517,7 +517,11 @@ function getAppUrl() {
 }
 
 function getAuthRedirectUrl() {
-  return `${getAppUrl()}/`;
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/auth/callback`;
+  }
+
+  return `${getAppUrl()}/auth/callback`;
 }
 
 function getAuthErrorMessage(error) {
@@ -895,11 +899,11 @@ function AuthScreen() {
           },
 
           /*
-            CRITICAL:
-            After the user verifies the email, Supabase returns
-            them directly to the application.
+            Return verified users to HEXA's auth callback. The current
+            browser origin is used so localhost, preview deployments,
+            and production deployments all use the correct domain.
           */
-          emailRedirectTo: getAuthRedirectUrl(),
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       });
 
@@ -5144,7 +5148,63 @@ function GroupsPage({ profile, onOpenChat }) {
   return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">👥</div><div><h1>Groups</h1><p>Create group conversations and manage members.</p></div><button className="hero-primary heading-action" onClick={()=>setShow(true)}>＋ Create Group</button></div><div className="entity-grid">{loading?<div className="coming-card"><h2>Loading groups…</h2></div>:groups.length?groups.map(g=><button className="entity-card" key={g.id} onClick={()=>onOpenChat?.({...g,kind:"group",online:true})}><Avatar name={g.name} size={54}/><strong>{g.name}</strong><span>{g.description||"HEXA group conversation"}</span></button>):<div className="coming-card"><div>👥</div><h2>Your groups</h2><p>No groups yet. Create one and add HEXA users.</p></div>}</div>{show&&<CreateEntityModal type="Group" profile={profile} onClose={()=>setShow(false)} onCreated={g=>setGroups(x=>[g,...x])}/>}</section>;
 }
 
-function CommunitiesPage({ profile }) { const[items,setItems]=useState([]);const[show,setShow]=useState(false);useEffect(()=>{supabase.from("communities").select("*").order("created_at",{ascending:false}).then(({data})=>setItems(data||[]))},[]);return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">◉</div><div><h1>Communities</h1><p>Bring groups and people together.</p></div><button className="hero-primary heading-action" onClick={()=>setShow(true)}>＋ Create Community</button></div><div className="entity-grid">{items.length?items.map(c=><div className="entity-card" key={c.id}><Avatar name={c.name} size={54}/><strong>{c.name}</strong><span>{c.description||"HEXA community"}</span></div>):<div className="coming-card"><div>◉</div><h2>Your communities</h2><p>Create a community and add your groups.</p></div>}</div>{show&&<CreateEntityModal type="Community" profile={profile} onClose={()=>setShow(false)} onCreated={c=>setItems(x=>[c,...x])}/>}</section>; }
+function CommunitiesPage({ profile }) {
+  const [items, setItems] = useState([]);
+  const [show, setShow] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const result = await supabase
+          .from("communities")
+          .select("id,name,description,created_by,created_at")
+          .order("created_at", { ascending: false });
+        if (result.error) throw result.error;
+        if (!cancelled) setItems(result.data || []);
+      } catch (err) {
+        console.error("HEXA communities load:", err);
+        if (!cancelled) setError("Communities are temporarily unavailable. Your chats and other HEXA features are still available.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <section className="workspace-page">
+      <div className="page-heading">
+        <div className="page-heading-icon">◉</div>
+        <div><h1>Communities</h1><p>Bring groups and people together.</p></div>
+        <button className="hero-primary heading-action" onClick={() => setShow(true)}>＋ Create Community</button>
+      </div>
+      {error && <div className="hexa-inline-warning">{error}</div>}
+      <div className="entity-grid">
+        {loading ? (
+          <div className="coming-card"><h2>Loading communities…</h2></div>
+        ) : items.length ? (
+          items.map(c => (
+            <div className="entity-card" key={c.id}>
+              <Avatar name={c.name} size={54}/>
+              <strong>{c.name}</strong>
+              <span>{c.description || "HEXA community"}</span>
+            </div>
+          ))
+        ) : (
+          <div className="coming-card">
+            <div>◉</div><h2>Your communities</h2><p>Create a community and add your groups.</p>
+          </div>
+        )}
+      </div>
+      {show && <CreateEntityModal type="Community" profile={profile} onClose={() => setShow(false)} onCreated={c => setItems(x => [c, ...x])}/>} 
+    </section>
+  );
+}
 
 function ChannelsPage({ profile }) {
   const[channels,setChannels]=useState([]);const[name,setName]=useState("");const[creating,setCreating]=useState(false);
@@ -5162,6 +5222,63 @@ function StatusPage({ profile }) {
   function pick(e){const f=e.target.files?.[0];if(f)setFile({file:f,url:URL.createObjectURL(f),kind:f.type.startsWith("video")?"video":"image"})}
   async function like(s){if(String(s.id).startsWith("local"))return;const {data}=await supabase.from("status_likes").select("status_id").eq("status_id",s.id).eq("user_id",profile.id).maybeSingle();if(data)await supabase.from("status_likes").delete().eq("status_id",s.id).eq("user_id",profile.id);else await supabase.from("status_likes").insert({status_id:s.id,user_id:profile.id});}
   return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">◌</div><div><h1>Status</h1><p>Share text, photos and videos that expire after 24 hours.</p></div><button className="hero-primary heading-action" onClick={()=>setShow(true)}>＋ Create Status</button></div><div className="status-row"><button className="create-status-card" onClick={()=>setShow(true)}><div className="create-status-plus">＋</div><strong>Create Status</strong><span>Text, photo or video</span></button>{statuses.map(s=><button key={s.id} className="status-card unseen" onClick={()=>setViewer(s)}><div className="status-preview">{s.media_url&&s.media_type==="image"?<img src={s.media_url} alt=""/>:s.media_url&&s.media_type==="video"?<video src={s.media_url}/>:<span>Aa</span>}</div><strong>{s.text||s.description||"Media status"}</strong><span>{new Date(s.created_at).toLocaleString()}</span></button>)}</div>{show&&<div className="modal-backdrop" onClick={()=>setShow(false)}><div className="status-modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><h2>Create Status</h2><button onClick={()=>setShow(false)}>×</button></div><form onSubmit={create}><textarea className="modal-input modal-textarea" value={text} onChange={e=>setText(e.target.value)} placeholder="What's happening?"/><input className="modal-input" value={description} onChange={e=>setDescription(e.target.value)} placeholder="Caption / description"/><button type="button" className="media-picker" onClick={()=>fileRef.current?.click()}><span>📷</span><div><strong>{file?file.file.name:"Add photo or video"}</strong><small>Camera, gallery or laptop file</small></div></button><input ref={fileRef} hidden type="file" accept="image/*,video/*" capture="environment" onChange={pick}/>{file&&<div className="status-media-preview">{file.kind==="video"?<video controls src={file.url}/>:<img src={file.url} alt="Preview"/>}</div>}<button className="hero-primary">Post Status</button></form></div></div>}{viewer&&<div className="story-viewer" onClick={()=>setViewer(null)}><button className="story-close" onClick={()=>setViewer(null)}>×</button><div className="story-content" onClick={e=>e.stopPropagation()}>{viewer.media_url&&viewer.media_type==="video"?<video controls autoPlay src={viewer.media_url}/>:viewer.media_url?<img src={viewer.media_url} alt="Status"/>:<div className="story-text">{viewer.text}</div>}<div className="story-caption">{viewer.description||viewer.text}</div><div className="story-actions"><button onClick={()=>like(viewer)}>❤️</button><button>😂</button><button>😮</button></div></div></div>}</section>;
+}
+
+function KoraPage({ profile }) {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function send() {
+    const text = input.trim();
+    if (!text || busy) return;
+    setInput("");
+    setMessages(current => [...current, { id: `u-${Date.now()}`, role: "user", content: text }]);
+    setBusy(true);
+    try {
+      let reply = "I’m Kora. I’m ready to help you with HEXA.";
+      if (typeof koraReply === "function") reply = await koraReply(text);
+      try {
+        const response = await fetch("/api/kora", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text, user_id: profile?.id || null })
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data?.reply || data?.message || data?.text) reply = data.reply || data.message || data.text;
+        }
+      } catch {}
+      setMessages(current => [...current, { id: `k-${Date.now()}`, role: "kora", content: String(reply) }]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="workspace-page">
+      <div className="page-heading">
+        <div className="page-heading-icon">✦</div>
+        <div><h1>Kora</h1><p>Your HEXA assistant.</p></div>
+      </div>
+      <div className="kora-page-card">
+        <div className="kora-page-messages">
+          {!messages.length && <div className="kora-empty"><div>✦</div><h2>Ask Kora</h2><p>Get help navigating HEXA, messages, calls, groups and settings.</p></div>}
+          {messages.map(item => (
+            <div key={item.id} className={`kora-message ${item.role}`}>
+              <span>{item.role === "kora" ? "✦" : "You"}</span>
+              <p>{item.content}</p>
+            </div>
+          ))}
+          {busy && <div className="kora-message kora"><span>✦</span><p>Kora is thinking…</p></div>}
+        </div>
+        <form className="kora-composer" onSubmit={e => { e.preventDefault(); send(); }}>
+          <input value={input} onChange={e => setInput(e.target.value)} placeholder="Ask Kora anything…" />
+          <button className="hero-primary" type="submit" disabled={busy || !input.trim()}>Send</button>
+        </form>
+      </div>
+    </section>
+  );
 }
 
 function CallsPage({ profile }) {
@@ -5897,7 +6014,6 @@ function AuthenticatedHEXA({ session, onSignOut }) {
     case "channels":page=<ChannelsPage profile={profile}/>;break;
     case "status":page=<StatusPage profile={profile}/>;break;
     case "calls":page=<CallsPage profile={profile}/>;break;
-    case "wallet":page=<WalletPage profile={profile}/>;break;
     case "kora":page=<KoraPage profile={profile}/>;break;
     case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut}/>;break;
     case "projects":page=<WorkspacePlaceholder title="Projects" description="Organize collaborative work." icon="◆"/>;break;
@@ -8251,4 +8367,9 @@ const HEXA_WHITE_THEME_CSS = `
 }
 `;
 
-const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS;
+
+const HEXA_KORA_CSS = `
+.hexa-inline-warning{margin:0 0 14px;padding:12px 14px;border:1px solid rgba(245,158,11,.35);background:rgba(245,158,11,.08);border-radius:12px;color:var(--hexa-text);font-size:12px}.kora-page-card{height:min(680px,calc(100vh - 180px));display:flex;flex-direction:column;border:1px solid var(--hexa-border);background:var(--hexa-panel);border-radius:22px;overflow:hidden;box-shadow:var(--hexa-shadow)}.kora-page-messages{flex:1;overflow:auto;padding:22px}.kora-empty{text-align:center;max-width:440px;margin:auto;color:var(--hexa-muted)}.kora-empty>div{width:56px;height:56px;display:grid;place-items:center;margin:0 auto 12px;border-radius:18px;background:var(--hexa-accent);color:#fff;font-size:26px}.kora-empty h2{margin:0;color:var(--hexa-text)}.kora-message{display:flex;gap:10px;align-items:flex-start;max-width:min(760px,90%);margin:0 0 14px}.kora-message>span{flex:0 0 auto;font-size:11px;font-weight:800;color:var(--hexa-muted);padding-top:8px}.kora-message p{margin:0;padding:11px 14px;border-radius:16px;background:var(--hexa-panel-2);color:var(--hexa-text);line-height:1.55;white-space:pre-wrap}.kora-message.user{margin-left:auto;justify-content:flex-end}.kora-message.user>span{order:2}.kora-message.user p{background:var(--hexa-accent);color:#fff}.kora-composer{display:flex;gap:10px;padding:14px;border-top:1px solid var(--hexa-border);background:var(--hexa-panel)}.kora-composer input{flex:1;min-width:0;height:46px;padding:0 15px;border:1px solid var(--hexa-border);border-radius:14px;background:var(--hexa-panel-2);color:var(--hexa-text);outline:none}.kora-composer input:focus{border-color:var(--hexa-accent);box-shadow:0 0 0 3px rgba(124,92,255,.10)}@media(max-width:700px){.kora-page-card{height:calc(100vh - 150px);border-radius:16px}.kora-page-messages{padding:14px}.kora-message{max-width:94%}}
+`;
+const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS + HEXA_KORA_CSS;
+
