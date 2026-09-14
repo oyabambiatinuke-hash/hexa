@@ -3543,11 +3543,32 @@ function ChatPage({
             </div>
           )}
 
-          {(item.reply_to_id || item.reply_to) && (
-            <div className="quoted-message">
-              ↩ Reply
-            </div>
-          )}
+          {(item.reply_to_id || item.reply_to) && (() => {
+            const replied = item.reply_to || messages.find(m => String(m.id) === String(item.reply_to_id));
+            const repliedMine = replied && String(replied.sender_id) === String(profile.id);
+            const repliedText = replied?.content || (replied?.message_type === "voice" ? "🎙 Voice message" : replied?.message_type === "image" ? "📷 Photo" : replied?.message_type === "video" ? "🎬 Video" : replied?.message_type === "file" ? "📎 File" : "Message");
+            return (
+              <button
+                type="button"
+                className="quoted-message quoted-message-button"
+                onClick={() => {
+                  if (replied?.id) {
+                    const node = document.getElementById(`msg-${replied.id}`);
+                    node?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    node?.classList.add("hexa-reply-highlight");
+                    window.setTimeout(() => node?.classList.remove("hexa-reply-highlight"), 1400);
+                  }
+                }}
+                title="Jump to replied message"
+              >
+                <span className="quoted-message-bar" />
+                <span className="quoted-message-copy">
+                  <strong>{repliedMine ? "You" : (replied?.sender_name || selected?.name || "Message")}</strong>
+                  <span>{repliedText}</span>
+                </span>
+              </button>
+            );
+          })()}
 
           {(() => {
             const attachmentRow = item.message_attachments?.[0];
@@ -4376,32 +4397,13 @@ function ChatPage({
         {/* REPLY / EDIT */}
 
         {replyTo && (
-          <div className="reply-bar">
-
-            <div>
-              <strong>
-                Replying to
-              </strong>
-
-              <span>
-                {
-                  replyTo.content ||
-                  "Media"
-                }
-              </span>
+          <div className="reply-bar reply-composer-bar">
+            <span className="reply-composer-accent" />
+            <div className="reply-composer-copy">
+              <strong>Replying to {String(replyTo.sender_id) === String(profile.id) ? "yourself" : (selected?.name || "message")}</strong>
+              <span>{replyTo.content || (replyTo.message_type === "voice" ? "🎙 Voice message" : replyTo.message_type === "image" ? "📷 Photo" : replyTo.message_type === "video" ? "🎬 Video" : "Media")}</span>
             </div>
-
-            <button
-              type="button"
-              onClick={() =>
-                setReplyTo(
-                  null
-                )
-              }
-            >
-              ×
-            </button>
-
+            <button type="button" onClick={() => setReplyTo(null)} aria-label="Cancel reply">×</button>
           </div>
         )}
 
@@ -7289,6 +7291,8 @@ export default function App() {
 .message-tools{gap:2px!important;padding:4px!important;border-radius:13px!important;background:color-mix(in srgb,var(--hexa-panel) 94%,transparent)!important;box-shadow:0 10px 30px rgba(0,0,0,.18)!important;backdrop-filter:blur(14px)}.message-tools button{width:32px;height:30px;border-radius:9px!important;display:grid;place-items:center}.message-tools button:hover{background:var(--hexa-panel-3)!important}.reaction-picker{gap:2px!important;padding:5px!important;border-radius:14px!important;box-shadow:0 14px 35px rgba(0,0,0,.2)!important}.reaction-picker button{width:34px;height:34px;border:0;border-radius:9px;background:transparent}.reaction-picker button:hover{background:var(--hexa-panel-3)}
 
 /* Cleaner reply/edit surface */
+.quoted-message-button{width:100%;display:flex;align-items:stretch;gap:8px;margin:0 0 8px;padding:0;border:0;background:rgba(127,127,127,.09);color:inherit;border-radius:9px;text-align:left;cursor:pointer;overflow:hidden}.quoted-message-bar{width:3px;flex:0 0 3px;background:var(--hexa-accent);border-radius:999px}.quoted-message-copy{display:grid;gap:2px;padding:7px 8px;min-width:0}.quoted-message-copy strong{font-size:11px;color:var(--hexa-accent-2)}.quoted-message-copy span{font-size:11px;color:var(--hexa-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hexa-reply-highlight{outline:2px solid var(--hexa-accent);outline-offset:3px;animation:hexaReplyPulse 1.4s ease}@keyframes hexaReplyPulse{0%,100%{box-shadow:0 0 0 0 rgba(124,92,255,0)}35%{box-shadow:0 0 0 7px rgba(124,92,255,.18)}}
+.reply-composer-bar{display:flex;align-items:center;gap:8px}.reply-composer-accent{width:3px;height:34px;flex:0 0 3px;background:var(--hexa-accent);border-radius:999px}.reply-composer-copy{display:grid;gap:2px;flex:1;min-width:0}.reply-composer-copy strong{font-size:11px;color:var(--hexa-accent-2)}.reply-composer-copy span{font-size:12px;color:var(--hexa-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .reply-bar{min-height:52px!important;padding:8px 12px!important;background:var(--hexa-panel)!important;box-shadow:0 -8px 25px rgba(0,0,0,.08)}.reply-bar>div{min-width:0;border-left:3px solid var(--hexa-accent);padding-left:9px;display:grid;gap:3px}.reply-bar strong{font-size:10px;color:var(--hexa-accent-2)!important}.reply-bar span{max-width:min(68vw,560px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--hexa-text)!important}.reply-bar button{width:34px;height:34px;border-radius:10px;background:var(--hexa-panel-2);border:1px solid var(--hexa-border)!important;cursor:pointer}.reply-bar button:hover{background:var(--hexa-panel-3)}
 
 /* Polished chat menu and other action popovers */
