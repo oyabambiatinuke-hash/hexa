@@ -340,26 +340,26 @@ const HEXA_THEMES = {
 
   white: {
     id: "white",
-    name: "HEXA Light",
+    name: "HEXA White",
     icon: "☀️",
-    description: "Bright HEXA for daytime use.",
+    description: "Pure white HEXA with black text and controls.",
     vars: {
-      "--hexa-bg": "#f4f6fa",
+      "--hexa-bg": "#ffffff",
       "--hexa-panel": "#ffffff",
-      "--hexa-panel-2": "#f0f2f6",
-      "--hexa-panel-3": "#e6e9ef",
-      "--hexa-border": "rgba(20,30,50,.10)",
-      "--hexa-border-strong": "rgba(20,30,50,.16)",
-      "--hexa-text": "#111827",
-      "--hexa-muted": "#667085",
-      "--hexa-accent": "#6947ff",
-      "--hexa-accent-2": "#765cff",
-      "--hexa-success": "#16a36a",
-      "--hexa-danger": "#e53958",
-      "--hexa-shadow": "0 24px 70px rgba(20,30,50,.12)",
-      "--hexa-chat-bg": "#eef1f5",
-      "--hexa-message-in": "#ffffff",
-      "--hexa-message-out": "#ddd5ff",
+      "--hexa-panel-2": "#ffffff",
+      "--hexa-panel-3": "#f3f4f6",
+      "--hexa-border": "rgba(0,0,0,.09)",
+      "--hexa-border-strong": "rgba(0,0,0,.16)",
+      "--hexa-text": "#000000",
+      "--hexa-muted": "#4b5563",
+      "--hexa-accent": "#111111",
+      "--hexa-accent-2": "#000000",
+      "--hexa-success": "#0b7a4b",
+      "--hexa-danger": "#c1121f",
+      "--hexa-shadow": "0 24px 70px rgba(0,0,0,.10)",
+      "--hexa-chat-bg": "#ffffff",
+      "--hexa-message-in": "#f4f4f5",
+      "--hexa-message-out": "#000000",
       "--hexa-sidebar": "#ffffff"
     }
   },
@@ -5795,11 +5795,26 @@ function SettingsPage({ profile, onSignOut }) {
           <div><strong>{hexLang(lang,"appearance")}</strong><span>Choose how HEXA looks on your devices.</span></div><b>{showThemes ? "⌃" : "⌄"}</b>
         </button>
         {showThemes && <div className="hexa-theme-panel">
-          <div className="theme-current"><div><span>Current theme</span><strong>{activeTheme.icon} {activeTheme.name}</strong></div><small>{activeTheme.description}</small></div>
+          <div className="theme-current hexa-theme-current-card">
+            <div className="theme-current-copy">
+              <span>Current theme</span>
+              <strong>{activeTheme.icon} {activeTheme.name}</strong>
+              <small>{activeTheme.description}</small>
+            </div>
+            <div className={`theme-current-swatch ${theme === "white" ? "is-white" : ""}`} style={{background: activeTheme.vars["--hexa-bg"], borderColor: activeTheme.vars["--hexa-border-strong"]}}>
+              <span style={{background: activeTheme.vars["--hexa-message-in"]}}></span>
+              <span style={{background: activeTheme.vars["--hexa-message-out"]}}></span>
+              <b style={{background: activeTheme.vars["--hexa-accent"]}}></b>
+            </div>
+          </div>
+          <div className="theme-selector-toolbar">
+            <span><strong>{Object.keys(HEXA_THEMES).length}</strong> themes</span>
+            <span>Tap a card to apply instantly</span>
+          </div>
           <div className="hexa-theme-grid">
-            {Object.values(HEXA_THEMES).map(item => <button key={item.id} type="button" className={`hexa-theme-option ${theme===item.id?"selected":""}`} onClick={() => changeTheme(item.id)}>
+            {Object.values(HEXA_THEMES).map(item => <button key={item.id} type="button" aria-pressed={theme===item.id} className={`hexa-theme-option ${theme===item.id?"selected":""} ${item.id === "white" ? "hexa-white-theme-option" : ""}`} onClick={() => changeTheme(item.id)}>
               <div className="theme-preview" style={{background:item.vars["--hexa-bg"]}}><div className="theme-preview-sidebar" style={{background:item.vars["--hexa-sidebar"]}}/><div className="theme-preview-content"><div className="theme-preview-message incoming" style={{background:item.vars["--hexa-message-in"]}}/><div className="theme-preview-message outgoing" style={{background:item.vars["--hexa-message-out"]}}/></div><div className="theme-preview-accent" style={{background:item.vars["--hexa-accent"]}}/></div>
-              <div className="theme-option-copy"><strong>{item.icon} {item.name}</strong><span>{item.description}</span></div>{theme===item.id&&<div className="theme-selected">✓</div>}
+              <div className="theme-option-copy"><strong>{item.icon} {item.name}</strong><span>{item.description}</span></div><div className="theme-option-status">{theme===item.id?"Active":"Select"}</div>{theme===item.id&&<div className="theme-selected">✓</div>}
             </button>)}
           </div>
         </div>}
@@ -7983,4 +7998,257 @@ const APP_STYLES_TAIL = `
 @media(max-width:700px){.language-list{grid-template-columns:1fr}.message-composer{padding:8px!important}.message-composer input{height:44px!important}.message-composer .send-button{width:44px!important;height:44px!important}}
 `;
 
-const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL;
+
+const HEXA_SETTINGS_POLISH_CSS = `
+/* ============================================================
+   HEXA SETTINGS + THEME SELECTOR POLISH
+   ============================================================ */
+.settings-page{padding-bottom:34px}
+.settings-page .page-heading{margin-bottom:18px}
+.settings-page .settings-section{border:1px solid var(--hexa-border);border-radius:20px;background:var(--hexa-panel);overflow:hidden;box-shadow:var(--hexa-shadow);margin-bottom:16px}
+.settings-section-heading{width:100%;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 20px;border:0;background:transparent;color:var(--hexa-text);text-align:left;cursor:pointer}
+.settings-section-heading>div{min-width:0}
+.settings-section-heading strong{display:block;font-size:14px;line-height:1.25}
+.settings-section-heading span{display:block;color:var(--hexa-muted);font-size:10px;margin-top:5px}
+.settings-section-heading b{width:30px;height:30px;display:grid;place-items:center;border-radius:10px;background:var(--hexa-panel-3);font-size:15px;flex:0 0 30px}
+.hexa-profile-settings{display:flex!important;align-items:center;gap:14px;padding:16px 18px!important;margin-bottom:16px}
+.hexa-profile-settings>div:nth-child(2){min-width:0}
+.hexa-profile-settings strong{font-size:14px}
+.hexa-profile-settings p{margin:4px 0 0;color:var(--hexa-muted);font-size:11px}
+.hexa-theme-panel{padding:0 16px 16px}
+.hexa-theme-current-card{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:15px;border:1px solid var(--hexa-border);border-radius:16px;background:var(--hexa-panel-2);margin-bottom:10px}
+.theme-current-copy{min-width:0}
+.theme-current-copy>span{display:block;color:var(--hexa-muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em;font-weight:800}
+.theme-current-copy strong{display:block;margin-top:4px;font-size:15px}
+.theme-current-copy small{display:block;color:var(--hexa-muted);font-size:10px;margin-top:4px;line-height:1.45}
+.theme-current-swatch{width:150px;height:66px;flex:0 0 150px;border:1px solid;border-radius:15px;padding:9px;display:grid;grid-template-columns:1fr 1fr;gap:8px;position:relative;overflow:hidden}
+.theme-current-swatch span{display:block;border-radius:10px;border:1px solid rgba(0,0,0,.06)}
+.theme-current-swatch b{position:absolute;left:10px;bottom:10px;width:26px;height:6px;border-radius:99px}
+.theme-selector-toolbar{display:flex;justify-content:space-between;gap:10px;padding:3px 2px 10px;color:var(--hexa-muted);font-size:9px}
+.hexa-theme-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.hexa-theme-option{position:relative;display:flex;flex-direction:column;gap:9px;padding:9px;border:1px solid var(--hexa-border);border-radius:16px;background:var(--hexa-panel-2);color:var(--hexa-text);text-align:left;cursor:pointer;transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease,background .16s ease}
+.hexa-theme-option:hover{transform:translateY(-2px);border-color:var(--hexa-border-strong);box-shadow:0 12px 26px rgba(0,0,0,.10)}
+.hexa-theme-option.selected{border-color:var(--hexa-accent);box-shadow:inset 0 0 0 1px var(--hexa-accent),0 12px 28px rgba(0,0,0,.12)}
+.theme-preview{height:78px;border-radius:12px;display:flex;overflow:hidden;position:relative;border:1px solid rgba(255,255,255,.12)}
+.theme-preview-sidebar{width:25%;height:100%}
+.theme-preview-content{flex:1;padding:10px;display:flex;flex-direction:column;justify-content:center;gap:7px}
+.theme-preview-message{height:11px;border-radius:6px;max-width:68%}
+.theme-preview-message.outgoing{align-self:flex-end;width:55%}
+.theme-preview-accent{position:absolute;right:8px;top:8px;width:7px;height:7px;border-radius:50%}
+.theme-option-copy{min-width:0;padding-right:36px}
+.theme-option-copy strong{display:block;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.theme-option-copy span{display:block;color:var(--hexa-muted);font-size:9px;line-height:1.35;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.theme-option-status{position:absolute;right:9px;bottom:9px;color:var(--hexa-muted);font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+.theme-selected{position:absolute;top:9px;right:9px;width:24px;height:24px;display:grid;place-items:center;border-radius:50%;background:var(--hexa-accent);color:#fff;font-size:12px;font-weight:900;box-shadow:0 6px 14px rgba(0,0,0,.18)}
+.hexa-white-theme-option .theme-preview{border-color:rgba(0,0,0,.10)}
+@media(max-width:900px){.hexa-theme-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.hexa-theme-grid{grid-template-columns:1fr}.hexa-theme-current-card{align-items:flex-start}.theme-current-swatch{width:120px;flex-basis:120px}.theme-selector-toolbar{flex-direction:column;gap:3px}}
+
+/* ============================================================
+   MESSAGE COMPOSER POLISH
+   ============================================================ */
+.message-composer{position:relative;display:flex;align-items:center;gap:8px;min-height:76px!important;padding:10px 12px!important;border-top:1px solid var(--hexa-border-strong)!important}
+.message-composer:focus-within{box-shadow:0 -8px 24px rgba(0,0,0,.05)}
+.message-composer input{min-width:0!important;height:48px!important;border-radius:17px!important;padding:0 16px!important;font-size:13px!important;line-height:1.4!important;transition:border-color .15s ease,box-shadow .15s ease,background .15s ease}
+.message-composer>button{width:40px!important;height:40px!important;display:grid!important;place-items:center!important;border-radius:12px!important;flex:0 0 40px!important}
+.message-composer .send-button{width:48px!important;height:48px!important;flex-basis:48px!important;border-radius:16px!important;display:grid!important;place-items:center!important;font-size:17px!important}
+.message-composer .send-button:active{transform:scale(.96)}
+`;
+
+const HEXA_WHITE_THEME_CSS = `
+/* ============================================================
+   HEXA WHITE UI — pure white workspace
+   ============================================================ */
+[data-hexa-theme="white"] {
+  color-scheme: light;
+}
+[data-hexa-theme="white"] body,
+[data-hexa-theme="white"] .hexa-app,
+[data-hexa-theme="white"] .hexa-main,
+[data-hexa-theme="white"] .workspace-page,
+[data-hexa-theme="white"] .chat-layout,
+[data-hexa-theme="white"] .chat-main,
+[data-hexa-theme="white"] .chat-list-panel,
+[data-hexa-theme="white"] .chat-header,
+[data-hexa-theme="white"] .messages-area,
+[data-hexa-theme="white"] .message-composer {
+  background: #fff !important;
+  color: #000 !important;
+}
+[data-hexa-theme="white"] .chat-list-panel,
+[data-hexa-theme="white"] .chat-header,
+[data-hexa-theme="white"] .message-composer {
+  border-color: rgba(0,0,0,.09) !important;
+  box-shadow: 0 8px 28px rgba(0,0,0,.05) !important;
+}
+[data-hexa-theme="white"] .chat-header {
+  backdrop-filter: blur(16px) !important;
+}
+[data-hexa-theme="white"] .chat-header-copy strong,
+[data-hexa-theme="white"] .chat-header-copy span,
+[data-hexa-theme="white"] .chat-list-header h2,
+[data-hexa-theme="white"] .chat-list-header span,
+[data-hexa-theme="white"] .conversation strong,
+[data-hexa-theme="white"] .conversation span,
+[data-hexa-theme="white"] .page-heading h1,
+[data-hexa-theme="white"] .settings-section-heading strong,
+[data-hexa-theme="white"] .settings-section-heading span,
+[data-hexa-theme="white"] .settings-card strong,
+[data-hexa-theme="white"] .settings-card p {
+  color: #000 !important;
+}
+[data-hexa-theme="white"] .chat-header-actions button,
+[data-hexa-theme="white"] .message-composer > button,
+[data-hexa-theme="white"] .new-chat-button,
+[data-hexa-theme="white"] .settings-section-heading,
+[data-hexa-theme="white"] .settings-card button,
+[data-hexa-theme="white"] .language-option,
+[data-hexa-theme="white"] .hexa-theme-option {
+  background: #fff !important;
+  color: #000 !important;
+  border-color: rgba(0,0,0,.12) !important;
+}
+[data-hexa-theme="white"] .chat-header-actions button:hover,
+[data-hexa-theme="white"] .message-composer > button:hover,
+[data-hexa-theme="white"] .language-option:hover,
+[data-hexa-theme="white"] .hexa-theme-option:hover {
+  background: #f3f4f6 !important;
+  color: #000 !important;
+}
+[data-hexa-theme="white"] .conversation.active {
+  background: #f1f1f1 !important;
+  box-shadow: inset 3px 0 0 #000 !important;
+}
+[data-hexa-theme="white"] .chat-search input,
+[data-hexa-theme="white"] .topbar-search input,
+[data-hexa-theme="white"] .message-composer input,
+[data-hexa-theme="white"] .language-search-row {
+  background: #fff !important;
+  color: #000 !important;
+  border-color: rgba(0,0,0,.14) !important;
+}
+[data-hexa-theme="white"] .chat-search input::placeholder,
+[data-hexa-theme="white"] .topbar-search input::placeholder,
+[data-hexa-theme="white"] .message-composer input::placeholder,
+[data-hexa-theme="white"] .language-search-row input::placeholder {
+  color: #6b7280 !important;
+}
+[data-hexa-theme="white"] .message-composer input:focus {
+  border-color: #000 !important;
+  box-shadow: 0 0 0 3px rgba(0,0,0,.08) !important;
+}
+[data-hexa-theme="white"] .message-composer .send-button,
+[data-hexa-theme="white"] .hero-primary,
+[data-hexa-theme="white"] .send-button {
+  background: #000 !important;
+  color: #fff !important;
+  border-color: #000 !important;
+}
+[data-hexa-theme="white"] .message-composer .send-button:hover,
+[data-hexa-theme="white"] .hero-primary:hover,
+[data-hexa-theme="white"] .send-button:hover {
+  background: #222 !important;
+}
+[data-hexa-theme="white"] .hexa-message-row.mine .message-bubble {
+  background: #000 !important;
+  color: #fff !important;
+  border-color: #000 !important;
+}
+[data-hexa-theme="white"] .hexa-message-row.mine .message-content,
+[data-hexa-theme="white"] .hexa-message-row.mine .message-meta,
+[data-hexa-theme="white"] .hexa-message-row.mine .message-meta span {
+  color: #fff !important;
+}
+[data-hexa-theme="white"] .hexa-message-row.incoming .message-bubble {
+  background: #f3f4f6 !important;
+  color: #000 !important;
+  border-color: rgba(0,0,0,.10) !important;
+}
+[data-hexa-theme="white"] .hexa-message-row.incoming .message-content,
+[data-hexa-theme="white"] .hexa-message-row.incoming .message-meta,
+[data-hexa-theme="white"] .hexa-message-row.incoming .message-meta span {
+  color: #000 !important;
+}
+[data-hexa-theme="white"] .message-bubble a,
+[data-hexa-theme="white"] .message-file,
+[data-hexa-theme="white"] .message-file:hover,
+[data-hexa-theme="white"] .quoted-message,
+[data-hexa-theme="white"] .forwarded-label {
+  color: #000 !important;
+}
+[data-hexa-theme="white"] .hexa-message-row.mine .message-bubble a,
+[data-hexa-theme="white"] .hexa-message-row.mine .message-file,
+[data-hexa-theme="white"] .hexa-message-row.mine .quoted-message,
+[data-hexa-theme="white"] .hexa-message-row.mine .forwarded-label {
+  color: #fff !important;
+}
+/* Media controls/icons are black; photos/videos retain their natural image colors. */
+[data-hexa-theme="white"] .message-media,
+[data-hexa-theme="white"] .message-media + *,
+[data-hexa-theme="white"] video::-webkit-media-controls {
+  color: #000;
+}
+[data-hexa-theme="white"] .composer-action,
+[data-hexa-theme="white"] .chat-header-actions button,
+[data-hexa-theme="white"] .message-composer > button {
+  color: #000 !important;
+}
+[data-hexa-theme="white"] .chat-settings-popover,
+[data-hexa-theme="white"] .whatsapp-chat-menu,
+[data-hexa-theme="white"] .quick-actions-popover,
+[data-hexa-theme="white"] .gif-panel,
+[data-hexa-theme="white"] .notifications-panel,
+[data-hexa-theme="white"] .entity-modal,
+[data-hexa-theme="white"] .status-modal,
+[data-hexa-theme="white"] .hexa-modal-backdrop > div {
+  background: #fff !important;
+  color: #000 !important;
+  border-color: rgba(0,0,0,.12) !important;
+  box-shadow: 0 24px 70px rgba(0,0,0,.16) !important;
+}
+[data-hexa-theme="white"] .whatsapp-chat-menu button,
+[data-hexa-theme="white"] .quick-actions-popover button,
+[data-hexa-theme="white"] .notifications-header button,
+[data-hexa-theme="white"] .notification-item,
+[data-hexa-theme="white"] .settings-section-heading {
+  color: #000 !important;
+}
+[data-hexa-theme="white"] .whatsapp-chat-menu button:hover,
+[data-hexa-theme="white"] .quick-actions-popover button:hover,
+[data-hexa-theme="white"] .quick-actions-popover button.selected {
+  background: #f3f4f6 !important;
+  color: #000 !important;
+}
+[data-hexa-theme="white"] .settings-section,
+[data-hexa-theme="white"] .settings-card,
+[data-hexa-theme="white"] .hexa-profile-settings,
+[data-hexa-theme="white"] .hexa-theme-panel,
+[data-hexa-theme="white"] .language-picker-panel {
+  background: #fff !important;
+  color: #000 !important;
+  border-color: rgba(0,0,0,.10) !important;
+  box-shadow: 0 14px 40px rgba(0,0,0,.06) !important;
+}
+[data-hexa-theme="white"] .settings-card .settings-status,
+[data-hexa-theme="white"] .theme-current small,
+[data-hexa-theme="white"] .theme-current span,
+[data-hexa-theme="white"] .theme-selector-toolbar,
+[data-hexa-theme="white"] .language-current-row span,
+[data-hexa-theme="white"] .language-save-row span,
+[data-hexa-theme="white"] .language-option code {
+  color: #4b5563 !important;
+}
+[data-hexa-theme="white"] .hexa-theme-option.selected {
+  border-color: #000 !important;
+  background: #f7f7f7 !important;
+  box-shadow: inset 0 0 0 2px #000, 0 12px 26px rgba(0,0,0,.08) !important;
+}
+[data-hexa-theme="white"] .hexa-theme-option.selected .theme-selected,
+[data-hexa-theme="white"] .language-option.selected .language-radio {
+  background: #000 !important;
+  color: #fff !important;
+  border-color: #000 !important;
+}
+`;
+
+const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS;
