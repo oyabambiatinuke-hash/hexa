@@ -4640,187 +4640,168 @@ function ChatPage({
       )}
 
       {/* ======================================================
-          CONTEXT MENU
+          MESSAGE ACTION SHEET
           ====================================================== */}
 
       {contextMenu && (
         <div
-          className="message-context-menu"
+          className="message-action-popover"
           style={{
-            left: Math.min(
-              contextMenu.x,
-              window.innerWidth -
-                235
+            left: Math.max(
+              12,
+              Math.min(
+                contextMenu.x,
+                window.innerWidth - 330
+              )
             ),
-            top: Math.min(
-              contextMenu.y,
-              window.innerHeight -
-                430
+            top: Math.max(
+              12,
+              Math.min(
+                contextMenu.y,
+                window.innerHeight - 560
+              )
             )
           }}
-          onClick={event =>
-            event.stopPropagation()
-          }
+          onClick={event => event.stopPropagation()}
         >
-
           {(() => {
-            const item =
-              messages.find(
-                messageItem =>
-                  String(
-                    messageItem.id
-                  ) ===
-                  String(
-                    contextMenu.id
-                  )
-              );
+            const item = messages.find(
+              messageItem =>
+                String(messageItem.id) === String(contextMenu.id)
+            );
 
-            if (!item) {
-              return null;
-            }
+            if (!item) return null;
+
+            const quickReactions = ["❤️", "😂", "👍", "😮", "😢", "🙏"];
+            const isMine = String(item.sender_id) === String(profile.id);
+            const isStarred = starred.includes(String(item.id));
+            const isPinned = pinned.includes(String(item.id));
 
             return (
               <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setReplyTo(
-                      item
-                    );
-                    setContextMenu(
-                      null
-                    );
-                  }}
-                >
-                  ↩ Reply
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    copyMessage(
-                      item
-                    )
-                  }
-                >
-                  📋 Copy
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    editMessage(
-                      item
-                    )
-                  }
-                  disabled={
-                    item.sender_id !==
-                    profile.id
-                  }
-                >
-                  ✏️ Edit
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    toggleStar(
-                      item
-                    )
-                  }
-                >
-                  ⭐{" "}
-                  {starred.includes(
-                    String(
-                      item.id
-                    )
-                  )
-                    ? "Unstar"
-                    : "Star"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    togglePin(
-                      item
-                    )
-                  }
-                >
-                  📌{" "}
-                  {pinned.includes(
-                    String(
-                      item.id
-                    )
-                  )
-                    ? "Unpin"
-                    : "Pin"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    openForward(
-                      item
-                    )
-                  }
-                >
-                  ↪ Forward
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    reactToMessage(
-                      item,
-                      "❤️"
-                    )
-                  }
-                >
-                  ❤️ React
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    toggleMessageSelection(
-                      item
-                    )
-                  }
-                >
-                  ☑ Select
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    deleteMessage(
-                      item,
-                      false
-                    )
-                  }
-                >
-                  🗑 Delete for me
-                </button>
-
-                {item.sender_id ===
-                  profile.id && (
+                <div className="message-action-reactions">
+                  {quickReactions.map(emoji => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      className="quick-reaction"
+                      title={`React ${emoji}`}
+                      onClick={() => reactToMessage(item, emoji)}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
                   <button
                     type="button"
-                    onClick={() =>
-                      deleteMessage(
-                        item,
-                        true
-                      )
-                    }
+                    className="quick-reaction more-reactions"
+                    title="More reactions"
+                    onClick={() => {
+                      setReactionMenu(item.id);
+                      setContextMenu(null);
+                    }}
                   >
-                    🗑 Delete for everyone
+                    ＋
                   </button>
-                )}
+                </div>
+
+                <div className="message-action-section">
+                  <div className="message-action-section-title">Message</div>
+
+                  <button type="button" className="message-action-item" onClick={() => {
+                    setReplyTo(item);
+                    setContextMenu(null);
+                  }}>
+                    <span className="message-action-icon">↩</span>
+                    <span className="message-action-copy">
+                      <strong>Reply</strong>
+                      <small>Reply to this message</small>
+                    </span>
+                  </button>
+
+                  <button type="button" className="message-action-item" onClick={() => copyMessage(item)}>
+                    <span className="message-action-icon">⧉</span>
+                    <span className="message-action-copy">
+                      <strong>Copy</strong>
+                      <small>Copy message text</small>
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="message-action-item"
+                    onClick={() => editMessage(item)}
+                    disabled={!isMine}
+                  >
+                    <span className="message-action-icon">✎</span>
+                    <span className="message-action-copy">
+                      <strong>Edit</strong>
+                      <small>{isMine ? "Change your message" : "Only your messages can be edited"}</small>
+                    </span>
+                  </button>
+
+                  <button type="button" className="message-action-item" onClick={() => openForward(item)}>
+                    <span className="message-action-icon">↪</span>
+                    <span className="message-action-copy">
+                      <strong>Forward</strong>
+                      <small>Send to another chat</small>
+                    </span>
+                  </button>
+                </div>
+
+                <div className="message-action-divider" />
+
+                <div className="message-action-section compact-actions">
+                  <button type="button" className="message-action-item compact" onClick={() => toggleStar(item)}>
+                    <span className="message-action-icon">{isStarred ? "★" : "☆"}</span>
+                    <span className="message-action-copy">
+                      <strong>{isStarred ? "Unstar" : "Star"}</strong>
+                      <small>{isStarred ? "Remove from starred" : "Save for later"}</small>
+                    </span>
+                  </button>
+
+                  <button type="button" className="message-action-item compact" onClick={() => togglePin(item)}>
+                    <span className="message-action-icon">{isPinned ? "📌" : "⌑"}</span>
+                    <span className="message-action-copy">
+                      <strong>{isPinned ? "Unpin" : "Pin"}</strong>
+                      <small>{isPinned ? "Remove chat pin" : "Keep it visible"}</small>
+                    </span>
+                  </button>
+
+                  <button type="button" className="message-action-item compact" onClick={() => toggleMessageSelection(item)}>
+                    <span className="message-action-icon">☑</span>
+                    <span className="message-action-copy">
+                      <strong>Select</strong>
+                      <small>Select messages for bulk actions</small>
+                    </span>
+                  </button>
+                </div>
+
+                <div className="message-action-divider" />
+
+                <div className="message-action-section">
+                  <div className="message-action-section-title danger-title">Remove</div>
+
+                  <button type="button" className="message-action-item danger-action" onClick={() => deleteMessage(item, false)}>
+                    <span className="message-action-icon">⌫</span>
+                    <span className="message-action-copy">
+                      <strong>Delete for me</strong>
+                      <small>Remove it from your chat</small>
+                    </span>
+                  </button>
+
+                  {isMine && (
+                    <button type="button" className="message-action-item danger-action" onClick={() => deleteMessage(item, true)}>
+                      <span className="message-action-icon">🗑</span>
+                      <span className="message-action-copy">
+                        <strong>Delete for everyone</strong>
+                        <small>Remove it for everyone in this chat</small>
+                      </span>
+                    </button>
+                  )}
+                </div>
               </>
             );
           })()}
-
         </div>
       )}
 
@@ -8258,7 +8239,41 @@ const APP_STYLES_TAIL = `
 .wallet-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}.wallet-balance-card{padding:24px;border:1px solid var(--hexa-border);background:linear-gradient(135deg,var(--hexa-panel),var(--hexa-panel-2));border-radius:20px;display:grid;gap:8px}.wallet-balance-card span{color:var(--hexa-muted);font-size:11px}.wallet-balance-card strong{font-size:32px;letter-spacing:-.03em}.wallet-balance-card small{color:var(--hexa-muted);font-size:10px}.wallet-fund-card{align-items:center}.wallet-fund-card .modal-input{margin:0}.wallet-fund-card .hero-primary{white-space:nowrap}
 
 /* HEXA master feature UI */
-.hexa-audio-message{display:flex;align-items:center;gap:7px}.hexa-audio-message audio{max-width:210px;height:34px}.hexa-audio-message select{background:var(--hexa-panel-2);color:var(--hexa-text);border:1px solid var(--hexa-border);border-radius:8px;padding:4px}.message-context-menu{position:fixed;z-index:1000;min-width:190px;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:14px;padding:6px;box-shadow:var(--hexa-shadow);display:grid;gap:2px}.message-context-menu button{border:0;background:none;color:var(--hexa-text);padding:10px;text-align:left;border-radius:9px}.message-context-menu button:hover{background:rgba(255,255,255,.06)}.message-context-menu .danger-text{color:var(--hexa-danger)}.emoji-panel,.sticker-panel,.feature-popover,.chat-settings-popover{position:absolute;z-index:40;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:16px;box-shadow:var(--hexa-shadow);padding:12px}.emoji-panel{left:12px;bottom:76px;width:min(410px,calc(100% - 24px))}.emoji-tones,.emoji-grid,.sticker-grid{display:flex;flex-wrap:wrap;gap:5px}.emoji-grid{max-height:220px;overflow:auto;margin-top:8px}.emoji-panel button,.sticker-grid button{border:0;background:transparent;font-size:21px;padding:6px;border-radius:8px}.emoji-panel button:hover,.sticker-grid button:hover{background:rgba(255,255,255,.06)}.sticker-panel{left:12px;bottom:76px;width:300px}.sticker-grid{margin-top:10px}.sticker-grid button{font-size:30px}.feature-popover{right:12px;bottom:76px;width:min(360px,calc(100% - 24px));display:grid;gap:8px}.feature-popover h3{margin:0}.chat-settings-popover{right:12px;top:64px;width:270px;display:grid;gap:10px;z-index:60}.chat-settings-popover label{display:grid;gap:6px;color:var(--hexa-muted);font-size:12px}.chat-settings-popover select,.chat-settings-popover button{padding:9px;border-radius:9px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text)}.chat-search-results{padding:10px;border-top:1px solid var(--hexa-border);display:grid;gap:5px}.chat-search-results button{border:0;background:transparent;color:var(--hexa-muted);text-align:left;padding:6px}.poll-message{display:grid;gap:7px;min-width:220px}.poll-message button{display:flex;justify-content:space-between;gap:10px;padding:9px;border-radius:9px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);text-align:left}.poll-message button span{color:var(--hexa-muted);font-size:10px}.shared-contact{display:flex;gap:10px;align-items:center;min-width:190px}.shared-contact div{display:grid}.shared-contact small{color:var(--hexa-muted)}.location-card{color:inherit;text-decoration:none;display:block;padding:4px}.file-message{display:flex;gap:8px;align-items:center}.forwarded-label{font-size:10px;color:var(--hexa-muted);margin-bottom:5px}.sticker-message{font-size:70px;line-height:1}.view-once-bubble{min-width:100px}.universal-search-result{display:flex;align-items:center;gap:10px;width:100%}.universal-search-result-copy{flex:1}.universal-search-result>b{text-transform:uppercase;font-size:9px;color:var(--hexa-accent-2)}
+.hexa-audio-message{display:flex;align-items:center;gap:7px}.hexa-audio-message audio{max-width:210px;height:34px}.hexa-audio-message select{background:var(--hexa-panel-2);color:var(--hexa-text);border:1px solid var(--hexa-border);border-radius:8px;padding:4px}.message-context-menu{position:fixed;z-index:1000;min-width:190px;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:14px;padding:6px;box-shadow:var(--hexa-shadow);display:grid;gap:2px}.message-context-menu button{border:0;background:none;color:var(--hexa-text);padding:10px;text-align:left;border-radius:9px}.message-context-menu button:hover{background:rgba(255,255,255,.06)}.message-context-menu .danger-text{color:var(--hexa-danger)}
+.message-context-menu{display:none}
+.message-action-popover{position:fixed;z-index:1200;width:min(318px,calc(100vw - 24px));max-height:min(570px,calc(100vh - 24px));overflow:auto;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:20px;padding:8px;box-shadow:0 22px 60px rgba(0,0,0,.28);backdrop-filter:blur(18px)}
+.message-action-reactions{display:flex;align-items:center;gap:4px;padding:4px;background:var(--hexa-panel-2);border:1px solid var(--hexa-border);border-radius:15px;margin-bottom:7px}
+.quick-reaction{width:40px;height:38px;display:grid;place-items:center;border:0;background:transparent;color:var(--hexa-text);border-radius:11px;font-size:20px;cursor:pointer;transition:transform .15s ease,background .15s ease}
+.quick-reaction:hover{background:rgba(127,127,127,.12);transform:scale(1.08)}
+.quick-reaction.more-reactions{font-size:18px;color:var(--hexa-muted);font-weight:800}
+.message-action-section{display:grid;gap:2px}
+.message-action-section-title{padding:7px 10px 5px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:800;color:var(--hexa-muted)}
+.message-action-item{width:100%;display:flex;align-items:center;gap:11px;padding:10px 10px;border:0;background:transparent;color:var(--hexa-text);border-radius:13px;text-align:left;cursor:pointer}
+.message-action-item:hover{background:rgba(127,127,127,.10)}
+.message-action-item:disabled{opacity:.46;cursor:not-allowed}
+.message-action-item:disabled:hover{background:transparent}
+.message-action-icon{width:34px;height:34px;flex:0 0 34px;display:grid;place-items:center;border-radius:10px;background:var(--hexa-panel-2);border:1px solid var(--hexa-border);font-size:17px}
+.message-action-copy{min-width:0;display:grid;gap:2px}
+.message-action-copy strong{font-size:13px;font-weight:700;color:var(--hexa-text)}
+.message-action-copy small{font-size:10px;color:var(--hexa-muted);line-height:1.35}
+.message-action-divider{height:1px;background:var(--hexa-border);margin:5px 4px}
+.compact-actions{grid-template-columns:1fr;display:grid}
+.message-action-item.compact{padding-block:8px}
+.danger-title{color:var(--hexa-danger)!important}
+.danger-action .message-action-icon{color:var(--hexa-danger);border-color:rgba(220,70,70,.20)}
+.danger-action:hover{background:rgba(220,70,70,.08)}
+.message-action-popover::-webkit-scrollbar{width:7px}
+.message-action-popover::-webkit-scrollbar-thumb{background:rgba(127,127,127,.26);border-radius:999px}
+[data-hexa-theme="white"] .message-action-popover{background:#fff;border-color:#e5e7eb;box-shadow:0 24px 70px rgba(17,24,39,.18)}
+[data-hexa-theme="white"] .message-action-reactions,
+[data-hexa-theme="white"] .message-action-icon{background:#f6f7f9;border-color:#e6e8ec}
+[data-hexa-theme="white"] .message-action-item:hover{background:#f5f6f8}
+@media (max-width:640px){
+  .message-action-popover{left:12px!important;right:12px;width:auto;bottom:12px;top:auto!important;max-height:72vh;border-radius:22px;padding:9px}
+  .message-action-reactions{justify-content:space-between}
+  .quick-reaction{width:42px;height:42px}
+}
+.emoji-panel,.sticker-panel,.feature-popover,.chat-settings-popover{position:absolute;z-index:40;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:16px;box-shadow:var(--hexa-shadow);padding:12px}.emoji-panel{left:12px;bottom:76px;width:min(410px,calc(100% - 24px))}.emoji-tones,.emoji-grid,.sticker-grid{display:flex;flex-wrap:wrap;gap:5px}.emoji-grid{max-height:220px;overflow:auto;margin-top:8px}.emoji-panel button,.sticker-grid button{border:0;background:transparent;font-size:21px;padding:6px;border-radius:8px}.emoji-panel button:hover,.sticker-grid button:hover{background:rgba(255,255,255,.06)}.sticker-panel{left:12px;bottom:76px;width:300px}.sticker-grid{margin-top:10px}.sticker-grid button{font-size:30px}.feature-popover{right:12px;bottom:76px;width:min(360px,calc(100% - 24px));display:grid;gap:8px}.feature-popover h3{margin:0}.chat-settings-popover{right:12px;top:64px;width:270px;display:grid;gap:10px;z-index:60}.chat-settings-popover label{display:grid;gap:6px;color:var(--hexa-muted);font-size:12px}.chat-settings-popover select,.chat-settings-popover button{padding:9px;border-radius:9px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text)}.chat-search-results{padding:10px;border-top:1px solid var(--hexa-border);display:grid;gap:5px}.chat-search-results button{border:0;background:transparent;color:var(--hexa-muted);text-align:left;padding:6px}.poll-message{display:grid;gap:7px;min-width:220px}.poll-message button{display:flex;justify-content:space-between;gap:10px;padding:9px;border-radius:9px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);text-align:left}.poll-message button span{color:var(--hexa-muted);font-size:10px}.shared-contact{display:flex;gap:10px;align-items:center;min-width:190px}.shared-contact div{display:grid}.shared-contact small{color:var(--hexa-muted)}.location-card{color:inherit;text-decoration:none;display:block;padding:4px}.file-message{display:flex;gap:8px;align-items:center}.forwarded-label{font-size:10px;color:var(--hexa-muted);margin-bottom:5px}.sticker-message{font-size:70px;line-height:1}.view-once-bubble{min-width:100px}.universal-search-result{display:flex;align-items:center;gap:10px;width:100%}.universal-search-result-copy{flex:1}.universal-search-result>b{text-transform:uppercase;font-size:9px;color:var(--hexa-accent-2)}
 
 
 /* HEXA 2026 visual polish + Quick Actions */
