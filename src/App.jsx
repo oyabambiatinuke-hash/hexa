@@ -2621,70 +2621,20 @@ function ChatPage({
      MESSAGE ACTIONS
      ============================================================ */
 
-  function getMessageCopyText(item) {
-    if (!item) return "";
-    if (item.content) return String(item.content);
-    if (item.message_type === "image") return "📷 Photo";
-    if (item.message_type === "video") return "🎥 Video";
-    if (item.message_type === "voice") return "🎙 Voice message";
-    if (item.message_type === "audio") return "🎵 Audio";
-    if (item.message_type === "file") return `📎 ${item.message_attachments?.[0]?.file_name || "File"}`;
-    if (item.message_type === "gif") return "GIF";
-    if (item.message_type === "sticker") return "Sticker";
-    return "";
-  }
-
-  async function copyTextReliable(text) {
-    const value = String(text || "");
-    if (!value) throw new Error("Nothing to copy");
-
-    if (navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(value);
-        return true;
-      } catch {}
-    }
-
-    const textarea = document.createElement("textarea");
-    textarea.value = value;
-    textarea.setAttribute("readonly", "");
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-    const ok = document.execCommand("copy");
-    textarea.remove();
-    if (!ok) throw new Error("Copy failed");
-    return true;
-  }
-
-  async function copyMessage(item) {
+  async function copyMessage(
+    item
+  ) {
     try {
-      const text = getMessageCopyText(item);
-      if (!text) throw new Error("Nothing to copy");
-      await copyTextReliable(text);
-      safeAlert("Message copied to clipboard.");
-    } catch (error) {
-      safeAlert(error?.message === "Nothing to copy" ? "There is nothing to copy from this message." : "Unable to copy this message.");
+      await navigator.clipboard.writeText(
+        item?.content || ""
+      );
+    } catch {
+      alert(
+        "Unable to copy this message."
+      );
     }
-    setContextMenu(null);
-  }
 
-  function getReplyPreview(item) {
-    const text = getMessageCopyText(item);
-    return text.length > 140 ? `${text.slice(0, 140)}…` : text;
-  }
-
-  function startReply(item) {
-    if (!item) return;
-    setEditing(null);
-    setReplyTo(item);
     setContextMenu(null);
-    setTimeout(() => {
-      const composer = document.querySelector(".message-composer textarea, .message-composer input, textarea[placeholder*='message' i]");
-      composer?.focus?.();
-    }, 50);
   }
 
   async function editMessage(
@@ -3545,29 +3495,11 @@ function ChatPage({
             </div>
           )}
 
-          {(() => {
-            const repliedTo = item.reply_to || (item.reply_to_id ? messages.find(m => String(m.id) === String(item.reply_to_id)) : null);
-            if (!repliedTo) return null;
-            return (
-              <button
-                type="button"
-                className="quoted-message quoted-message-clickable"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  const target = document.getElementById(`hexa-message-${repliedTo.id}`);
-                  target?.scrollIntoView?.({ behavior: "smooth", block: "center" });
-                  target?.classList.add("message-highlight");
-                  window.setTimeout(() => target?.classList.remove("message-highlight"), 1600);
-                }}
-              >
-                <span className="quoted-message-bar" />
-                <span className="quoted-message-copy">
-                  <strong>{String(repliedTo.sender_id) === String(profile.id) ? "You" : (selected?.name || "Contact")}</strong>
-                  <span>{getReplyPreview(repliedTo) || "Message"}</span>
-                </span>
-              </button>
-            );
-          })()}
+          {(item.reply_to_id || item.reply_to) && (
+            <div className="quoted-message">
+              ↩ Reply
+            </div>
+          )}
 
           {(() => {
             const attachmentRow = item.message_attachments?.[0];
@@ -4403,8 +4335,12 @@ function ChatPage({
                 Replying to
               </strong>
 
-              <span>{String(replyTo.sender_id) === String(profile.id) ? "You" : (selected?.name || "Contact")}</span>
-              <small>{getReplyPreview(replyTo) || "Media"}</small>
+              <span>
+                {
+                  replyTo.content ||
+                  "Media"
+                }
+              </span>
             </div>
 
             <button
@@ -5117,7 +5053,10 @@ function ChatPage({
                 <div className="message-action-section">
                   <div className="message-action-section-title">Message</div>
 
-                  <button type="button" className="message-action-item" onClick={() => startReply(item)}>
+                  <button type="button" className="message-action-item" onClick={() => {
+                    setReplyTo(item);
+                    setContextMenu(null);
+                  }}>
                     <span className="message-action-icon">↩</span>
                     <span className="message-action-copy">
                       <strong>Reply</strong>
@@ -5972,21 +5911,20 @@ function StatusPage({ profile }) {
           </div>
 
           <div className="story-actions moments-story-actions">
-            <button type="button" onClick={() => toggleLike(viewer)}>
-              {liked[viewer.id] ? "❤️" : "♡"}
+            <button type="button" className={`moment-action-button ${liked[viewer.id] ? "active liked" : ""}`} onClick={() => toggleLike(viewer)} title="Like">
+              <span>{liked[viewer.id] ? "♥" : "♡"}</span><small>{likeCount}</small>
             </button>
-            {['👍', '😂', '😮', '😢', '😡'].map((emoji) => (
-              <button
-                type="button"
-                key={emoji}
-                className={reaction === emoji ? "active" : ""}
-                onClick={() => reactToMoment(viewer, emoji)}
-              >
-                {emoji}
-              </button>
-            ))}
-            <button type="button" onClick={() => loadComments(viewer.id)}>💬</button>
-            <button type="button" onClick={() => setShareOpen((x) => !x)}>↗</button>
+            <div className="moment-reaction-picker">
+              {["👍", "❤️", "😂", "😮", "😢", "😡", "🙏"].map((emoji) => (
+                <button type="button" key={emoji} className={`moment-reaction-button ${reaction === emoji ? "active" : ""}`} onClick={() => reactToMoment(viewer, emoji)} title={`React ${emoji}`}>{emoji}</button>
+              ))}
+            </div>
+            <button type="button" className="moment-action-button" onClick={() => loadComments(viewer.id)} title="Comments">
+              <span>💬</span><small>{commentCount}</small>
+            </button>
+            <button type="button" className="moment-action-button" onClick={() => setShareOpen((x) => !x)} title="Share">
+              <span>↗</span><small>Share</small>
+            </button>
             {String(viewer.user_id) === String(profile.id) && (
               <button type="button" onClick={() => { setHighlightSource(viewer); setHighlightEditor({ mode: "choose" }); }}>☆</button>
             )}
@@ -6007,7 +5945,7 @@ function StatusPage({ profile }) {
             <strong>Comments</strong>
             <div className="status-comments-list">
               {comments.map((c) => (
-                <div className="status-comment" key={c.id}>
+                <div className="status-comment premium-comment" key={c.id}>
                   <Avatar
                     src={c.profile?.avatar_url}
                     name={c.profile?.full_name || c.profile?.username || "HEXA User"}
@@ -6016,7 +5954,7 @@ function StatusPage({ profile }) {
                   <div>
                     <b>{c.profile?.full_name || c.profile?.username || "HEXA User"}</b>
                     <p>{c.text}</p>
-                    <small>{new Date(c.created_at).toLocaleString()}</small>
+                    <div className="status-comment-meta"><small>{new Date(c.created_at).toLocaleString()}</small><button type="button" onClick={() => { setCommentText(`@${c.profile?.username || c.profile?.full_name || "user"} `); }}>Reply</button></div>
                   </div>
                 </div>
               ))}
@@ -7202,7 +7140,34 @@ export default function App() {
 /* HEXA action outcome UI */
 .hexa-action-toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,18px);opacity:0;z-index:5000;display:flex;align-items:center;gap:9px;max-width:min(460px,calc(100vw - 28px));padding:11px 14px;border:1px solid var(--hexa-border-strong);border-radius:14px;background:color-mix(in srgb,var(--hexa-panel) 96%,transparent);color:var(--hexa-text);box-shadow:0 18px 50px rgba(0,0,0,.28);backdrop-filter:blur(18px);font-size:12px;font-weight:700;transition:opacity .18s ease,transform .18s ease}.hexa-action-toast.show{opacity:1;transform:translate(-50%,0)}.hexa-action-toast.success .hexa-toast-icon{background:rgba(40,200,120,.12);color:#22c77a}.hexa-action-toast.danger .hexa-toast-icon{background:rgba(240,80,90,.12);color:#f05a66}.hexa-toast-icon{width:24px;height:24px;border-radius:8px;background:rgba(127,127,127,.12);display:grid;place-items:center;font-weight:900}.hexa-action-dialog-overlay{position:fixed;inset:0;z-index:4000;background:rgba(3,6,11,.62);display:grid;place-items:center;padding:18px;backdrop-filter:blur(8px)}.hexa-action-dialog{position:relative;overflow:hidden;width:min(470px,100%);border:1px solid var(--hexa-border-strong);border-radius:24px;background:var(--hexa-panel);box-shadow:0 30px 100px rgba(0,0,0,.4);padding:18px}.hexa-action-dialog-glow{position:absolute;width:180px;height:180px;right:-80px;top:-90px;background:radial-gradient(circle,rgba(124,92,255,.24),transparent 70%);pointer-events:none}.hexa-action-dialog-head{position:relative;display:grid;grid-template-columns:42px 1fr 34px;gap:11px;align-items:center}.hexa-action-dialog-badge{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:rgba(124,92,255,.12);border:1px solid rgba(124,92,255,.22);font-weight:900;color:var(--hexa-accent-2)}.hexa-action-dialog.danger .hexa-action-dialog-badge{background:rgba(240,80,90,.10);border-color:rgba(240,80,90,.22);color:#ef6570}.hexa-action-dialog-head strong{display:block;font-size:15px}.hexa-action-dialog-head span{display:block;margin-top:3px;color:var(--hexa-muted);font-size:10px;line-height:1.4}.hexa-action-dialog-close{width:34px;height:34px;border:1px solid var(--hexa-border);border-radius:10px;background:var(--hexa-panel-2);color:var(--hexa-text);font-size:20px;cursor:pointer}.hexa-choice-list{display:grid;gap:7px;margin-top:16px}.hexa-choice-card{display:grid;grid-template-columns:40px 1fr 20px;gap:11px;align-items:center;padding:10px;border:1px solid var(--hexa-border);border-radius:15px;background:var(--hexa-panel-2);color:var(--hexa-text);text-align:left;cursor:pointer}.hexa-choice-card:hover{border-color:var(--hexa-border-strong);background:var(--hexa-panel-3);transform:translateY(-1px)}.hexa-choice-card.selected{border-color:rgba(124,92,255,.48);background:rgba(124,92,255,.09)}.hexa-choice-icon{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--hexa-panel);border:1px solid var(--hexa-border);font-weight:900}.hexa-choice-copy{display:grid;gap:3px}.hexa-choice-copy strong{font-size:12px}.hexa-choice-copy small{font-size:9px;color:var(--hexa-muted)}.hexa-choice-check{color:var(--hexa-muted);font-size:18px}.hexa-choice-card.selected .hexa-choice-check{color:var(--hexa-accent-2)}.hexa-input-dialog{display:grid;gap:14px;margin-top:16px}.hexa-input-dialog label{display:grid;gap:7px}.hexa-input-dialog label span{font-size:10px;color:var(--hexa-muted);font-weight:800;text-transform:uppercase;letter-spacing:.06em}.hexa-input-dialog input{width:100%;box-sizing:border-box;border:1px solid var(--hexa-border);border-radius:13px;padding:13px 14px;background:var(--hexa-panel-2);color:var(--hexa-text);outline:none}.hexa-input-dialog input:focus{border-color:var(--hexa-accent)}.hexa-confirm-body{margin-top:16px}.hexa-confirm-body p{margin:0;color:var(--hexa-muted);font-size:12px;line-height:1.55}.hexa-confirm-icon{width:48px;height:48px;border-radius:15px;display:grid;place-items:center;background:rgba(240,80,90,.10);color:#ef6570;font-size:20px;font-weight:900;margin-bottom:12px}.hexa-confirm-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.hexa-dialog-secondary,.hexa-dialog-primary{min-height:42px;padding:0 15px;border-radius:12px;border:1px solid var(--hexa-border);font-weight:800;cursor:pointer}.hexa-dialog-secondary{background:var(--hexa-panel-2);color:var(--hexa-text)}.hexa-dialog-primary{background:var(--hexa-accent);color:#fff;border-color:transparent}.hexa-dialog-primary.danger{background:#d94c58}.forward-modal{width:min(560px,calc(100vw - 24px))!important;border-radius:24px!important;padding:16px!important}.forward-modal-header{padding-bottom:12px!important}.forward-title-wrap{display:flex;align-items:center;gap:10px}.forward-title-icon{width:42px;height:42px;border-radius:13px;background:rgba(124,92,255,.10);border:1px solid rgba(124,92,255,.22);display:grid;place-items:center;font-size:21px;color:var(--hexa-accent-2)}.forward-preview-card{padding:11px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);border-radius:15px;margin:6px 0 10px}.forward-preview-label{font-size:8px;letter-spacing:.09em;color:var(--hexa-muted);font-weight:900;margin-bottom:8px}.forward-preview-body{display:flex;align-items:center;gap:10px}.forward-preview-type{width:36px;height:36px;display:grid;place-items:center;border-radius:11px;background:var(--hexa-panel);border:1px solid var(--hexa-border);font-size:18px}.forward-preview-body>div{min-width:0;display:grid;gap:3px}.forward-preview-body strong{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:390px}.forward-preview-body small{font-size:9px;color:var(--hexa-muted)}.forward-search-box{display:flex;align-items:center;gap:8px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);border-radius:13px;padding:0 11px;margin:8px 0}.forward-search-box input{width:100%;border:0;outline:0;background:transparent;color:var(--hexa-text);height:40px}.forward-list{display:grid!important;gap:5px!important;max-height:48vh!important;overflow:auto!important;padding-right:2px}.forward-list .person-result{display:grid!important;grid-template-columns:44px 1fr!important;gap:10px!important;align-items:center!important;padding:9px!important;border:1px solid transparent!important;border-radius:14px!important;background:transparent!important;text-align:left!important}.forward-list .person-result:hover{border-color:var(--hexa-border)!important;background:var(--hexa-panel-2)!important}.forward-list .person-result>div{min-width:0;display:grid;gap:3px}.forward-list .person-result strong{font-size:12px}.forward-list .person-result span{font-size:9px;color:var(--hexa-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}@media(max-width:640px){.hexa-action-dialog-overlay{padding:10px;align-items:end}.hexa-action-dialog{border-radius:22px 22px 18px 18px;padding:15px}.hexa-confirm-actions{display:grid;grid-template-columns:1fr 1fr}.hexa-dialog-secondary,.hexa-dialog-primary{width:100%}.forward-modal{max-height:86vh;overflow:auto}.forward-list{max-height:44vh!important}}
 
-`}</style>
+/* ============================================================
+   MOMENTS — PREMIUM SOCIAL INTERACTIONS
+   ============================================================ */
+.moments-story-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 2px 4px}
+.moment-action-button{min-width:58px;min-height:48px;border:1px solid rgba(15,23,42,.09);border-radius:16px;background:#fff;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background .18s ease}
+.moment-action-button:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(15,23,42,.10);border-color:rgba(15,23,42,.16)}
+.moment-action-button span{font-size:20px;line-height:1}
+.moment-action-button small{font-size:12px;font-weight:800;color:#475569}
+.moment-action-button.active{background:#fff1f2;border-color:#fecdd3;color:#e11d48}
+.moment-action-button.liked span{animation:hexaMomentLike .28s ease}
+@keyframes hexaMomentLike{0%{transform:scale(.7)}60%{transform:scale(1.22)}100%{transform:scale(1)}}
+.moment-reaction-picker{display:flex;align-items:center;gap:3px;padding:4px 6px;border:1px solid rgba(15,23,42,.08);background:#f8fafc;border-radius:16px}
+.moment-reaction-button{width:34px;height:34px;border:0;background:transparent;border-radius:10px;font-size:20px;cursor:pointer;transition:transform .15s ease,background .15s ease}
+.moment-reaction-button:hover{transform:scale(1.18);background:#fff}
+.moment-reaction-button.active{background:#fff;box-shadow:0 2px 8px rgba(15,23,42,.10)}
+.premium-comment{padding:10px 0;border-bottom:1px solid rgba(15,23,42,.06)}
+.status-comment-meta{display:flex;align-items:center;gap:10px;margin-top:4px}
+.status-comment-meta small{color:#64748b}
+.status-comment-meta button{border:0;background:transparent;font-size:12px;font-weight:800;color:#334155;cursor:pointer;padding:2px 0}
+.status-comment-meta button:hover{text-decoration:underline}
+.status-comment-form{display:flex;gap:8px;margin-top:12px;padding:8px;border:1px solid rgba(15,23,42,.09);border-radius:18px;background:#fff;box-shadow:0 8px 24px rgba(15,23,42,.06)}
+.status-comment-form input{flex:1;border:0;outline:none;background:transparent;padding:9px 10px;font-size:14px}
+.status-comment-form button{border:0;border-radius:13px;background:#111827;color:#fff;padding:9px 14px;font-weight:800;cursor:pointer}
+.moments-viewer-stats{display:flex;align-items:center;gap:18px;padding:8px 0 2px;font-size:13px;color:#64748b}
+.moments-viewer-stats b{color:#111827}
+@media(max-width:700px){.moment-reaction-picker{order:2;width:100%;justify-content:space-around}.moment-action-button{flex:1}.moments-story-actions{gap:6px}.status-comment-form{position:sticky;bottom:0}}
+`}
+</style>
 
       {session ? (
         <AuthenticatedHEXA
@@ -9394,8 +9359,6 @@ const HEXA_PINNED_MESSAGES_CSS = `
 .hexa-pinned-panel{position:relative;z-index:12;border-bottom:1px solid var(--hexa-border);background:var(--hexa-panel);box-shadow:0 10px 28px rgba(0,0,0,.08);animation:hexaPinnedDrop .18s ease-out}.hexa-pinned-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:13px 16px;border-bottom:1px solid var(--hexa-border)}.hexa-pinned-head>div{min-width:0;display:flex;flex-direction:column;gap:3px}.hexa-pinned-kicker{font-size:9px;font-weight:900;letter-spacing:.12em;color:var(--hexa-accent);text-transform:uppercase}.hexa-pinned-head strong{font-size:13px;color:var(--hexa-text)}.hexa-pinned-head small{font-size:10px;color:var(--hexa-muted)}.hexa-pinned-head>button{width:32px;height:32px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:10px;font-size:18px;cursor:pointer}.hexa-pinned-list{max-height:260px;overflow:auto;padding:7px 10px}.hexa-pinned-item{display:flex;align-items:stretch;gap:6px;border-radius:13px}.hexa-pinned-item:hover{background:var(--hexa-panel-2)}.hexa-pinned-jump{flex:1;display:flex;align-items:center;gap:10px;min-width:0;border:0;background:transparent;color:inherit;text-align:left;padding:10px 8px;border-radius:12px;cursor:pointer}.hexa-pinned-icon{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;background:rgba(124,92,255,.10);flex:0 0 auto}.hexa-pinned-copy{min-width:0;display:flex;flex-direction:column;gap:2px}.hexa-pinned-copy strong,.hexa-pinned-copy span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hexa-pinned-copy strong{font-size:11px;color:var(--hexa-text)}.hexa-pinned-copy span{font-size:12px;color:var(--hexa-text)}.hexa-pinned-copy small{font-size:9px;color:var(--hexa-muted)}.hexa-pinned-unpin{width:32px;margin:7px 5px 7px 0;border:0;background:transparent;color:var(--hexa-muted);border-radius:9px;cursor:pointer;font-size:17px}.hexa-pinned-unpin:hover{background:rgba(255,70,70,.10);color:#f87171}.hexa-pinned-empty{padding:24px 18px 26px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--hexa-muted)}.hexa-pinned-empty>div{width:42px;height:42px;display:grid;place-items:center;border-radius:13px;background:rgba(124,92,255,.10);font-size:20px}.hexa-pinned-empty strong{color:var(--hexa-text);font-size:12px}.hexa-pinned-empty span{font-size:10px;max-width:350px}.pinned-header-count{position:absolute;transform:translate(10px,-10px);min-width:16px;height:16px;padding:0 4px;display:grid;place-items:center;border-radius:999px;background:var(--hexa-accent);color:#fff;font-size:8px;font-weight:900;border:2px solid var(--hexa-panel)}.hexa-pinned-highlight .message-bubble{animation:hexaPinnedHighlight 1.8s ease}.hexa-pinned-highlight{position:relative;z-index:2}@keyframes hexaPinnedDrop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}@keyframes hexaPinnedHighlight{0%{box-shadow:0 0 0 0 rgba(124,92,255,0)}20%{box-shadow:0 0 0 5px rgba(124,92,255,.25)}100%{box-shadow:0 0 0 0 rgba(124,92,255,0)}}[data-hexa-theme="white"] .hexa-pinned-panel{background:#fff;border-color:rgba(0,0,0,.10);box-shadow:0 12px 28px rgba(0,0,0,.07)}[data-hexa-theme="white"] .hexa-pinned-head>button{background:#f7f7f8;color:#111;border-color:rgba(0,0,0,.12)}[data-hexa-theme="white"] .hexa-pinned-item:hover{background:#f7f7f8}[data-hexa-theme="white"] .pinned-header-count{border-color:#fff}@media(max-width:700px){.hexa-pinned-head{padding:11px 12px}.hexa-pinned-list{max-height:220px}.hexa-pinned-copy span{font-size:11px}.pinned-header-count{transform:translate(8px,-8px)}}
 `;
 
-const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS + HEXA_MOMENTS_CSS + HEXA_KORA_CSS + HEXA_COMPOSER_CSS + HEXA_PINNED_MESSAGES_CSS + HEXA_UI_POLISH_CSS;
-
 const HEXA_UI_POLISH_CSS = `
 .hexa-reminders-panel{border-color:rgba(124,92,255,.22)}
 .hexa-reminder-item .hexa-pinned-jump{align-items:flex-start}
@@ -9424,4 +9387,7 @@ const HEXA_UI_POLISH_CSS = `
 .moments-viewer-stats span{font-size:10px}.moments-viewer-stats b{color:#fff;font-size:12px}
 @media(max-width:700px){.moments-story-card{min-width:205px}.moments-story-card .status-preview{height:215px}.moment-card-body{padding:10px}.moments-viewer-topbar{padding:12px}.moments-viewer-stats{gap:12px}}
 `;
+
+const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS + HEXA_MOMENTS_CSS + HEXA_KORA_CSS + HEXA_COMPOSER_CSS + HEXA_PINNED_MESSAGES_CSS + HEXA_UI_POLISH_CSS;
+
 
