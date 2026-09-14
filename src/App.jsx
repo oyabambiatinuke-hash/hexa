@@ -5232,24 +5232,55 @@ function KoraPage({ profile }) {
   async function send() {
     const text = input.trim();
     if (!text || busy) return;
+
     setInput("");
-    setMessages(current => [...current, { id: `u-${Date.now()}`, role: "user", content: text }]);
+    setMessages(current => [
+      ...current,
+      {
+        id: `u-${Date.now()}`,
+        role: "user",
+        content: text
+      }
+    ]);
     setBusy(true);
+
     try {
-      let reply = "I’m Kora. I’m ready to help you with HEXA.";
-      if (typeof koraReply === "function") reply = await koraReply(text);
-      try {
-        const response = await fetch("/api/kora", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text, user_id: profile?.id || null })
-        });
-        if (response.ok) {
-          const data = await response.json();
-          if (data?.reply || data?.message || data?.text) reply = data.reply || data.message || data.text;
+      let reply;
+
+      // Use the authenticated Kora client so the Supabase access token
+      // is sent to /api/kora. The server can then verify the signed-in user.
+      reply = await askKora({
+        profile,
+        messages: [
+          ...messages,
+          { role: "user", content: text }
+        ]
+      });
+
+      setMessages(current => [
+        ...current,
+        {
+          id: `k-${Date.now()}`,
+          role: "kora",
+          content: String(reply)
         }
-      } catch {}
-      setMessages(current => [...current, { id: `k-${Date.now()}`, role: "kora", content: String(reply) }]);
+      ]);
+    } catch (error) {
+      console.error("HEXA Kora request:", error);
+
+      setMessages(current => [
+        ...current,
+        {
+          id: `k-error-${Date.now()}`,
+          role: "kora",
+          content:
+            error?.message?.includes("401") ||
+            error?.message?.toLowerCase?.().includes("unauthorized")
+              ? "Kora could not verify your HEXA session. Please refresh HEXA and try again."
+              : error?.message ||
+                "Kora is temporarily unavailable. Please try again."
+        }
+      ]);
     } finally {
       setBusy(false);
     }
