@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import "./App.css";
 
@@ -1737,6 +1737,7 @@ function ChatPage({
   const mediaRef = useRef(null);
   const cameraRef = useRef(null);
   const chunksRef = useRef([]);
+  const bottomRef = useRef(null);
 
   const isSystem =
     selected?.id === "hexa-system-group" ||
@@ -7102,11 +7103,7 @@ function SettingsPage({ profile, onSignOut, onProfileUpdated }) {
   async function saveLanguage(){
     setLanguage(draftLanguage);
     setSavedLanguage(draftLanguage);
-    try {
-      if (profile?.id) {
-        await supabase.from("profiles").update({ language: draftLanguage, updated_at: new Date().toISOString() }).eq("id", profile.id);
-      }
-    } catch {}
+    try { if(profile?.id) await supabase.from("profiles").update({language:draftLanguage,updated_at:new Date().toISOString()}).eq("id",profile.id); } catch {}
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2200);
   }
