@@ -1462,6 +1462,30 @@ function NexusHome({
    CHAT
    ============================================================ */
 
+async function askKora({ profile, messages = [], prompt = "" } = {}) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData?.session?.access_token;
+  if (!accessToken) throw new Error("Kora session expired. Please sign in again.");
+
+  const payloadMessages = messages.length ? messages : [{ role: "user", content: prompt }];
+  const response = await fetch("/api/kora", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      profile: profile ? { id: profile.id, username: profile.username, full_name: profile.full_name } : undefined,
+      messages: payloadMessages,
+      input: prompt,
+    }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.error || data?.message || `Kora request failed (${response.status})`);
+  return String(data?.reply ?? data?.output ?? data?.message ?? data?.text ?? data?.content ?? "").trim();
+}
+
 function koraReply(input) {
   const q = String(input || "").toLowerCase();
   if (q.includes("hello") || q.includes("hi")) return "Hello. I’m Kora, your HEXA assistant. What would you like to do?";
@@ -1575,6 +1599,8 @@ function ChatPage({
   const [forwardOpen, setForwardOpen] = useState(false);
   const [forwardMessage, setForwardMessage] = useState(null);
   const [actionDialog, setActionDialog] = useState(null);
+  const [translateDialog, setTranslateDialog] = useState(null);
+  const [translationBusy, setTranslationBusy] = useState(false);
 
   const [emojiOpen, setEmojiOpen] = useState(false);
 
@@ -2975,6 +3001,27 @@ function ChatPage({
 
      REACTIONS
      ============================================================ */
+
+  async function translateMessage(item) {
+    if (!item?.content || !profile?.id) return;
+    const targetCode = getSavedHexaLanguage();
+    const targetName = HEXA_LANGUAGE_MAP[targetCode]?.name || targetCode || "English";
+    setContextMenu(null);
+    setTranslationBusy(true);
+    setTranslateDialog({ item, targetCode, targetName, translated: "", error: "" });
+    try {
+      const reply = await askKora({
+        profile,
+        prompt: `Translate the following HEXA chat message into ${targetName}. Preserve names, emojis, URLs, account numbers, codes, and numbers exactly. Return only the translation, with no commentary.\n\nMessage:\n${String(item.content)}`,
+      });
+      if (!reply) throw new Error("No translation returned.");
+      setTranslateDialog(current => current ? { ...current, translated: reply } : null);
+    } catch (error) {
+      setTranslateDialog(current => current ? { ...current, error: error?.message || "Translation failed." } : null);
+    } finally {
+      setTranslationBusy(false);
+    }
+  }
 
   function triggerReactionBurst(messageId, emoji) {
     if (!messageId || !emoji) return;
@@ -5250,6 +5297,34 @@ function renderMessage(item) {
         </div>
       )}
 
+      {translateDialog && (
+        <div className="hexa-translate-overlay" onClick={() => !translationBusy && setTranslateDialog(null)}>
+          <div className="hexa-translate-modal" onClick={event => event.stopPropagation()}>
+            <div className="hexa-translate-head">
+              <div>
+                <span className="hexa-translate-kicker">HEXA SMART TRANSLATE</span>
+                <h3>{translationBusy ? "Translating…" : `Translated to ${translateDialog.targetName}`}</h3>
+              </div>
+              <button type="button" className="hexa-action-dialog-close" disabled={translationBusy} onClick={() => setTranslateDialog(null)}>×</button>
+            </div>
+            <div className="hexa-translate-original">
+              <span>Original</span>
+              <p>{translateDialog.item?.content}</p>
+            </div>
+            <div className="hexa-translate-divider">↓</div>
+            <div className="hexa-translate-result">
+              <span>{translateDialog.targetName}</span>
+              {translationBusy ? <div className="hexa-translate-loading"><i/><i/><i/></div> : translationDialog.error ? <p className="hexa-translate-error">{translationDialog.error}</p> : <p>{translationDialog.translated}</p>}
+            </div>
+            {!translationBusy && !translationDialog.error && translationDialog.translated && (
+              <button type="button" className="hero-primary hexa-translate-copy" onClick={async () => { try { await navigator.clipboard.writeText(translationDialog.translated); safeAlert("Translation copied."); } catch { safeAlert("Could not copy translation."); } }}>
+                Copy translation
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {actionDialog && (
         <div className="hexa-action-dialog-overlay" onClick={closeActionDialog}>
           <div className={`hexa-action-dialog ${actionDialog.danger ? "danger" : ""}`} onClick={event => event.stopPropagation()}>
@@ -5448,6 +5523,16 @@ function renderMessage(item) {
                       <small>Reply to this message</small>
                     </span>
                   </button>
+
+                  {item.content && item.message_type !== "image" && item.message_type !== "video" && item.message_type !== "voice" && item.message_type !== "audio" && (
+                    <button type="button" className="message-action-item" onClick={() => translateMessage(item)}>
+                      <span className="message-action-icon">文</span>
+                      <span className="message-action-copy">
+                        <strong>Translate</strong>
+                        <small>Translate into your HEXA language</small>
+                      </span>
+                    </button>
+                  )}
 
                   <button type="button" className="message-action-item" onClick={() => copyMessage(item)}>
                     <span className="message-action-icon">⧉</span>
@@ -9954,6 +10039,11 @@ const HEXA_UI_POLISH_CSS = `
 
 const HEXA_PROFILE_EDIT_CSS = `
 .profile-edit-modal{width:min(560px,92vw);max-height:min(88vh,760px);overflow:auto;background:var(--hexa-panel);color:var(--hexa-text);border:1px solid var(--hexa-border);border-radius:24px;padding:18px;box-shadow:0 30px 90px rgba(0,0,0,.35)}.profile-edit-modal form{display:grid;gap:11px}.profile-edit-avatar-picker{justify-self:center;display:flex;flex-direction:column;align-items:center;gap:8px;border:0;background:transparent;color:var(--hexa-text);cursor:pointer}.profile-edit-avatar-picker span{font-size:11px;font-weight:800;color:var(--hexa-accent-2)}.profile-settings-copy{min-width:0;display:grid;gap:3px;flex:1}.profile-settings-copy small{color:var(--hexa-muted);font-size:10px;line-height:1.4}.hexa-profile-settings{display:flex;align-items:center;gap:14px}.hexa-profile-settings>.hero-secondary{margin-left:auto;flex:0 0 auto}@media(max-width:650px){.hexa-profile-settings{align-items:flex-start;flex-wrap:wrap}.hexa-profile-settings>.hero-secondary{margin-left:0}.profile-edit-modal{width:100%;padding:14px;border-radius:20px}}
+
+.hexa-translate-overlay{position:fixed;inset:0;z-index:10040;display:grid;place-items:center;padding:20px;background:rgba(5,8,18,.58);backdrop-filter:blur(12px)}
+.hexa-translate-modal{width:min(560px,calc(100vw - 30px));max-height:min(760px,calc(100vh - 30px));overflow:auto;border:1px solid var(--hexa-border-strong);border-radius:24px;background:var(--hexa-panel);box-shadow:0 30px 90px rgba(0,0,0,.35);padding:20px}
+.hexa-translate-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.hexa-translate-kicker{display:block;color:var(--hexa-accent);font-size:10px;font-weight:900;letter-spacing:.14em}.hexa-translate-head h3{margin:6px 0 0;font-size:20px}.hexa-translate-original,.hexa-translate-result{padding:14px;border:1px solid var(--hexa-border);border-radius:16px;background:var(--hexa-panel-2)}.hexa-translate-original span,.hexa-translate-result span{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--hexa-muted);font-weight:800}.hexa-translate-original p,.hexa-translate-result p{margin:8px 0 0;white-space:pre-wrap;line-height:1.55;color:var(--hexa-text)}.hexa-translate-divider{text-align:center;color:var(--hexa-accent);font-size:20px;padding:8px}.hexa-translate-copy{width:100%;margin-top:14px}.hexa-translate-error{color:#ff7a90!important}.hexa-translate-loading{display:flex;gap:7px;padding:15px 0}.hexa-translate-loading i{width:8px;height:8px;border-radius:50%;background:var(--hexa-accent);animation:hexaTranslateDot 900ms infinite ease-in-out}.hexa-translate-loading i:nth-child(2){animation-delay:120ms}.hexa-translate-loading i:nth-child(3){animation-delay:240ms}@keyframes hexaTranslateDot{0%,80%,100%{transform:translateY(0);opacity:.35}40%{transform:translateY(-6px);opacity:1}}
+
 `;
 
 const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_PROFILE_EDIT_CSS + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS + HEXA_MOMENTS_CSS + HEXA_KORA_CSS + HEXA_COMPOSER_CSS + HEXA_PINNED_MESSAGES_CSS + HEXA_UI_POLISH_CSS;
