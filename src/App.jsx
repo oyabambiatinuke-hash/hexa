@@ -32,6 +32,8 @@ const SUPABASE_KEY =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
+
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error(
     "HEXA: Missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY."
@@ -898,6 +900,7 @@ function AuthScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [guestCaptchaToken, setGuestCaptchaToken] = useState("");
 
   const passwordStrength = getPasswordStrength(password);
 
@@ -1068,7 +1071,12 @@ function AuthScreen() {
     clearMessages();
     setBusy(true);
     try {
-      const { data, error } = await supabase.auth.signInAnonymously();
+      if (TURNSTILE_SITE_KEY && !guestCaptchaToken) {
+        throw new Error("Please complete the security check before continuing as a guest.");
+      }
+      const { data, error } = await supabase.auth.signInAnonymously({
+        options: TURNSTILE_SITE_KEY ? { captchaToken: guestCaptchaToken } : undefined,
+      });
       if (error) throw error;
       if (!data?.session) throw new Error("Unable to create a temporary HEXA profile.");
       try { localStorage.removeItem(HEXA_EXPLICIT_SIGNOUT_KEY); } catch {}
@@ -1301,7 +1309,8 @@ function AuthScreen() {
         <div className="hexa-guest-auth-card">
           <strong>Try HEXA without creating an account first</strong>
           <p>We create a secure, temporary profile in your browser. Add an email and password later in Settings to keep access on another device.</p>
-          <button type="button" className="hero-secondary guest-auth-button" onClick={handleContinueAsGuest} disabled={busy}>
+          <div className="hexa-captcha-wrap"><HexaTurnstile onToken={setGuestCaptchaToken} disabled={busy} /></div>
+          <button type="button" className="hero-secondary guest-auth-button" onClick={handleContinueAsGuest} disabled={busy || (!!TURNSTILE_SITE_KEY && !guestCaptchaToken)}>
             {busy ? "Opening HEXA…" : "Continue as guest"}
           </button>
           <a href="/privacy" className="privacy-link">Privacy Policy</a>
@@ -1314,7 +1323,75 @@ function AuthScreen() {
   );
 }
 
-function GuestWelcomeScreen({ onStart, busy }) {
+function HexaTurnstile({ onToken, disabled }) {
+  const mountRef = useRef(null);
+  const widgetIdRef = useRef(null);
+
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY || !mountRef.current) return;
+    let cancelled = false;
+
+    const render = () => {
+      if (cancelled || !window.turnstile || !mountRef.current) return;
+      try {
+        if (widgetIdRef.current !== null) {
+          window.turnstile.remove(widgetIdRef.current);
+          widgetIdRef.current = null;
+        }
+        widgetIdRef.current = window.turnstile.render(mountRef.current, {
+          sitekey: TURNSTILE_SITE_KEY,
+          theme: "auto",
+          size: "flexible",
+          callback: (token) => onToken(token || ""),
+          "expired-callback": () => onToken(""),
+          "error-callback": () => onToken(""),
+        });
+      } catch (error) {
+        console.warn("HEXA Turnstile render:", error);
+        onToken("");
+      }
+    };
+
+    if (window.turnstile) {
+      render();
+    } else {
+      const existing = document.querySelector('script[data-hexa-turnstile="true"]');
+      if (!existing) {
+        const script = document.createElement("script");
+        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+        script.async = true;
+        script.defer = true;
+        script.dataset.hexaTurnstile = "true";
+        script.onload = render;
+        document.head.appendChild(script);
+      } else {
+        existing.addEventListener("load", render, { once: true });
+      }
+    }
+
+    return () => {
+      cancelled = true;
+      try {
+        if (widgetIdRef.current !== null && window.turnstile) {
+          window.turnstile.remove(widgetIdRef.current);
+        }
+      } catch {}
+      widgetIdRef.current = null;
+    };
+  }, [onToken]);
+
+  if (!TURNSTILE_SITE_KEY) {
+    return (
+      <div className="hexa-captcha-missing">
+        CAPTCHA is not configured yet. Add <code>VITE_TURNSTILE_SITE_KEY</code> in Vercel.
+      </div>
+    );
+  }
+
+  return <div ref={mountRef} className={`hexa-turnstile${disabled ? " is-disabled" : ""}`} aria-label="Security verification" />;
+}
+
+function GuestWelcomeScreen({ onStart, busy, captchaToken, onCaptchaToken }) {
   return (
     <div className="hexa-guest-welcome">
       <div className="hexa-guest-welcome-glow hexa-guest-welcome-glow-a" />
@@ -1325,7 +1402,8 @@ function GuestWelcomeScreen({ onStart, busy }) {
         <h1>Welcome to HEXA!</h1>
         <p className="hexa-guest-welcome-lead">Your temporary profile is ready.</p>
         <p className="hexa-guest-welcome-copy">Start chatting without creating a password first. Your temporary session stays in this browser until you secure it from Settings.</p>
-        <button type="button" className="hexa-guest-start-button" onClick={onStart} disabled={busy}>
+        <div className="hexa-captcha-wrap"><HexaTurnstile onToken={onCaptchaToken} disabled={busy} /></div>
+        <button type="button" className="hexa-guest-start-button" onClick={onStart} disabled={busy || (!!TURNSTILE_SITE_KEY && !captchaToken)}>
           <span className="hexa-guest-start-icon">{busy ? "…" : "→"}</span>
           <span>{busy ? "Opening HEXA…" : "Start Chatting"}</span>
         </button>
@@ -7896,6 +7974,7 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [showGuestWelcome, setShowGuestWelcome] = useState(false);
   const [guestStarting, setGuestStarting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
 
   const mountedRef = useRef(true);
 
@@ -8079,8 +8158,23 @@ export default function App() {
         return;
       }
 
-      const guest = await supabase.auth.signInAnonymously();
-      if (guest.error) throw guest.error;
+      if (TURNSTILE_SITE_KEY && !captchaToken) {
+        throw new Error("Please complete the security check before starting HEXA.");
+      }
+
+      const guest = await supabase.auth.signInAnonymously({
+        options: TURNSTILE_SITE_KEY ? { captchaToken } : undefined,
+      });
+      if (guest.error) {
+        const message = guest.error.message || "";
+        if (/anonymous/i.test(message) && /disabled|not enabled|not allowed/i.test(message)) {
+          throw new Error("HEXA anonymous sign-in is not enabled in Supabase. In Supabase Dashboard open Authentication → Sign In / Providers → Anonymous Sign-Ins and enable it. Then save the settings and try again.");
+        }
+        if (/captcha|turnstile/i.test(message)) {
+          throw new Error("HEXA security verification failed. Please complete the CAPTCHA again and retry.");
+        }
+        throw guest.error;
+      }
       if (!guest.data?.session) throw new Error("HEXA could not open the temporary profile.");
 
       try { localStorage.removeItem(HEXA_EXPLICIT_SIGNOUT_KEY); } catch {}
@@ -8177,7 +8271,7 @@ export default function App() {
 .hexa-guest-welcome-glow{position:absolute;border-radius:50%;filter:blur(45px);pointer-events:none}.hexa-guest-welcome-glow-a{width:260px;height:260px;left:-90px;top:-70px;background:rgba(118,87,255,.18)}.hexa-guest-welcome-glow-b{width:240px;height:240px;right:-80px;bottom:-70px;background:rgba(39,214,197,.12)}
 @media(max-width:700px){.hexa-guest-welcome{padding:14px}.hexa-guest-welcome-card{padding:30px 20px;border-radius:27px}.hexa-guest-welcome-logo{width:64px;height:64px;border-radius:20px;font-size:28px}.hexa-guest-welcome-card h1{font-size:34px}.hexa-guest-welcome-copy{font-size:12px}.hexa-guest-start-button{min-height:58px}}
 `}</style>
-        <GuestWelcomeScreen onStart={handleStartGuestChat} busy={guestStarting} />
+        <GuestWelcomeScreen onStart={handleStartGuestChat} busy={guestStarting} captchaToken={captchaToken} onCaptchaToken={setCaptchaToken} />
       </HexaLanguageProvider>
     );
   }
