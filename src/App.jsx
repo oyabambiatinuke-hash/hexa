@@ -1567,6 +1567,7 @@ function ChatPage({
   const [peopleLoading, setPeopleLoading] = useState(false);
 
   const [replyTo, setReplyTo] = useState(null);
+  const [reactionBursts, setReactionBursts] = useState([]);
   const [editing, setEditing] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [reactionMenu, setReactionMenu] = useState(null);
@@ -1631,7 +1632,6 @@ function ChatPage({
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [recordingError, setRecordingError] = useState("");
   const [recordedVoice, setRecordedVoice] = useState(null);
-  const recorderRef = useRef(null);
   const recorderStreamRef = useRef(null);
   const recorderChunksRef = useRef([]);
   const recordingTimerRef = useRef(null);
@@ -1736,6 +1736,7 @@ function ChatPage({
 
   const mediaRef = useRef(null);
   const cameraRef = useRef(null);
+  const recorderRef = useRef(null);
   const chunksRef = useRef([]);
   const bottomRef = useRef(null);
 
@@ -2975,6 +2976,29 @@ function ChatPage({
      REACTIONS
      ============================================================ */
 
+  function triggerReactionBurst(messageId, emoji) {
+    if (!messageId || !emoji) return;
+    const burstId = `${messageId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setReactionBursts(current => [
+      ...current.filter(item => item.messageId !== messageId),
+      {
+        id: burstId,
+        messageId: String(messageId),
+        emoji,
+        particles: Array.from({ length: 8 }, (_, index) => ({
+          id: `${burstId}-${index}`,
+          x: (index - 3.5) * 10 + (Math.random() * 16 - 8),
+          y: -(44 + Math.random() * 56),
+          delay: Math.random() * 90,
+          rotate: Math.round(Math.random() * 50 - 25),
+        })),
+      },
+    ]);
+    window.setTimeout(() => {
+      setReactionBursts(current => current.filter(item => item.id !== burstId));
+    }, 1250);
+  }
+
   async function reactToMessage(item, emoji) {
     if (!item?.id || !profile?.id) return;
     setReactionMenu(null);
@@ -2985,6 +3009,7 @@ function ChatPage({
         p_reaction: emoji,
       });
       if (error) throw error;
+      triggerReactionBurst(item.id, emoji);
       await loadMessages(selected);
     } catch (error) {
       console.warn("HEXA reaction:", error);
@@ -3773,9 +3798,33 @@ function renderMessage(item) {
               mine
                 ? "mine"
                 : ""
+            } ${
+              reactionBursts.some(burst => burst.messageId === String(item.id))
+                ? "hexa-reaction-pulse"
+                : ""
             }`
           }
         >
+          {reactionBursts
+            .filter(burst => burst.messageId === String(item.id))
+            .map(burst => (
+              <div className="hexa-reaction-burst" key={burst.id} aria-hidden="true">
+                {burst.particles.map(particle => (
+                  <span
+                    key={particle.id}
+                    className="hexa-reaction-particle"
+                    style={{
+                      '--burst-x': `${particle.x}px`,
+                      '--burst-y': `${particle.y}px`,
+                      '--burst-delay': `${particle.delay}ms`,
+                      '--burst-rotate': `${particle.rotate}deg`,
+                    }}
+                  >
+                    {burst.emoji}
+                  </span>
+                ))}
+              </div>
+            ))}
           {item.forwarded && (
             <div className="forwarded-label">
               ↪ Forwarded
@@ -9430,7 +9479,12 @@ const APP_STYLES_TAIL = `
 
 /* HEXA feature extensions */
 .notifications-panel{position:absolute;right:22px;top:72px;width:min(390px,calc(100vw - 28px));background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:18px;box-shadow:var(--hexa-shadow);z-index:100;padding:10px}.notifications-header{display:flex;justify-content:space-between;align-items:center;padding:12px 10px;border-bottom:1px solid var(--hexa-border)}.notifications-header button{background:none;border:0;color:var(--hexa-accent-2)}.notification-item{display:flex;gap:12px;padding:14px 10px;border-bottom:1px solid var(--hexa-border)}.notification-item>span{color:var(--hexa-accent)}.notification-item p{margin:4px 0;color:var(--hexa-muted)}.notification-item small{color:var(--hexa-muted)}.notification-empty{padding:28px;text-align:center;color:var(--hexa-muted)}.notification-button{position:relative}.notification-button b{position:absolute;right:0;top:-5px;min-width:17px;height:17px;padding:0 4px;border-radius:99px;background:var(--hexa-danger);font-size:9px;display:grid;place-items:center;color:#fff}.entity-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}.entity-card{padding:20px;border:1px solid var(--hexa-border);background:var(--hexa-panel);border-radius:18px;display:flex;flex-direction:column;gap:9px}.entity-card span,.entity-card small{color:var(--hexa-muted)}.entity-modal,.status-modal{width:min(620px,calc(100vw - 28px));max-height:90vh;overflow:auto;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:22px;padding:22px;box-shadow:var(--hexa-shadow)}.modal-input{width:100%;margin:8px 0;padding:13px 14px;border-radius:12px;border:1px solid var(--hexa-border);background:rgba(255,255,255,.035);color:var(--hexa-text);outline:none}.modal-textarea{min-height:90px;resize:vertical}.media-picker{width:100%;display:flex;align-items:center;gap:14px;text-align:left;padding:12px;border:1px dashed var(--hexa-border-strong);border-radius:14px;background:transparent;color:var(--hexa-text);margin:8px 0 14px}.media-picker img{width:52px;height:52px;border-radius:12px;object-fit:cover}.media-picker span{width:52px;height:52px;border-radius:12px;display:grid;place-items:center;background:var(--hexa-panel-3);font-size:25px}.media-picker small{display:block;color:var(--hexa-muted);margin-top:3px}.member-picker{display:grid;gap:7px;max-height:180px;overflow:auto;margin-bottom:16px}.member-option{display:flex;align-items:center;gap:9px;padding:7px;border-radius:10px}.member-option:hover{background:rgba(255,255,255,.04)}.status-composer-tabs{display:flex;gap:8px;margin-bottom:10px}.status-composer-tabs button{flex:1;padding:11px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:11px}.status-media-preview img,.status-media-preview video{width:100%;max-height:300px;object-fit:contain;border-radius:14px;margin:8px 0}.privacy-row{display:flex;align-items:center;justify-content:space-between;margin:12px 0;color:var(--hexa-muted)}.privacy-row select{background:var(--hexa-panel-2);color:var(--hexa-text);border:1px solid var(--hexa-border);padding:9px;border-radius:10px}.status-card.unseen .status-preview{box-shadow:0 0 0 3px var(--hexa-accent)}.status-card.seen{opacity:.8}.status-preview img,.status-preview video{width:100%;height:100%;object-fit:cover;border-radius:inherit}.story-viewer{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:500;display:grid;place-items:center;padding:20px}.story-content{width:min(520px,100%);height:min(88vh,820px);position:relative;background:#000;border-radius:20px;overflow:hidden;display:flex;align-items:center;justify-content:center}.story-content img,.story-content video{width:100%;height:100%;object-fit:contain}.story-text{font-size:34px;font-weight:800;text-align:center;padding:30px}.story-caption{position:absolute;left:18px;right:18px;bottom:58px;padding:10px;border-radius:10px;background:rgba(0,0,0,.45)}.story-actions{position:absolute;bottom:10px;right:12px;display:flex;gap:6px}.story-actions button,.story-close{border:0;background:rgba(255,255,255,.12);color:#fff;border-radius:50%;width:38px;height:38px}.story-close{position:absolute;right:22px;top:20px;z-index:2;font-size:25px}.story-progress{position:absolute;top:12px;left:20px;right:20px;height:3px;background:rgba(255,255,255,.35);z-index:2}.search-results{display:grid;gap:6px;padding:8px}.search-person{display:flex;align-items:center;gap:12px;padding:10px;border:0;background:transparent;color:var(--hexa-text);text-align:left;border-radius:12px}.search-person:hover{background:rgba(255,255,255,.05)}.search-person div{flex:1}.search-person span{display:block;color:var(--hexa-muted);font-size:12px}.search-person b{font-size:12px;color:var(--hexa-accent-2)}.settings-grid{display:grid;gap:12px;max-width:760px}.settings-card{display:flex;align-items:center;gap:16px;justify-content:space-between;padding:18px;border:1px solid var(--hexa-border);background:var(--hexa-panel);border-radius:18px}.settings-card>div:first-child{flex:1}.settings-card p{color:var(--hexa-muted);margin:5px 0 0}.settings-card button{border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);padding:10px 14px;border-radius:10px}.settings-card.danger button{color:#fff;background:var(--hexa-danger);border-color:transparent}
-.reply-bar{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:8px 14px;background:var(--hexa-panel-2);border-top:1px solid var(--hexa-border);font-size:12px;color:var(--hexa-muted)}.reply-bar button{border:0;background:none;color:var(--hexa-text)}.message-bubble-wrap{position:relative;max-width:86%}.message-tools{display:none;position:absolute;right:0;top:-34px;background:var(--hexa-panel);border:1px solid var(--hexa-border);border-radius:10px;padding:3px;z-index:4}.message-bubble-wrap:hover .message-tools{display:flex}.message-tools button{border:0;background:none;color:var(--hexa-text);padding:5px}.reaction-picker{position:absolute;bottom:32px;right:0;display:flex;background:var(--hexa-panel);border:1px solid var(--hexa-border);border-radius:14px;padding:5px;box-shadow:var(--hexa-shadow)}.reaction-summary{font-size:12px;background:var(--hexa-panel-2);border-radius:10px;padding:3px 7px;display:inline-block;margin-top:3px}.message-media{display:block;max-width:280px;max-height:340px;border-radius:12px;object-fit:contain}.gif-panel{position:absolute;left:14px;right:14px;bottom:76px;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:16px;padding:10px;z-index:30;box-shadow:var(--hexa-shadow)}.gif-search{display:flex;gap:7px}.gif-search input{flex:1}.gif-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;max-height:240px;overflow:auto;margin-top:8px}.gif-grid button{padding:0;border:0;background:none}.gif-grid img{width:100%;height:70px;object-fit:cover;border-radius:7px}.muted{color:var(--hexa-muted)}
+.reply-bar{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:8px 14px;background:var(--hexa-panel-2);border-top:1px solid var(--hexa-border);font-size:12px;color:var(--hexa-muted)}.reply-bar button{border:0;background:none;color:var(--hexa-text)}.message-bubble-wrap{position:relative;max-width:86%}.message-tools{display:none;position:absolute;right:0;top:-34px;background:var(--hexa-panel);border:1px solid var(--hexa-border);border-radius:10px;padding:3px;z-index:4}.message-bubble-wrap:hover .message-tools{display:flex}.message-tools button{border:0;background:none;color:var(--hexa-text);padding:5px}.reaction-picker{position:absolute;bottom:32px;right:0;display:flex;background:var(--hexa-panel);border:1px solid var(--hexa-border);border-radius:14px;padding:5px;box-shadow:var(--hexa-shadow)}.reaction-summary{font-size:12px;background:var(--hexa-panel-2);border-radius:10px;padding:3px 7px;display:inline-block;margin-top:3px}.hexa-reaction-pulse{animation:hexaReactionPulse .62s cubic-bezier(.22,1,.36,1)}
+.hexa-reaction-burst{position:absolute;inset:0;pointer-events:none;z-index:8;display:grid;place-items:center;overflow:visible}
+.hexa-reaction-particle{position:absolute;font-size:20px;filter:drop-shadow(0 4px 8px rgba(0,0,0,.18));animation:hexaReactionFloat 1.08s cubic-bezier(.16,.84,.31,1) forwards;animation-delay:var(--burst-delay);opacity:0;transform:translate3d(0,8px,0) scale(.55) rotate(0deg)}
+@keyframes hexaReactionPulse{0%{transform:scale(1)}35%{transform:scale(1.018)}65%{transform:scale(.996)}100%{transform:scale(1)}}
+@keyframes hexaReactionFloat{0%{opacity:0;transform:translate3d(0,8px,0) scale(.55) rotate(0deg)}18%{opacity:1}72%{opacity:1}100%{opacity:0;transform:translate3d(var(--burst-x),var(--burst-y),0) scale(1.05) rotate(var(--burst-rotate))}}
+.message-media{display:block;max-width:280px;max-height:340px;border-radius:12px;object-fit:contain}.gif-panel{position:absolute;left:14px;right:14px;bottom:76px;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:16px;padding:10px;z-index:30;box-shadow:var(--hexa-shadow)}.gif-search{display:flex;gap:7px}.gif-search input{flex:1}.gif-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;max-height:240px;overflow:auto;margin-top:8px}.gif-grid button{padding:0;border:0;background:none}.gif-grid img{width:100%;height:70px;object-fit:cover;border-radius:7px}.muted{color:var(--hexa-muted)}
 
 /* HEXA wallet UI */
 .wallet-credit-modal{width:min(560px,calc(100vw - 28px))}.wallet-security-field{display:grid;gap:4px;margin-top:10px}.wallet-security-field>span{font-size:11px;color:var(--hexa-muted)}.wallet-security-note{margin:12px 0;padding:12px;border:1px solid var(--hexa-border);background:rgba(124,92,255,.07);border-radius:12px;color:var(--hexa-muted);font-size:11px;line-height:1.5}.wallet-buy-button{width:100%;margin-top:8px}.hexa-modal-backdrop{position:fixed;inset:0;z-index:900;background:rgba(0,0,0,.72);display:grid;place-items:center;padding:14px}
