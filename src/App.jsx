@@ -32,7 +32,19 @@ const SUPABASE_KEY =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || "0x4AAAAAAE2fwQUazL1ercgF";
+const HEXA_TURNSTILE_WIDGET_KEY = "__HEXA_TURNSTILE_WIDGET_ID__";
+
+function getCurrentTurnstileToken(fallback = "") {
+  try {
+    const widgetId = typeof window !== "undefined" ? window[HEXA_TURNSTILE_WIDGET_KEY] : null;
+    if (widgetId !== null && widgetId !== undefined && window.turnstile?.getResponse) {
+      const liveToken = window.turnstile.getResponse(widgetId);
+      if (liveToken) return liveToken;
+    }
+  } catch {}
+  return fallback || "";
+}
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error(
@@ -1071,14 +1083,24 @@ function AuthScreen() {
     clearMessages();
     setBusy(true);
     try {
-      if (TURNSTILE_SITE_KEY && !guestCaptchaToken) {
+      const { data: existingSessionData } = await supabase.auth.getSession();
+      if (existingSessionData?.session) {
+        await ensureHexaProfile(existingSessionData.session.user);
+        return;
+      }
+      const resolvedCaptchaToken = TURNSTILE_SITE_KEY ? getCurrentTurnstileToken(guestCaptchaToken) : "";
+      if (TURNSTILE_SITE_KEY && !resolvedCaptchaToken) {
         throw new Error("Please complete the security check before continuing as a guest.");
       }
       const { data, error } = await supabase.auth.signInAnonymously({
-        options: TURNSTILE_SITE_KEY ? { captchaToken: guestCaptchaToken } : undefined,
+        options: TURNSTILE_SITE_KEY ? { captchaToken: resolvedCaptchaToken } : undefined,
       });
       if (error) throw error;
       if (!data?.session) throw new Error("Unable to create a temporary HEXA profile.");
+      try {
+        const widgetId = typeof window !== "undefined" ? window[HEXA_TURNSTILE_WIDGET_KEY] : null;
+        if (widgetId !== null && widgetId !== undefined && window.turnstile?.reset) window.turnstile.reset(widgetId);
+      } catch {}
       try { localStorage.removeItem(HEXA_EXPLICIT_SIGNOUT_KEY); } catch {}
       await ensureHexaProfile(data.user);
     } catch (err) {
@@ -1340,12 +1362,15 @@ function HexaTurnstile({ onToken, disabled }) {
         }
         widgetIdRef.current = window.turnstile.render(mountRef.current, {
           sitekey: TURNSTILE_SITE_KEY,
+          action: "guest_signup",
           theme: "auto",
           size: "flexible",
           callback: (token) => onToken(token || ""),
           "expired-callback": () => onToken(""),
           "error-callback": () => onToken(""),
+          "timeout-callback": () => onToken(""),
         });
+        try { window[HEXA_TURNSTILE_WIDGET_KEY] = widgetIdRef.current; } catch {}
       } catch (error) {
         console.warn("HEXA Turnstile render:", error);
         onToken("");
@@ -1376,6 +1401,9 @@ function HexaTurnstile({ onToken, disabled }) {
           window.turnstile.remove(widgetIdRef.current);
         }
       } catch {}
+      if (typeof window !== "undefined") {
+        try { delete window[HEXA_TURNSTILE_WIDGET_KEY]; } catch {}
+      }
       widgetIdRef.current = null;
     };
   }, [onToken]);
@@ -8158,12 +8186,13 @@ export default function App() {
         return;
       }
 
-      if (TURNSTILE_SITE_KEY && !captchaToken) {
+      const resolvedCaptchaToken = TURNSTILE_SITE_KEY ? getCurrentTurnstileToken(captchaToken) : "";
+      if (TURNSTILE_SITE_KEY && !resolvedCaptchaToken) {
         throw new Error("Please complete the security check before starting HEXA.");
       }
 
       const guest = await supabase.auth.signInAnonymously({
-        options: TURNSTILE_SITE_KEY ? { captchaToken } : undefined,
+        options: TURNSTILE_SITE_KEY ? { captchaToken: resolvedCaptchaToken } : undefined,
       });
       if (guest.error) {
         const message = guest.error.message || "";
@@ -8176,6 +8205,10 @@ export default function App() {
         throw guest.error;
       }
       if (!guest.data?.session) throw new Error("HEXA could not open the temporary profile.");
+      try {
+        const widgetId = typeof window !== "undefined" ? window[HEXA_TURNSTILE_WIDGET_KEY] : null;
+        if (widgetId !== null && widgetId !== undefined && window.turnstile?.reset) window.turnstile.reset(widgetId);
+      } catch {}
 
       try { localStorage.removeItem(HEXA_EXPLICIT_SIGNOUT_KEY); } catch {}
       await ensureHexaProfile(guest.data.user);
