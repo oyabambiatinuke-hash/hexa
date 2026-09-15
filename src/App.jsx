@@ -1616,6 +1616,14 @@ function ChatPage({
   const [locationOpen, setLocationOpen] = useState(false);
 
   const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordingError, setRecordingError] = useState("");
+  const [recordedVoice, setRecordedVoice] = useState(null);
+  const recorderRef = useRef(null);
+  const recorderStreamRef = useRef(null);
+  const recorderChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
+  const recordingStartedAtRef = useRef(0);
   const [attachment, setAttachment] = useState(null);
 
   const [chatSettingsOpen, setChatSettingsOpen] =
@@ -1716,8 +1724,7 @@ function ChatPage({
 
   const mediaRef = useRef(null);
   const cameraRef = useRef(null);
-  const recorderRef = useRef(null);
-  const chunksRef = useRef([]);
+   const chunksRef = useRef([]);
   const bottomRef = useRef(null);
 
   const isSystem =
@@ -1946,32 +1953,42 @@ function ChatPage({
         );
       }
 
-      const { data, error } =
+      const { data: messageRows, error } =
         await supabase
           .from("messages")
-          .select(
-            "*, message_reactions(*), message_attachments(*), message_user_actions(*)"
-          )
-          .eq(
-            "conversation_id",
-            conversationId
-          )
-          .is(
-            "deleted_at",
-            null
-          )
-          .order(
-            "created_at",
-            {
-              ascending: true
-            }
-          );
+          .select("*")
+          .eq("conversation_id", conversationId)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: true });
 
-      if (error) {
-        throw error;
+      if (error) throw error;
+
+      const messageIds = (messageRows || []).map(row => row.id).filter(Boolean);
+      let reactions = [];
+      let attachments = [];
+      let userActions = [];
+      if (messageIds.length) {
+        const [reactionR, attachmentR, actionR] = await Promise.all([
+          supabase.from("message_reactions").select("*").in("message_id", messageIds),
+          supabase.from("message_attachments").select("*").in("message_id", messageIds),
+          supabase.from("message_user_actions").select("*").in("message_id", messageIds).eq("user_id", profile.id),
+        ]);
+        if (reactionR.error) console.warn("HEXA message reactions:", reactionR.error.message);
+        if (attachmentR.error) console.warn("HEXA message attachments:", attachmentR.error.message);
+        if (actionR.error) console.warn("HEXA message actions:", actionR.error.message);
+        reactions = reactionR.data || [];
+        attachments = attachmentR.data || [];
+        userActions = actionR.data || [];
       }
 
-      const visible = (data || []).filter((row) => {
+      const data = (messageRows || []).map(row => ({
+        ...row,
+        message_reactions: reactions.filter(r => String(r.message_id) === String(row.id)),
+        message_attachments: attachments.filter(a => String(a.message_id) === String(row.id)),
+        message_user_actions: userActions.filter(a => String(a.message_id) === String(row.id)),
+      }));
+
+      const visible = data.filter((row) => {
         const actions = Array.isArray(row.message_user_actions)
           ? row.message_user_actions
           : [];
@@ -2447,13 +2464,130 @@ function ChatPage({
     };
   }
 
-  async function sendMessage(event) {
+  function cleanupVoiceRecorder() {
+    if (recordingTimerRef.current) {
+      window.clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    recorderStreamRef.current?.getTracks?.().forEach(track => track.stop());
+    recorderStreamRef.current = null;
+    recorderRef.current = null;
+  }
+
+  async function startVoiceRecording() {
+    if (recording || recordedVoice) return;
+    setRecordingError("");
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setRecordingError("Voice recording is not supported by this browser.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recorderStreamRef.current = stream;
+      recorderChunksRef.current = [];
+      const mimeCandidates = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/ogg;codecs=opus",
+        "audio/mp4"
+      ];
+      const mimeType = mimeCandidates.find(type => MediaRecorder.isTypeSupported?.(type)) || "";
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      recorderRef.current = recorder;
+      recordingStartedAtRef.current = Date.now();
+      recorder.ondataavailable = event => {
+        if (event.data?.size) recorderChunksRef.current.push(event.data);
+      };
+      recorder.onerror = () => {
+        setRecordingError("The microphone recorder stopped unexpectedly.");
+        cleanupVoiceRecorder();
+        setRecording(false);
+      };
+      recorder.onstop = () => {
+        const duration = Math.max(0, Math.round((Date.now() - recordingStartedAtRef.current) / 1000));
+        const blob = new Blob(recorderChunksRef.current, { type: recorder.mimeType || mimeType || "audio/webm" });
+        cleanupVoiceRecorder();
+        if (!blob.size) {
+          setRecording(false);
+          setRecordingError("No voice audio was captured. Please try again.");
+          return;
+        }
+        const ext = blob.type.includes("ogg") ? "ogg" : blob.type.includes("mp4") ? "m4a" : "webm";
+        const url = URL.createObjectURL(blob);
+        setRecordedVoice({
+          blob,
+          url,
+          mimeType: blob.type,
+          duration,
+          name: `hexa-voice-${Date.now()}.${ext}`,
+        });
+        setRecording(false);
+      };
+      recorder.start(150);
+      setRecording(true);
+      setRecordingSeconds(0);
+      recordingTimerRef.current = window.setInterval(() => {
+        setRecordingSeconds(Math.max(0, Math.floor((Date.now() - recordingStartedAtRef.current) / 1000)));
+      }, 250);
+    } catch (error) {
+      cleanupVoiceRecorder();
+      setRecording(false);
+      setRecordingError(error?.name === "NotAllowedError" ? "Microphone permission was denied. Allow microphone access and try again." : (error?.message || "Unable to start voice recording."));
+    }
+  }
+
+  function stopVoiceRecording() {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
+    recorder.stop();
+  }
+
+  function cancelVoiceRecording() {
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      recorder.onstop = null;
+      try { recorder.stop(); } catch {}
+    }
+    cleanupVoiceRecorder();
+    if (recordedVoice?.url) URL.revokeObjectURL(recordedVoice.url);
+    setRecordedVoice(null);
+    setRecording(false);
+    setRecordingSeconds(0);
+    setRecordingError("");
+  }
+
+  function discardRecordedVoice() {
+    if (recordedVoice?.url) URL.revokeObjectURL(recordedVoice.url);
+    setRecordedVoice(null);
+    setRecordingSeconds(0);
+    setRecordingError("");
+  }
+
+  function sendRecordedVoice() {
+    if (!recordedVoice?.blob) return;
+    const file = new File(
+      [recordedVoice.blob],
+      recordedVoice.name || `hexa-voice-${Date.now()}.webm`,
+      { type: recordedVoice.mimeType || recordedVoice.blob.type || "audio/webm" }
+    );
+    setRecordedVoice(null);
+    setMessage("");
+    sendMessage(null, { name: file.name, type: "voice", file });
+  }
+
+  useEffect(() => () => {
+    cleanupVoiceRecorder();
+    if (recordedVoice?.url) URL.revokeObjectURL(recordedVoice.url);
+  }, []);
+
+    async function sendMessage(event, overrideAttachment = null) {
     event?.preventDefault();
 
+    const activeAttachment = overrideAttachment || attachment;
     const text = message.trim();
-    if (!text && !attachment) return;
+    if (!text && !activeAttachment) return;
 
-    const inputError = validateMessageInput(text, attachment?.file || attachment);
+    const inputError = validateMessageInput(text, activeAttachment?.file || activeAttachment);
     if (inputError) {
       safeAlert(inputError);
       return;
@@ -2508,12 +2642,12 @@ function ChatPage({
     const clientMessageId = `hexa-${crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
     const optimisticId = `local-${clientMessageId}`;
     let upload = null;
-    let messageType = attachment?.type || "text";
+    let messageType = activeAttachment?.type || "text";
 
-    if (attachment?.file) {
-      messageType = attachment.type || "file";
+    if (activeAttachment?.file) {
+      messageType = activeAttachment.type || "file";
       try {
-        upload = await uploadChatAttachment(attachment.file);
+        upload = await uploadChatAttachment(activeAttachment.file);
       } catch (error) {
         console.error("HEXA attachment upload:", error);
         safeAlert(error?.message || "Unable to upload this attachment.");
@@ -2525,7 +2659,7 @@ function ChatPage({
       id: optimisticId,
       conversation_id: conversationId,
       sender_id: profile.id,
-      content: text || attachment?.name || "",
+      content: text || (messageType === "voice" ? "🎙 Voice message" : activeAttachment?.name || "Media"),
       message_type: messageType,
       created_at: new Date().toISOString(),
       reply_to_id: replyTo?.id || null,
@@ -2533,11 +2667,11 @@ function ChatPage({
       status: "sending",
       metadata: upload ? { storage_bucket: upload.bucket, storage_path: upload.path, file_url: upload.url } : {},
       message_attachments: upload ? [{
-        file_name: attachment.name,
+        file_name: activeAttachment.name,
         file_path: upload.path,
         file_url: upload.url,
-        mime_type: attachment.file.type || "application/octet-stream",
-        file_size: attachment.file.size || 0,
+        mime_type: activeAttachment.file.type || "application/octet-stream",
+        file_size: activeAttachment.file.size || 0,
       }] : [],
       pending: true,
     };
@@ -2558,7 +2692,7 @@ function ChatPage({
       const payload = {
         conversation_id: conversationId,
         sender_id: profile.id,
-        content: text || attachment?.name || "",
+        content: text || (messageType === "voice" ? "🎙 Voice message" : activeAttachment?.name || "Media"),
         message_type: messageType,
         reply_to_id: replyTo?.id || null,
         client_message_id: clientMessageId,
@@ -2566,9 +2700,9 @@ function ChatPage({
           storage_bucket: upload.bucket,
           storage_path: upload.path,
           file_url: upload.url,
-          mime_type: attachment?.file?.type || null,
-          file_name: attachment?.name || null,
-          file_size: attachment?.file?.size || null,
+          mime_type: activeAttachment?.file?.type || null,
+          file_name: activeAttachment?.name || null,
+          file_size: activeAttachment?.file?.size || null,
         } : {},
         status: "sent",
       };
@@ -2576,7 +2710,7 @@ function ChatPage({
       const { data, error } = await supabase
         .from("messages")
         .insert(payload)
-        .select("*, message_reactions(*), message_attachments(*), message_user_actions(*)")
+        .select("*")
         .single();
       if (error) throw error;
 
@@ -2586,26 +2720,38 @@ function ChatPage({
           .insert({
             message_id: data.id,
             user_id: profile.id,
-            file_name: attachment.name,
+            file_name: activeAttachment.name,
             file_path: upload.path,
             file_url: upload.url,
-            mime_type: attachment.file.type || "application/octet-stream",
-            file_size: attachment.file.size || 0,
-            width: attachment.file.width || null,
-            height: attachment.file.height || null,
-            duration: attachment.file.duration || null,
+            mime_type: activeAttachment.file.type || "application/octet-stream",
+            file_size: activeAttachment.file.size || 0,
+            width: activeAttachment.file.width || null,
+            height: activeAttachment.file.height || null,
+            duration: activeAttachment.file.duration || null,
           });
         if (attachmentError) {
           console.warn("HEXA attachment record:", attachmentError.message);
+        } else {
+          data.message_attachments = [{
+            message_id: data.id,
+            user_id: profile.id,
+            file_name: activeAttachment.name,
+            file_path: upload.path,
+            file_url: upload.url,
+            mime_type: activeAttachment.file.type || "application/octet-stream",
+            file_size: activeAttachment.file.size || 0,
+          }];
         }
       }
+      data.message_reactions = [];
+      data.message_user_actions = [];
 
       setMessages((current) => current.map((item) => item.id === optimisticId ? data : item));
       updateConversationPreview(selected, data);
     } catch (error) {
       console.error("HEXA send message:", error);
       // Files cannot safely be serialized into localStorage; text messages can.
-      if (!attachment?.file) {
+      if (!activeAttachment?.file) {
         try {
           const queue = readLocalQueue();
           queue.push({ ...optimisticMessage, pending: true, failed: true });
@@ -3466,7 +3612,59 @@ function ChatPage({
      MESSAGE RENDERER
      ============================================================ */
 
-  function renderMessage(item) {
+  function renderSmartChatText(text) {
+  const source = String(text ?? "");
+  if (!source) return null;
+
+  // Only URLs are clickable. Numbers with 7+ digits are visual-only
+  // highlights; numbers with 6 or fewer digits remain normal text.
+  const tokenPattern = /(https?:\/\/[^\s]+|www\.[^\s]+|(?<!\d)\d{7,}(?!\d))/gi;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = tokenPattern.exec(source))) {
+    if (match.index > lastIndex) {
+      parts.push({ type: "text", value: source.slice(lastIndex, match.index), key: `t-${lastIndex}` });
+    }
+    const raw = match[0];
+    const isUrl = /^(https?:\/\/|www\.)/i.test(raw);
+    parts.push({ type: isUrl ? "url" : "number", value: raw, key: `l-${match.index}` });
+    lastIndex = tokenPattern.lastIndex;
+  }
+
+  if (lastIndex < source.length) {
+    parts.push({ type: "text", value: source.slice(lastIndex), key: `t-${lastIndex}` });
+  }
+
+  return parts.map(part => {
+    if (part.type === "url") {
+      const href = /^https?:\/\//i.test(part.value) ? part.value : `https://${part.value}`;
+      return (
+        <a
+          key={part.key}
+          className="hexa-chat-link"
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={event => event.stopPropagation()}
+        >
+          {part.value}
+        </a>
+      );
+    }
+    if (part.type === "number") {
+      return (
+        <span key={part.key} className="hexa-number-highlight" aria-label="Number">
+          {part.value}
+        </span>
+      );
+    }
+    return <React.Fragment key={part.key}>{part.value}</React.Fragment>;
+  });
+}
+
+function renderMessage(item) {
     const mine =
       String(
         item.sender_id
@@ -3497,6 +3695,35 @@ function ChatPage({
               : ""
           }`
         }
+        onTouchStart={event => {
+          const touch = event.touches?.[0];
+          if (!touch) return;
+          event.currentTarget.__hexaSwipe = {
+            startX: touch.clientX,
+            startY: touch.clientY,
+            lastX: touch.clientX,
+            lastY: touch.clientY,
+          };
+        }}
+        onTouchMove={event => {
+          const state = event.currentTarget.__hexaSwipe;
+          const touch = event.touches?.[0];
+          if (!state || !touch) return;
+          state.lastX = touch.clientX;
+          state.lastY = touch.clientY;
+        }}
+        onTouchEnd={event => {
+          const state = event.currentTarget.__hexaSwipe;
+          event.currentTarget.__hexaSwipe = null;
+          if (!state || !item?.id) return;
+          const dx = state.lastX - state.startX;
+          const dy = state.lastY - state.startY;
+          const horizontalSwipe = Math.abs(dx) >= 55 && Math.abs(dx) > Math.abs(dy) * 1.2;
+          if (horizontalSwipe) {
+            setReplyTo(item);
+            window.setTimeout(() => document.querySelector('[data-hexa-composer-input]')?.focus?.(), 0);
+          }
+        }}
         onContextMenu={event => {
           event.preventDefault();
 
@@ -3546,11 +3773,14 @@ function ChatPage({
           {(item.reply_to_id || item.reply_to) && (() => {
             const replied = item.reply_to || messages.find(m => String(m.id) === String(item.reply_to_id));
             const repliedMine = replied && String(replied.sender_id) === String(profile.id);
+            const replyAttachment = replied?.message_attachments?.[0];
+            const replyMediaUrl = replyAttachment?.file_url || replied?.media_url || replied?.metadata?.file_url;
             const repliedText = replied?.content || (replied?.message_type === "voice" ? "🎙 Voice message" : replied?.message_type === "image" ? "📷 Photo" : replied?.message_type === "video" ? "🎬 Video" : replied?.message_type === "file" ? "📎 File" : "Message");
             return (
-              <button
-                type="button"
+              <div
                 className="quoted-message quoted-message-button"
+                role="button"
+                tabIndex={0}
                 onClick={() => {
                   if (replied?.id) {
                     const node = document.getElementById(`msg-${replied.id}`);
@@ -3559,14 +3789,25 @@ function ChatPage({
                     window.setTimeout(() => node?.classList.remove("hexa-reply-highlight"), 1400);
                   }
                 }}
+                onKeyDown={event => {
+                  if (event.key === "Enter" || event.key === " ") event.currentTarget.click();
+                }}
                 title="Jump to replied message"
               >
                 <span className="quoted-message-bar" />
                 <span className="quoted-message-copy">
                   <strong>{repliedMine ? "You" : (replied?.sender_name || selected?.name || "Message")}</strong>
-                  <span>{repliedText}</span>
+                  {replied?.message_type === "image" && replyMediaUrl ? (
+                    <span className="quoted-rich-media-row" style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}><img src={replyMediaUrl} alt="Replied photo" className="quoted-rich-media" style={{width:52,height:42,objectFit:"cover",borderRadius:7,flex:"0 0 auto"}} /><em style={{fontStyle:"normal",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{repliedText === "📷 Photo" ? "Photo" : repliedText}</em></span>
+                  ) : replied?.message_type === "video" && replyMediaUrl ? (
+                    <span className="quoted-rich-media-row" style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}><video src={replyMediaUrl} muted playsInline preload="metadata" className="quoted-rich-media" style={{width:52,height:42,objectFit:"cover",borderRadius:7,background:"#000",flex:"0 0 auto"}} /><em style={{fontStyle:"normal",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{repliedText === "🎬 Video" ? "Video" : repliedText}</em></span>
+                  ) : replied?.message_type === "voice" && replyMediaUrl ? (
+                    <span className="quoted-rich-media-row" style={{display:"flex",alignItems:"center",gap:8}}><span className="quoted-audio-icon">🎙</span><em style={{fontStyle:"normal"}}>{repliedText}</em></span>
+                  ) : (
+                    <span>{repliedText}</span>
+                  )}
                 </span>
-              </button>
+              </div>
             );
           })()}
 
@@ -3588,7 +3829,7 @@ function ChatPage({
             if (item.message_type === "file" && mediaUrl) {
               return <a className="message-file" href={mediaUrl} target="_blank" rel="noreferrer">📎 {item.content || attachmentRow?.file_name || "Download file"}</a>;
             }
-            return <div className="message-content">{item.content}</div>;
+            return <div className="message-content">{renderSmartChatText(item.content)}</div>;
           })()}
 
           <div className="message-meta">
@@ -4442,6 +4683,37 @@ function ChatPage({
         {/* COMPOSER */}
 
         {!isSystem && (
+          <>
+            {recording && (
+              <div className="voice-recorder-panel hexa-native-voice-panel">
+                <div className="voice-recorder-live">
+                  <span className="voice-recording-dot" />
+                  <strong>Recording voice message</strong>
+                  <span className="voice-recording-time">{String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:{String(recordingSeconds % 60).padStart(2, "0")}</span>
+                </div>
+                <div className="voice-waveform" aria-hidden="true">
+                  {Array.from({ length: 30 }).map((_, index) => <i key={index} style={{ height: `${10 + ((index * 17 + recordingSeconds * 7) % 28)}px` }} />)}
+                </div>
+                <div className="voice-recorder-actions">
+                  <button type="button" className="voice-cancel" onClick={cancelVoiceRecording}>Cancel</button>
+                  <button type="button" className="voice-stop" onClick={stopVoiceRecording}>■ Stop & preview</button>
+                </div>
+              </div>
+            )}
+            {recordedVoice && !recording && (
+              <div className="voice-preview-panel hexa-native-voice-panel">
+                <div className="voice-preview-heading">
+                  <strong>Voice message preview</strong>
+                  <span>{String(Math.floor(recordedVoice.duration / 60)).padStart(2, "0")}:{String(recordedVoice.duration % 60).padStart(2, "0")}</span>
+                </div>
+                <audio controls preload="metadata" src={recordedVoice.url} />
+                <div className="voice-recorder-actions">
+                  <button type="button" className="voice-cancel" onClick={discardRecordedVoice}>Discard</button>
+                  <button type="button" className="voice-send" onClick={sendRecordedVoice}>➤ Send voice</button>
+                </div>
+              </div>
+            )}
+            {recordingError && <div className="composer-error">{recordingError}</div>}
           <form
             className={`chat-composer hexa-message-composer ${recording ? "is-recording" : ""}`}
             onSubmit={
@@ -4476,6 +4748,7 @@ function ChatPage({
                 </button>
 
                 <textarea
+                  data-hexa-composer-input
                   className="composer-textarea"
                   rows={1}
                   value={message}
@@ -4526,9 +4799,9 @@ function ChatPage({
                       className={`composer-voice-btn ${recording ? "active" : ""}`}
                       title={recording ? "Stop recording" : "Record voice message"}
                       aria-label={recording ? "Stop recording" : "Record voice message"}
-                      onClick={() => setRecording(value => !value)}
+                      onClick={recording ? stopVoiceRecording : startVoiceRecording}
                     >
-                      <span aria-hidden="true">🎙</span>
+                      <span aria-hidden="true">{recording ? "■" : "🎙"}</span>
                     </button>
                   )}
                 </div>
@@ -4543,6 +4816,7 @@ function ChatPage({
               )}
             </div>
           </form>
+          </>
         )}
 
         {/* ==================================================
@@ -9168,12 +9442,13 @@ const APP_STYLES_TAIL = `
 .chat-header-actions button:hover{transform:translateY(-1px);background:rgba(124,92,255,.12)!important;border-color:rgba(124,92,255,.3)!important}
 .quick-actions-trigger.active{background:rgba(124,92,255,.16)!important;border-color:rgba(124,92,255,.35)!important;color:#fff!important}
 .messages-area{padding:18px 20px!important;scroll-behavior:smooth!important;background-image:radial-gradient(circle at 15% 20%,rgba(124,92,255,.035),transparent 30%),radial-gradient(circle at 85% 75%,rgba(72,149,239,.03),transparent 28%)}
-.hexa-message-row{align-items:flex-end!important;gap:7px!important}
+.hexa-message-row{align-items:flex-end!important;gap:7px!important;touch-action:pan-y}
 .hexa-message-row.incoming{justify-content:flex-start!important}
 .hexa-message-row.mine{justify-content:flex-end!important}
 .hexa-message-row.mine .message-bubble{border-radius:18px 18px 5px 18px!important;background:linear-gradient(135deg,rgba(124,92,255,.24),rgba(124,92,255,.12))!important;border-color:rgba(124,92,255,.24)!important;box-shadow:0 8px 24px rgba(0,0,0,.12)!important}
 .hexa-message-row.incoming .message-bubble{border-radius:18px 18px 18px 5px!important;background:rgba(255,255,255,.035)!important;border-color:rgba(255,255,255,.08)!important;box-shadow:0 6px 18px rgba(0,0,0,.10)!important}
 .message-content{font-size:13px!important;line-height:1.55!important;color:#eef2f8!important;white-space:pre-wrap!important;overflow-wrap:anywhere!important}
+.hexa-chat-link{color:var(--hexa-accent-2)!important;text-decoration:underline!important;text-decoration-thickness:1.5px;text-underline-offset:2px;font-weight:700;overflow-wrap:anywhere}.hexa-chat-link:hover{filter:brightness(1.15)}.hexa-number-highlight{display:inline;background:linear-gradient(180deg,rgba(124,92,255,.16),rgba(124,92,255,.08));border-bottom:2px solid var(--hexa-accent-2);border-radius:4px 4px 2px 2px;color:inherit;padding:0 2px;margin:0 1px;font-weight:850;text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:2px;box-shadow:inset 0 -1px 0 rgba(124,92,255,.12);cursor:text;user-select:text}.message-content .hexa-number-highlight{white-space:pre-wrap}
 .message-meta{font-size:9px!important;opacity:.78!important;margin-top:5px!important;gap:6px!important}
 .focus-mode .chat-list-panel{display:none!important}
 .focus-mode{grid-template-columns:minmax(0,1fr)!important}
