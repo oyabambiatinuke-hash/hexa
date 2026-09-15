@@ -1348,31 +1348,47 @@ function AuthScreen() {
 function HexaTurnstile({ onToken, onError, disabled, onReady }) {
   const mountRef = useRef(null);
   const widgetIdRef = useRef(null);
+  const callbacksRef = useRef({ onToken, onError, onReady });
 
   useEffect(() => {
-    if (!TURNSTILE_SITE_KEY || !mountRef.current) return;
+    callbacksRef.current = { onToken, onError, onReady };
+  }, [onToken, onError, onReady]);
+
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY || !mountRef.current) return undefined;
     let cancelled = false;
 
     const render = () => {
       if (cancelled || !window.turnstile || !mountRef.current) return;
       try {
         if (widgetIdRef.current !== null) {
-          window.turnstile.remove(widgetIdRef.current);
+          try { window.turnstile.remove(widgetIdRef.current); } catch {}
           widgetIdRef.current = null;
         }
-        widgetIdRef.current = window.turnstile.render(mountRef.current, {
+
+        const widgetId = window.turnstile.render(mountRef.current, {
           sitekey: TURNSTILE_SITE_KEY,
-          action: "guest_signup",
-          theme: "auto",
-          size: "normal",
-          execution: "execute",
-          callback: (token) => onToken(token || ""),
-          "expired-callback": () => onToken(""),
-          "error-callback": (code) => { onToken(""); onError?.(`Turnstile error ${code || "unknown"}. Check the authorized hostname and widget settings.`); },
-          "timeout-callback": () => { onToken(""); onError?.("Turnstile verification timed out. Please try again."); },
+          action: 'guest_signup',
+          theme: 'auto',
+          size: 'normal',
+          execution: 'execute',
+          callback: (token) => callbacksRef.current.onToken?.(token || ''),
+          'expired-callback': () => callbacksRef.current.onToken?.(''),
+          'error-callback': (code) => {
+            callbacksRef.current.onToken?.('');
+            callbacksRef.current.onError?.(
+              `Turnstile error ${code || 'unknown'}. Please retry the security verification.`
+            );
+          },
+          'timeout-callback': () => {
+            callbacksRef.current.onToken?.('');
+            callbacksRef.current.onError?.('Turnstile verification timed out. Please try again.');
+          },
         });
+
+        widgetIdRef.current = widgetId;
         try {
-          window[HEXA_TURNSTILE_WIDGET_KEY] = widgetIdRef.current;
+          window[HEXA_TURNSTILE_WIDGET_KEY] = widgetId;
           window.__HEXA_TURNSTILE_EXECUTE__ = () => {
             if (widgetIdRef.current !== null && window.turnstile?.execute) {
               window.turnstile.execute(widgetIdRef.current);
@@ -1381,29 +1397,37 @@ function HexaTurnstile({ onToken, onError, disabled, onReady }) {
             return false;
           };
         } catch {}
-        onReady?.();
+
+        callbacksRef.current.onReady?.(widgetId);
       } catch (error) {
-        console.warn("HEXA Turnstile render:", error);
-        onToken("");
+        console.warn('HEXA Turnstile render:', error);
+        callbacksRef.current.onToken?.('');
+        callbacksRef.current.onError?.('Cloudflare security verification could not be loaded. Please try again.');
       }
     };
 
-    if (window.turnstile) {
-      render();
-    } else {
-      const existing = document.querySelector('script[data-hexa-turnstile="true"]');
-      if (!existing) {
-        const script = document.createElement("script");
-        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-        script.async = true;
-        script.defer = true;
-        script.dataset.hexaTurnstile = "true";
-        script.onload = render;
-        document.head.appendChild(script);
-      } else {
-        existing.addEventListener("load", render, { once: true });
+    const ensureScript = () => {
+      if (cancelled) return;
+      if (window.turnstile) {
+        render();
+        return;
       }
-    }
+      const existing = document.querySelector('script[data-hexa-turnstile="true"]');
+      if (existing) {
+        existing.addEventListener('load', render, { once: true });
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      script.async = true;
+      script.defer = true;
+      script.dataset.hexaTurnstile = 'true';
+      script.onload = render;
+      script.onerror = () => callbacksRef.current.onError?.('Cloudflare Turnstile could not be loaded. Please check your network or browser settings.');
+      document.head.appendChild(script);
+    };
+
+    ensureScript();
 
     return () => {
       cancelled = true;
@@ -1412,13 +1436,13 @@ function HexaTurnstile({ onToken, onError, disabled, onReady }) {
           window.turnstile.remove(widgetIdRef.current);
         }
       } catch {}
-      if (typeof window !== "undefined") {
-        try { delete window[HEXA_TURNSTILE_WIDGET_KEY]; } catch {}
-        try { delete window.__HEXA_TURNSTILE_EXECUTE__; } catch {}
-      }
       widgetIdRef.current = null;
+      try {
+        if (window[HEXA_TURNSTILE_WIDGET_KEY] !== undefined) delete window[HEXA_TURNSTILE_WIDGET_KEY];
+        if (window.__HEXA_TURNSTILE_EXECUTE__) delete window.__HEXA_TURNSTILE_EXECUTE__;
+      } catch {}
     };
-  }, [onToken]);
+  }, []);
 
   if (!TURNSTILE_SITE_KEY) {
     return (
@@ -1428,7 +1452,14 @@ function HexaTurnstile({ onToken, onError, disabled, onReady }) {
     );
   }
 
-  return <div ref={mountRef} className={`hexa-turnstile${disabled ? " is-disabled" : ""}`} aria-label="Security verification" />;
+  return (
+    <div
+      ref={mountRef}
+      className={`hexa-turnstile${disabled ? ' is-disabled' : ''}`}
+      aria-label="Security verification"
+      aria-busy={disabled ? 'true' : 'false'}
+    />
+  );
 }
 
 function GuestWelcomeScreen({ onStart, busy, captchaToken, onCaptchaToken, onCaptchaError }) {
