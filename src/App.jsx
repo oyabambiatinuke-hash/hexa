@@ -1658,7 +1658,8 @@ function ChatPage({
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [recordingError, setRecordingError] = useState("");
   const [recordedVoice, setRecordedVoice] = useState(null);
-  
+  const recorderRef = useRef(null);
+  const recorderStreamRef = useRef(null);
   const recorderChunksRef = useRef([]);
   const recordingTimerRef = useRef(null);
   const recordingStartedAtRef = useRef(0);
@@ -1766,8 +1767,6 @@ function ChatPage({
 
   const mediaRef = useRef(null);
   const cameraRef = useRef(null);
-  const recorderStreamRef = useRef(null); 
-  const chunksRef = useRef([]);
   const bottomRef = useRef(null);
 
   const isSystem =
