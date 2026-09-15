@@ -190,22 +190,33 @@ const HEXA_LANGUAGE_STORAGE_KEY = "hexa-language-v2";
 function getSavedHexaLanguage(){ try{return localStorage.getItem(HEXA_LANGUAGE_STORAGE_KEY)||"en";}catch{return "en";} }
 function saveHexaLanguage(code){ try{localStorage.setItem(HEXA_LANGUAGE_STORAGE_KEY, code);}catch{} document.documentElement.lang=code; window.dispatchEvent(new CustomEvent("hexa-language-change",{detail:code})); }
 const HEXA_LANGUAGE_TRANSLATIONS = {
-  en:{settings:"Settings",appearance:"Appearance",language:"Language",save:"Save",search:"Search",chat:"Chat",calls:"Calls",groups:"Groups",communities:"Communities",channels:"Channels",moments:"Moments",notifications:"Notifications",kora:"Kora"},
-  yo:{settings:"Ètò",appearance:"Ìrísí",language:"Èdè",save:"Fipamọ́",search:"Wá",chat:"Ìfọ̀rọ̀wérọ̀",calls:"Ìpè",groups:"Àwọn ẹgbẹ́",communities:"Àwùjọ",channels:"Àwọn ikanni",moments:"Àwọn ìṣẹ̀lẹ̀",notifications:"Àwọn ìfitónilétí",kora:"Kora"},
-  ig:{settings:"Ntọala",appearance:"Ọdịdị",language:"Asụsụ",save:"Chekwaa",search:"Chọọ",chat:"Mkparịta ụka",calls:"Oku",groups:"Otu",communities:"Obodo",channels:"Ọwa",moments:"Ọnọdụ",notifications:"Ọkwa",kora:"Kora"},
-  ha:{settings:"Saituna",appearance:"Bayyanar",language:"Harshe",save:"Ajiye",search:"Nema",chat:"Hira",calls:"Kira",groups:"Ƙungiyoyi",communities:"Al'umma",channels:"Tashoshi",moments:"Labarai",notifications:"Sanarwa",kora:"Kora"},
-  fr:{settings:"Paramètres",appearance:"Apparence",language:"Langue",save:"Enregistrer",search:"Rechercher",chat:"Discussions",calls:"Appels",groups:"Groupes",communities:"Communautés",channels:"Chaînes",moments:"Moments",notifications:"Notifications",kora:"Kora"},
-  es:{settings:"Ajustes",appearance:"Apariencia",language:"Idioma",save:"Guardar",search:"Buscar",chat:"Chats",calls:"Llamadas",groups:"Grupos",communities:"Comunidades",channels:"Canales",moments:"Momentos",notifications:"Notificaciones",kora:"Kora"},
-  de:{settings:"Einstellungen",appearance:"Darstellung",language:"Sprache",save:"Speichern",search:"Suchen",chat:"Chats",calls:"Anrufe",groups:"Gruppen",communities:"Communitys",channels:"Kanäle",moments:"Momente",notifications:"Benachrichtigungen",kora:"Kora"},
-  pt:{settings:"Definições",appearance:"Aparência",language:"Idioma",save:"Guardar",search:"Pesquisar",chat:"Conversas",calls:"Chamadas",groups:"Grupos",communities:"Comunidades",channels:"Canais",moments:"Momentos",notifications:"Notificações",kora:"Kora"},
-  ar:{settings:"الإعدادات",appearance:"المظهر",language:"اللغة",save:"حفظ",search:"بحث",chat:"الدردشة",calls:"المكالمات",groups:"المجموعات",communities:"المجتمعات",channels:"القنوات",moments:"اللحظات",notifications:"الإشعارات",kora:"Kora"},
-  hi:{settings:"सेटिंग्स",appearance:"रूप",language:"भाषा",save:"सहेजें",search:"खोजें",chat:"चैट",calls:"कॉल",groups:"समूह",communities:"समुदाय",channels:"चैनल",moments:"मोमेंट्स",notifications:"सूचनाएँ",kora:"Kora"},
-  sw:{settings:"Mipangilio",appearance:"Mwonekano",language:"Lugha",save:"Hifadhi",search:"Tafuta",chat:"Mazungumzo",calls:"Simu",groups:"Vikundi",communities:"Jumuiya",channels:"Vituo",moments:"Matukio",notifications:"Arifa",kora:"Kora"},
+  en:{workspace:"Workspace",settings:"Settings",appearance:"Appearance",language:"Language",save:"Save",search:"Search",chat:"Chat",calls:"Calls",groups:"Groups",communities:"Communities",channels:"Channels",moments:"Moments",notifications:"Notifications",kora:"Kora"},
+  yo:{workspace:"Ibi iṣẹ́",profile:"Àkọọ́lẹ̀",settings:"Ètò",appearance:"Ìrísí",language:"Èdè",save:"Fipamọ́",search:"Wá",chat:"Ìfọ̀rọ̀wérọ̀",calls:"Ìpè",groups:"Àwọn ẹgbẹ́",communities:"Àwùjọ",channels:"Àwọn ikanni",moments:"Àwọn ìṣẹ̀lẹ̀",notifications:"Àwọn ìfitónilétí",kora:"Kora"},
+  ig:{workspace:"Ọrụ",profile:"Profaịlụ",settings:"Ntọala",appearance:"Ọdịdị",language:"Asụsụ",save:"Chekwaa",search:"Chọọ",chat:"Mkparịta ụka",calls:"Oku",groups:"Otu",communities:"Obodo",channels:"Ọwa",moments:"Ọnọdụ",notifications:"Ọkwa",kora:"Kora"},
+  ha:{workspace:"Wurin aiki",profile:"Bayanan martaba",settings:"Saituna",appearance:"Bayyanar",language:"Harshe",save:"Ajiye",search:"Nema",chat:"Hira",calls:"Kira",groups:"Ƙungiyoyi",communities:"Al'umma",channels:"Tashoshi",moments:"Labarai",notifications:"Sanarwa",kora:"Kora"},
+  fr:{workspace:"Espace de travail",profile:"Profil",settings:"Paramètres",appearance:"Apparence",language:"Langue",save:"Enregistrer",search:"Rechercher",chat:"Discussions",calls:"Appels",groups:"Groupes",communities:"Communautés",channels:"Chaînes",moments:"Moments",notifications:"Notifications",kora:"Kora"},
+  es:{workspace:"Espacio de trabajo",profile:"Perfil",settings:"Ajustes",appearance:"Apariencia",language:"Idioma",save:"Guardar",search:"Buscar",chat:"Chats",calls:"Llamadas",groups:"Grupos",communities:"Comunidades",channels:"Canales",moments:"Momentos",notifications:"Notificaciones",kora:"Kora"},
+  de:{workspace:"Arbeitsbereich",profile:"Profil",settings:"Einstellungen",appearance:"Darstellung",language:"Sprache",save:"Speichern",search:"Suchen",chat:"Chats",calls:"Anrufe",groups:"Gruppen",communities:"Communitys",channels:"Kanäle",moments:"Momente",notifications:"Benachrichtigungen",kora:"Kora"},
+  pt:{workspace:"Área de trabalho",profile:"Perfil",settings:"Definições",appearance:"Aparência",language:"Idioma",save:"Guardar",search:"Pesquisar",chat:"Conversas",calls:"Chamadas",groups:"Grupos",communities:"Comunidades",channels:"Canais",moments:"Momentos",notifications:"Notificações",kora:"Kora"},
+  ar:{workspace:"مساحة العمل",profile:"الملف الشخصي",settings:"الإعدادات",appearance:"المظهر",language:"اللغة",save:"حفظ",search:"بحث",chat:"الدردشة",calls:"المكالمات",groups:"المجموعات",communities:"المجتمعات",channels:"القنوات",moments:"اللحظات",notifications:"الإشعارات",kora:"Kora"},
+  hi:{workspace:"कार्यक्षेत्र",profile:"प्रोफ़ाइल",settings:"सेटिंग्स",appearance:"रूप",language:"भाषा",save:"सहेजें",search:"खोजें",chat:"चैट",calls:"कॉल",groups:"समूह",communities:"समुदाय",channels:"चैनल",moments:"मोमेंट्स",notifications:"सूचनाएँ",kora:"Kora"},
+  sw:{workspace:"Eneo la kazi",profile:"Wasifu",settings:"Mipangilio",appearance:"Mwonekano",language:"Lugha",save:"Hifadhi",search:"Tafuta",chat:"Mazungumzo",calls:"Simu",groups:"Vikundi",communities:"Jumuiya",channels:"Vituo",moments:"Matukio",notifications:"Arifa",kora:"Kora"},
   "zh-CN":{settings:"设置",appearance:"外观",language:"语言",save:"保存",search:"搜索",chat:"聊天",calls:"通话",groups:"群组",communities:"社区",channels:"频道",moments:"动态",notifications:"通知",kora:"Kora"},
   ja:{settings:"設定",appearance:"外観",language:"言語",save:"保存",search:"検索",chat:"チャット",calls:"通話",groups:"グループ",communities:"コミュニティ",channels:"チャンネル",moments:"モーメント",notifications:"通知",kora:"Kora"},
   ko:{settings:"설정",appearance:"화면",language:"언어",save:"저장",search:"검색",chat:"채팅",calls:"통화",groups:"그룹",communities:"커뮤니티",channels:"채널",moments:"모먼트",notifications:"알림",kora:"Kora"},
 };
 function hexLang(code,key){const base=String(code||"en").split("-")[0]; return HEXA_LANGUAGE_TRANSLATIONS[code]?.[key] || HEXA_LANGUAGE_TRANSLATIONS[base]?.[key] || HEXA_LANGUAGE_TRANSLATIONS.en[key] || key;}
+
+const HexaLanguageContext = React.createContext({ language: getSavedHexaLanguage(), setLanguage: saveHexaLanguage, t: (key) => key });
+function HexaLanguageProvider({ children }) {
+  const [language, setLanguageState] = useState(getSavedHexaLanguage);
+  useEffect(() => { if (typeof document !== "undefined") { document.documentElement.lang = language; document.documentElement.dataset.hexaLanguage = language; } }, [language]);
+  useEffect(() => { const handler = (event) => setLanguageState(event?.detail || getSavedHexaLanguage()); window.addEventListener("hexa-language-change", handler); return () => window.removeEventListener("hexa-language-change", handler); }, []);
+  const setLanguage = useCallback((code) => { saveHexaLanguage(code); setLanguageState(code); }, []);
+  const t = useCallback((key) => hexLang(language, key), [language]);
+  return <HexaLanguageContext.Provider value={{ language, setLanguage, t }}>{children}</HexaLanguageContext.Provider>;
+}
+function useHexaLanguage(){ return React.useContext(HexaLanguageContext); }
 
 const HEXA_THEMES = {
   midnight: {
@@ -441,7 +452,6 @@ const NAV_ITEMS = [
   { id: "moments", label: "Moments", icon: "◌" },
   { id: "channels", label: "Channels", icon: "▣" },
   { id: "kora", label: "Kora", icon: "✦" },
-  { id: "developer", label: "", icon: "</>" },
   { id: "settings", label: "Settings", icon: "⚙" },
 ];
 
@@ -1255,6 +1265,7 @@ function Sidebar({
   onSignOut,
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { language, t } = useHexaLanguage();
 
   function navigate(id) {
     setActivePage(id);
@@ -1299,7 +1310,7 @@ function Sidebar({
         </div>
 
         <nav className="sidebar-nav">
-          <div className="sidebar-section-label">WORKSPACE</div>
+          <div className="sidebar-section-label">{t("workspace")}</div>
 
           {NAV_ITEMS.map((item) => (
             <button
@@ -1312,7 +1323,7 @@ function Sidebar({
               onClick={() => navigate(item.id)}
             >
               <span className="sidebar-icon">{item.icon}</span>
-              <span>{item.label}</span>
+              <span>{hexLang(language, item.id === "chat" ? "chat" : item.id === "groups" ? "groups" : item.id === "communities" ? "communities" : item.id === "calls" ? "calls" : item.id === "moments" ? "moments" : item.id === "channels" ? "channels" : item.id === "kora" ? "kora" : item.id === "settings" ? "settings" : item.label)}</span>
             </button>
           ))}
         </nav>
@@ -1354,19 +1365,20 @@ function Sidebar({
    ============================================================ */
 
 function Topbar({ profile, search, setSearch, activePage, onNotifications, notificationCount, onSettings }) {
+  const { language } = useHexaLanguage();
   return (
     <header className="hexa-topbar">
       <div className="mobile-page-title"><strong>HEXA</strong></div>
       <div className="topbar-search">
         <span>⌕</span>
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search people, chats and HEXA..." />
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={hexLang(language,"search") + "…"} />
         <kbd>⌘ K</kbd>
       </div>
       <div className="topbar-actions">
-        <button className="notification-button" title="Notifications" onClick={onNotifications}>
+        <button className="notification-button" title={hexLang(language,"notifications")} onClick={onNotifications}>
           ♢{notificationCount > 0 && <b>{notificationCount > 99 ? "99+" : notificationCount}</b>}
         </button>
-        <button title="Settings" onClick={onSettings}>⚙</button>
+        <button title={hexLang(language,"settings")} onClick={onSettings}>⚙</button>
         <Avatar src={profile?.avatar_url} name={profile?.full_name || profile?.username || "HEXA"} size={38} online />
       </div>
     </header>
@@ -1724,8 +1736,7 @@ function ChatPage({
 
   const mediaRef = useRef(null);
   const cameraRef = useRef(null);
-   const chunksRef = useRef([]);
-  const bottomRef = useRef(null);
+  const chunksRef = useRef([]);
 
   const isSystem =
     selected?.id === "hexa-system-group" ||
@@ -7012,7 +7023,54 @@ function UniversalSearch({ search, profile, onMessage }) {
    HEXA SETTINGS
    ============================================================ */
 
-function SettingsPage({ profile, onSignOut }) {
+function ProfileEditModal({ profile, onClose, onSaved }) {
+  const [fullName,setFullName]=useState(profile?.full_name||"");
+  const [username,setUsername]=useState(profile?.username||"");
+  const [email]=useState(profile?.email||"");
+  const [about,setAbout]=useState(profile?.about||"");
+  const [phone,setPhone]=useState(profile?.phone||"");
+  const [avatarFile,setAvatarFile]=useState(null),[avatarPreview,setAvatarPreview]=useState(profile?.avatar_url||"");
+  const [saving,setSaving]=useState(false),[error,setError]=useState("");
+  const fileRef=useRef(null);
+  async function save(e){
+    e.preventDefault(); if(saving||!profile?.id)return; setSaving(true); setError("");
+    try{
+      const cleanUsername=username.trim().replace(/^@+/,"").toLowerCase();
+      if(!fullName.trim())throw new Error("Full name is required.");
+      if(cleanUsername.length<3)throw new Error("Username must be at least 3 characters.");
+      const check=await supabase.from("profiles").select("id").eq("username",cleanUsername).neq("id",profile.id).maybeSingle();
+      if(check.error)throw check.error; if(check.data)throw new Error("That username is already taken.");
+      let avatarUrl=profile.avatar_url||null;
+      if(avatarFile){
+        const bucket=import.meta.env.VITE_SUPABASE_STORAGE_BUCKET; if(!bucket)throw new Error("Set VITE_SUPABASE_STORAGE_BUCKET before uploading a profile picture.");
+        const ext=(avatarFile.name.split(".").pop()||"jpg").toLowerCase(); const path=`${profile.id}/profile/avatar-${Date.now()}.${ext}`;
+        const up=await supabase.storage.from(bucket).upload(path,avatarFile,{contentType:avatarFile.type||"image/jpeg",upsert:true}); if(up.error)throw up.error;
+        avatarUrl=supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+      }
+      const base={full_name:fullName.trim(),username:cleanUsername,avatar_url:avatarUrl,updated_at:new Date().toISOString()};
+      let result=await supabase.from("profiles").update({...base,about:about.trim(),phone:phone.trim()}).eq("id",profile.id).select("*").single();
+      if(result.error)result=await supabase.from("profiles").update(base).eq("id",profile.id).select("*").single();
+      if(result.error)throw result.error; onSaved?.(result.data); safeAlert("Profile updated successfully.","success"); onClose?.();
+    }catch(err){setError(err?.message||"Unable to update your profile.");}finally{setSaving(false);}
+  }
+  function pick(e){const f=e.target.files?.[0];if(!f)return;if(!f.type.startsWith("image/")){setError("Choose an image file.");return;}if(f.size>8*1024*1024){setError("Profile pictures must be 8MB or smaller.");return;}setAvatarFile(f);setAvatarPreview(URL.createObjectURL(f));}
+  return <div className="modal-backdrop" onClick={()=>!saving&&onClose?.()}><div className="profile-edit-modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-header"><div><h2>Edit profile</h2><p>Update the details people see across HEXA.</p></div><button type="button" onClick={()=>!saving&&onClose?.()}>×</button></div>
+    <form onSubmit={save}>
+      <button type="button" className="profile-edit-avatar-picker" onClick={()=>fileRef.current?.click()}><Avatar src={avatarPreview} name={fullName||username||"HEXA User"} size={96}/><span>📷 Change photo</span></button>
+      <input ref={fileRef} hidden type="file" accept="image/*" onChange={pick}/>
+      <label className="wallet-security-field"><span>Full name</span><input className="modal-input" value={fullName} onChange={e=>setFullName(e.target.value)} maxLength={80} required/></label>
+      <label className="wallet-security-field"><span>Username</span><input className="modal-input" value={username} onChange={e=>setUsername(e.target.value)} maxLength={30} autoCapitalize="none" required/></label>
+      <label className="wallet-security-field"><span>Email</span><input className="modal-input" value={email} readOnly/></label>
+      <label className="wallet-security-field"><span>Phone</span><input className="modal-input" value={phone} onChange={e=>setPhone(e.target.value)} maxLength={30} inputMode="tel"/></label>
+      <label className="wallet-security-field"><span>About</span><textarea className="modal-input modal-textarea" value={about} onChange={e=>setAbout(e.target.value)} maxLength={160} placeholder="Tell people a little about yourself"/></label>
+      {error&&<div className="auth-alert auth-error"><span>!</span>{error}</div>}
+      <div className="hexa-confirm-actions"><button type="button" className="hexa-dialog-secondary" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="hexa-dialog-primary" disabled={saving}>{saving?"Saving…":"Save changes"}</button></div>
+    </form>
+  </div></div>;
+}
+
+function SettingsPage({ profile, onSignOut, onProfileUpdated }) {
   const [theme, setTheme] = useState(getSavedHexaTheme());
   const [showThemes, setShowThemes] = useState(true);
   const [savedLanguage, setSavedLanguage] = useState(getSavedHexaLanguage());
@@ -7021,6 +7079,8 @@ function SettingsPage({ profile, onSignOut }) {
   const [languageOpen, setLanguageOpen] = useState(true);
   const [saved, setSaved] = useState(false);
   const [uiTick, setUiTick] = useState(0);
+  const [showProfileEditor,setShowProfileEditor]=useState(false);
+  const { language, setLanguage } = useHexaLanguage();
 
   useEffect(() => { applyHexaTheme(theme); }, [theme]);
   useEffect(() => {
@@ -7039,9 +7099,14 @@ function SettingsPage({ profile, onSignOut }) {
   }, [languageSearch]);
 
   function changeTheme(themeId){ setTheme(themeId); applyHexaTheme(themeId); }
-  function saveLanguage(){
-    saveHexaLanguage(draftLanguage);
+  async function saveLanguage(){
+    setLanguage(draftLanguage);
     setSavedLanguage(draftLanguage);
+    try {
+      if (profile?.id) {
+        await supabase.from("profiles").update({ language: draftLanguage, updated_at: new Date().toISOString() }).eq("id", profile.id);
+      }
+    } catch {}
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2200);
   }
@@ -7055,7 +7120,8 @@ function SettingsPage({ profile, onSignOut }) {
 
       <div className="settings-card hexa-profile-settings">
         <Avatar src={profile?.avatar_url} name={profile?.full_name || profile?.username || "HEXA User"} size={64} />
-        <div><strong>{profile?.full_name || profile?.username || "HEXA User"}</strong><p>{profile?.username ? `@${profile.username}` : profile?.email || "HEXA account"}</p></div>
+        <div className="profile-settings-copy"><strong>{profile?.full_name || profile?.username || "HEXA User"}</strong><p>{profile?.username ? `@${profile.username}` : profile?.email || "HEXA account"}</p><small>{profile?.about || "Add an About description to your profile."}</small></div>
+        <button type="button" className="hero-secondary" onClick={()=>setShowProfileEditor(true)}>Edit profile</button>
       </div>
 
       <div className="settings-section">
@@ -7113,6 +7179,7 @@ function SettingsPage({ profile, onSignOut }) {
         <div className="settings-card"><div><strong>Language status</strong><p>Saved locally and applied to the HEXA interface. Your browser language attribute is also updated.</p></div><span className="settings-status">{HEXA_LANGUAGE_MAP[savedLanguage]?.name || savedLanguage}</span></div>
         <div className="settings-card"><div><strong>Account</strong><p>Manage your HEXA session.</p></div><button className="settings-danger-button" onClick={onSignOut}>Sign out</button></div>
       </div>
+      {showProfileEditor && <ProfileEditModal profile={profile} onClose={()=>setShowProfileEditor(false)} onSaved={onProfileUpdated}/>}
     </section>
   );
 }
@@ -7281,6 +7348,8 @@ function AuthenticatedHEXA({ session, onSignOut }) {
 
   const [profile,setProfile]=useState(null),[profileLoading,setProfileLoading]=useState(true),[activePage,setActivePage]=useState("chat"),[search,setSearch]=useState(""),[notifications,setNotifications]=useState([]),[showNotifications,setShowNotifications]=useState(false),[chatTarget,setChatTarget]=useState(null),[callTarget,setCallTarget]=useState(null);
   useEffect(()=>{let cancelled=false;(async()=>{const result=await ensureHexaProfile(session?.user);if(!cancelled){setProfile(result);setProfileLoading(false)}})();return()=>{cancelled=true}},[session?.user?.id]);
+  const { setLanguage: setGlobalLanguage } = useHexaLanguage();
+  useEffect(()=>{ if(profile?.language && profile.language !== getSavedHexaLanguage()) setGlobalLanguage(profile.language); },[profile?.language]);
   useEffect(()=>{if(!profile?.id)return;const channel=supabase.channel(`hexa-notifications-${profile.id}`).on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},p=>{if(p.new?.sender_id===profile.id)return;setNotifications(x=>[{id:Date.now(),title:"New message",body:p.new?.content||"New message",created_at:new Date().toISOString()},...x].slice(0,50))}).subscribe();return()=>supabase.removeChannel(channel)},[profile?.id]);
   if(profileLoading)return <div className="hexa-loading-screen"><div className="loading-logo">H</div><div className="loading-spinner"/><strong>Opening HEXA…</strong><span>Preparing your workspace</span></div>;
   if (typeof window !== "undefined" && /^\/call\/[0-9a-f-]{36}$/i.test(window.location.pathname)) {
@@ -7295,7 +7364,7 @@ function AuthenticatedHEXA({ session, onSignOut }) {
     case "moments":page=<StatusPage profile={profile}/>;break;
     case "calls":page=<CallsPage profile={profile}/>;break;
     case "kora":page=<KoraPage profile={profile}/>;break;
-    case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut}/>;break;
+    case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut} onProfileUpdated={setProfile}/>;break;
         case "developer":page=<WorkspacePlaceholder title="" description="Build and connect with HEXA." icon="</>"/>;break;
     default:page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type)=>setCallTarget({conversation:c,type})} onOpenChatWithUser={()=>setSearch("")}/>;
   }
@@ -7530,6 +7599,7 @@ export default function App() {
   }
 
   return (
+    <HexaLanguageProvider>
     <HexaErrorBoundary>
       <style>{APP_STYLES + `
 
@@ -7618,6 +7688,7 @@ export default function App() {
         <AuthScreen />
       )}
     </HexaErrorBoundary>
+    </HexaLanguageProvider>
   );
 }
 
@@ -9829,6 +9900,11 @@ const HEXA_UI_POLISH_CSS = `
 @media(max-width:700px){.moments-story-card{min-width:205px}.moments-story-card .status-preview{height:215px}.moment-card-body{padding:10px}.moments-viewer-topbar{padding:12px}.moments-viewer-stats{gap:12px}}
 `;
 
-const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS + HEXA_MOMENTS_CSS + HEXA_KORA_CSS + HEXA_COMPOSER_CSS + HEXA_PINNED_MESSAGES_CSS + HEXA_UI_POLISH_CSS;
+
+const HEXA_PROFILE_EDIT_CSS = `
+.profile-edit-modal{width:min(560px,92vw);max-height:min(88vh,760px);overflow:auto;background:var(--hexa-panel);color:var(--hexa-text);border:1px solid var(--hexa-border);border-radius:24px;padding:18px;box-shadow:0 30px 90px rgba(0,0,0,.35)}.profile-edit-modal form{display:grid;gap:11px}.profile-edit-avatar-picker{justify-self:center;display:flex;flex-direction:column;align-items:center;gap:8px;border:0;background:transparent;color:var(--hexa-text);cursor:pointer}.profile-edit-avatar-picker span{font-size:11px;font-weight:800;color:var(--hexa-accent-2)}.profile-settings-copy{min-width:0;display:grid;gap:3px;flex:1}.profile-settings-copy small{color:var(--hexa-muted);font-size:10px;line-height:1.4}.hexa-profile-settings{display:flex;align-items:center;gap:14px}.hexa-profile-settings>.hero-secondary{margin-left:auto;flex:0 0 auto}@media(max-width:650px){.hexa-profile-settings{align-items:flex-start;flex-wrap:wrap}.hexa-profile-settings>.hero-secondary{margin-left:0}.profile-edit-modal{width:100%;padding:14px;border-radius:20px}}
+`;
+
+const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_PROFILE_EDIT_CSS + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS + HEXA_MOMENTS_CSS + HEXA_KORA_CSS + HEXA_COMPOSER_CSS + HEXA_PINNED_MESSAGES_CSS + HEXA_UI_POLISH_CSS;
 
 
