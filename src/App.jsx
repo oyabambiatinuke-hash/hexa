@@ -1658,7 +1658,7 @@ function ChatPage({
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [recordingError, setRecordingError] = useState("");
   const [recordedVoice, setRecordedVoice] = useState(null);
-  const recorderStreamRef = useRef(null);
+  
   const recorderChunksRef = useRef([]);
   const recordingTimerRef = useRef(null);
   const recordingStartedAtRef = useRef(0);
@@ -1702,6 +1702,10 @@ function ChatPage({
 
   const [pinnedPanelOpen, setPinnedPanelOpen] = useState(false);
   const [savedPanelOpen, setSavedPanelOpen] = useState(false);
+  const [vaultOpen, setVaultOpen] = useState(false);
+  const [vaultSearch, setVaultSearch] = useState("");
+  const [vaultFilter, setVaultFilter] = useState("all");
+  const [vaultItems, setVaultItems] = useState(() => readJsonStorage("hexa-message-vault-v1", []));
   const [reminders, setReminders] = useState(() => readJsonStorage("hexa-message-reminders-v1", []));
   const [remindersPanelOpen, setRemindersPanelOpen] = useState(false);
 
@@ -1762,7 +1766,7 @@ function ChatPage({
 
   const mediaRef = useRef(null);
   const cameraRef = useRef(null);
-  const recorderRef = useRef(null);
+  const recorderStreamRef = useRef(null); 
   const chunksRef = useRef([]);
   const bottomRef = useRef(null);
 
@@ -1809,6 +1813,10 @@ function ChatPage({
       pinned
     );
   }, [pinned]);
+
+  useEffect(() => {
+    saveStorage("hexa-message-vault-v1", vaultItems);
+  }, [vaultItems]);
 
   useEffect(() => {
     saveStorage(
@@ -2960,6 +2968,58 @@ function ChatPage({
         : current.filter(x => x !== id)
     );
     setContextMenu(null);
+  }
+
+  function getVaultMedia(item) {
+    const attachmentRow = item?.message_attachments?.[0];
+    return attachmentRow?.file_url || item?.media_url || item?.metadata?.file_url || null;
+  }
+
+  function addToVault(item, category = "General") {
+    if (!item?.id) return;
+    const id = String(item.id);
+    setVaultItems(current => {
+      if (current.some(entry => String(entry.message_id) === id)) {
+        safeAlert("Already in Message Vault.");
+        return current;
+      }
+      const snapshot = {
+        id: `vault-${id}-${Date.now()}`,
+        message_id: id,
+        conversation_id: item.conversation_id || selected?.id || null,
+        sender_id: item.sender_id || null,
+        content: item.content || "",
+        message_type: item.message_type || "text",
+        metadata: item.metadata || {},
+        media_url: getVaultMedia(item),
+        created_at: item.created_at || new Date().toISOString(),
+        saved_at: new Date().toISOString(),
+        category
+      };
+      safeAlert("Saved to Message Vault.");
+      return [snapshot, ...current].slice(0, 500);
+    });
+    setContextMenu(null);
+  }
+
+  function removeFromVault(vaultId) {
+    setVaultItems(current => current.filter(entry => entry.id !== vaultId));
+  }
+
+  function openVaultItem(item) {
+    if (String(item.conversation_id || "") !== String(selected?.id || "")) {
+      safeAlert("This message is saved in another chat. Open that conversation to jump to it.");
+      return;
+    }
+    setVaultOpen(false);
+    requestAnimationFrame(() => {
+      const node = document.getElementById(`msg-${item.message_id}`);
+      if (node) {
+        node.scrollIntoView({ behavior: "smooth", block: "center" });
+        node.classList.add("hexa-pinned-highlight");
+        window.setTimeout(() => node.classList.remove("hexa-pinned-highlight"), 1800);
+      }
+    });
   }
 
   async function togglePin(item) {
@@ -4370,6 +4430,24 @@ function renderMessage(item) {
 
             <button
               type="button"
+              className={vaultOpen ? "quick-actions-trigger active" : "quick-actions-trigger"}
+              title="Message Vault"
+              aria-label="Message Vault"
+              onClick={() => {
+                setVaultOpen(value => !value);
+                setPinnedPanelOpen(false);
+                setSavedPanelOpen(false);
+                setRemindersPanelOpen(false);
+                setQuickActionsOpen(false);
+                setChatSettingsOpen(false);
+              }}
+            >
+              ◈
+              {vaultItems.length > 0 && <span className="saved-header-count">{vaultItems.length > 999 ? "999+" : vaultItems.length}</span>}
+            </button>
+
+            <button
+              type="button"
               className={remindersPanelOpen ? "quick-actions-trigger active" : "quick-actions-trigger"}
               title="Message reminders"
               aria-label="Message reminders"
@@ -4533,6 +4611,61 @@ function renderMessage(item) {
               </div>
             )}
 
+          </div>
+        )}
+
+        {vaultOpen && (
+          <div className="hexa-vault-panel">
+            <div className="hexa-vault-head">
+              <div>
+                <span className="hexa-vault-kicker">HEXA STORAGE LAYER</span>
+                <strong>◈ Message Vault</strong>
+                <small>One searchable place for the messages and media you never want to lose.</small>
+              </div>
+              <button type="button" onClick={() => setVaultOpen(false)} aria-label="Close Message Vault">×</button>
+            </div>
+            <div className="hexa-vault-tools">
+              <input value={vaultSearch} onChange={event => setVaultSearch(event.target.value)} placeholder="Search your vault…" aria-label="Search Message Vault" />
+              <div className="hexa-vault-filters">
+                {[
+                  ["all", "All"],
+                  ["text", "Text"],
+                  ["media", "Media"],
+                  ["voice", "Voice"],
+                  ["link", "Links"]
+                ].map(([value,label]) => <button key={value} type="button" className={vaultFilter === value ? "active" : ""} onClick={() => setVaultFilter(value)}>{label}</button>)}
+              </div>
+            </div>
+            {(() => {
+              const query = vaultSearch.trim().toLowerCase();
+              const filtered = vaultItems.filter(item => {
+                const hay = `${item.content || ""} ${item.category || ""}`.toLowerCase();
+                const typeMatch = vaultFilter === "all"
+                  || (vaultFilter === "text" && !["image","video","voice","audio","file"].includes(item.message_type))
+                  || (vaultFilter === "media" && ["image","video","file"].includes(item.message_type))
+                  || (vaultFilter === "voice" && ["voice","audio"].includes(item.message_type))
+                  || (vaultFilter === "link" && /https?:\/\/|www\./i.test(item.content || ""));
+                return typeMatch && (!query || hay.includes(query));
+              });
+              if (!filtered.length) return <div className="hexa-vault-empty"><div>◈</div><strong>{vaultItems.length ? "Nothing matches that filter" : "Your Message Vault is empty"}</strong><span>Open Message actions on anything important and tap Message Vault.</span></div>;
+              return <div className="hexa-vault-list">{filtered.slice(0, 80).map(item => {
+                const isCurrent = String(item.conversation_id || "") === String(selected?.id || "");
+                const media = item.media_url;
+                return <div className="hexa-vault-item" key={item.id}>
+                  <button type="button" className="hexa-vault-open" onClick={() => openVaultItem(item)}>
+                    <div className="hexa-vault-thumb">
+                      {media && item.message_type === "image" ? <img src={media} alt="" /> : media && item.message_type === "video" ? <video src={media} muted playsInline /> : item.message_type === "voice" || item.message_type === "audio" ? "🎙" : item.message_type === "file" ? "📄" : "✦"}
+                    </div>
+                    <div className="hexa-vault-copy">
+                      <strong>{isCurrent ? "Current chat" : "Saved chat"} · {item.message_type || "text"}</strong>
+                      <span>{item.content || (item.message_type === "image" ? "Photo" : item.message_type === "video" ? "Video" : item.message_type === "voice" ? "Voice message" : "Saved message")}</span>
+                      <small>Saved {item.saved_at ? new Date(item.saved_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : ""}</small>
+                    </div>
+                  </button>
+                  <button type="button" className="hexa-vault-remove" title="Remove from vault" onClick={() => removeFromVault(item.id)}>×</button>
+                </div>;
+              })}</div>;
+            })()}
           </div>
         )}
 
@@ -5314,10 +5447,10 @@ function renderMessage(item) {
             <div className="hexa-translate-divider">↓</div>
             <div className="hexa-translate-result">
               <span>{translateDialog.targetName}</span>
-              {translationBusy ? <div className="hexa-translate-loading"><i/><i/><i/></div> : translationDialog.error ? <p className="hexa-translate-error">{translationDialog.error}</p> : <p>{translationDialog.translated}</p>}
+              {translationBusy ? <div className="hexa-translate-loading"><i/><i/><i/></div> : translateDialog.error ? <p className="hexa-translate-error">{translateDialog.error}</p> : <p>{translateDialog.translated}</p>}
             </div>
-            {!translationBusy && !translationDialog.error && translationDialog.translated && (
-              <button type="button" className="hero-primary hexa-translate-copy" onClick={async () => { try { await navigator.clipboard.writeText(translationDialog.translated); safeAlert("Translation copied."); } catch { safeAlert("Could not copy translation."); } }}>
+            {!translationBusy && !translateDialog.error && translateDialog.translated && (
+              <button type="button" className="hero-primary hexa-translate-copy" onClick={async () => { try { await navigator.clipboard.writeText(translateDialog.translated); safeAlert("Translation copied."); } catch { safeAlert("Could not copy translation."); } }}>
                 Copy translation
               </button>
             )}
@@ -5533,6 +5666,14 @@ function renderMessage(item) {
                       </span>
                     </button>
                   )}
+
+                  <button type="button" className="message-action-item" onClick={() => addToVault(item)}>
+                    <span className="message-action-icon">◈</span>
+                    <span className="message-action-copy">
+                      <strong>Message Vault</strong>
+                      <small>Save this message, photo, video, file, or voice note</small>
+                    </span>
+                  </button>
 
                   <button type="button" className="message-action-item" onClick={() => copyMessage(item)}>
                     <span className="message-action-icon">⧉</span>
@@ -10042,6 +10183,8 @@ const HEXA_PROFILE_EDIT_CSS = `
 
 .hexa-translate-overlay{position:fixed;inset:0;z-index:10040;display:grid;place-items:center;padding:20px;background:rgba(5,8,18,.58);backdrop-filter:blur(12px)}
 .hexa-translate-modal{width:min(560px,calc(100vw - 30px));max-height:min(760px,calc(100vh - 30px));overflow:auto;border:1px solid var(--hexa-border-strong);border-radius:24px;background:var(--hexa-panel);box-shadow:0 30px 90px rgba(0,0,0,.35);padding:20px}
+
+.hexa-vault-panel{position:relative;z-index:13;border-bottom:1px solid var(--hexa-border);background:var(--hexa-panel);box-shadow:0 12px 34px rgba(0,0,0,.10);animation:hexaSavedDrop .18s ease-out}.hexa-vault-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:15px 16px;border-bottom:1px solid var(--hexa-border)}.hexa-vault-head>div{min-width:0;display:flex;flex-direction:column;gap:4px}.hexa-vault-kicker{font-size:9px;font-weight:900;letter-spacing:.13em;color:var(--hexa-accent);text-transform:uppercase}.hexa-vault-head strong{font-size:15px;color:var(--hexa-text)}.hexa-vault-head small{font-size:10px;color:var(--hexa-muted)}.hexa-vault-head>button{width:32px;height:32px;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:10px;font-size:18px;cursor:pointer}.hexa-vault-tools{padding:10px 12px;border-bottom:1px solid var(--hexa-border);display:flex;flex-direction:column;gap:9px}.hexa-vault-tools input{width:100%;box-sizing:border-box;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:12px;padding:10px 12px;outline:none}.hexa-vault-filters{display:flex;gap:6px;overflow:auto}.hexa-vault-filters button{border:1px solid var(--hexa-border);background:transparent;color:var(--hexa-muted);border-radius:999px;padding:6px 10px;font-size:10px;font-weight:800;white-space:nowrap;cursor:pointer}.hexa-vault-filters button.active{background:var(--hexa-accent);border-color:var(--hexa-accent);color:#fff}.hexa-vault-list{max-height:330px;overflow:auto;padding:8px 10px}.hexa-vault-item{display:flex;gap:6px;align-items:stretch;border-radius:14px}.hexa-vault-item:hover{background:var(--hexa-panel-2)}.hexa-vault-open{display:flex;align-items:center;gap:10px;min-width:0;flex:1;padding:9px 8px;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer;border-radius:13px}.hexa-vault-thumb{width:42px;height:42px;flex:0 0 auto;border-radius:12px;overflow:hidden;display:grid;place-items:center;background:rgba(124,92,255,.10);font-size:20px}.hexa-vault-thumb img,.hexa-vault-thumb video{width:100%;height:100%;object-fit:cover}.hexa-vault-copy{min-width:0;display:flex;flex-direction:column;gap:2px}.hexa-vault-copy strong,.hexa-vault-copy span,.hexa-vault-copy small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hexa-vault-copy strong{font-size:10px;color:var(--hexa-accent)}.hexa-vault-copy span{font-size:12px;color:var(--hexa-text)}.hexa-vault-copy small{font-size:9px;color:var(--hexa-muted)}.hexa-vault-remove{width:32px;margin:7px 5px 7px 0;border:0;background:transparent;color:var(--hexa-muted);border-radius:9px;cursor:pointer;font-size:18px}.hexa-vault-remove:hover{background:rgba(255,70,70,.10);color:#f87171}.hexa-vault-empty{padding:28px 18px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--hexa-muted)}.hexa-vault-empty>div{width:48px;height:48px;display:grid;place-items:center;border-radius:15px;background:rgba(124,92,255,.10);font-size:24px;color:var(--hexa-accent)}.hexa-vault-empty strong{color:var(--hexa-text);font-size:12px}.hexa-vault-empty span{font-size:10px;max-width:420px}@media(max-width:700px){.hexa-vault-head{padding:12px}.hexa-vault-list{max-height:270px}.hexa-vault-copy span{font-size:11px}}
 .hexa-translate-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.hexa-translate-kicker{display:block;color:var(--hexa-accent);font-size:10px;font-weight:900;letter-spacing:.14em}.hexa-translate-head h3{margin:6px 0 0;font-size:20px}.hexa-translate-original,.hexa-translate-result{padding:14px;border:1px solid var(--hexa-border);border-radius:16px;background:var(--hexa-panel-2)}.hexa-translate-original span,.hexa-translate-result span{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--hexa-muted);font-weight:800}.hexa-translate-original p,.hexa-translate-result p{margin:8px 0 0;white-space:pre-wrap;line-height:1.55;color:var(--hexa-text)}.hexa-translate-divider{text-align:center;color:var(--hexa-accent);font-size:20px;padding:8px}.hexa-translate-copy{width:100%;margin-top:14px}.hexa-translate-error{color:#ff7a90!important}.hexa-translate-loading{display:flex;gap:7px;padding:15px 0}.hexa-translate-loading i{width:8px;height:8px;border-radius:50%;background:var(--hexa-accent);animation:hexaTranslateDot 900ms infinite ease-in-out}.hexa-translate-loading i:nth-child(2){animation-delay:120ms}.hexa-translate-loading i:nth-child(3){animation-delay:240ms}@keyframes hexaTranslateDot{0%,80%,100%{transform:translateY(0);opacity:.35}40%{transform:translateY(-6px);opacity:1}}
 
 `;
