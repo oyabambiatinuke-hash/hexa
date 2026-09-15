@@ -60,6 +60,27 @@ const LEGACY_OFFLINE_QUEUE_KEYS = ["hexa-message-queue-v2", "hexa-message-queue-
 const DRAFTS_KEY = "hexa-chat-drafts-v4";
 const HEXA_MAX_MESSAGE_LENGTH = 10000;
 const HEXA_MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+const HEXA_EXPLICIT_SIGNOUT_KEY = "hexa-explicit-signout-v1";
+const HEXA_GUEST_NOTICE_KEY = "hexa-guest-notice-seen-v1";
+
+function hasPersistedSupabaseSessionInBrowser() {
+  if (typeof window === "undefined") return false;
+  try {
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i) || "";
+      if (!key.startsWith("sb-")) continue;
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed?.access_token || parsed?.refresh_token || parsed?.currentSession?.access_token) return true;
+      } catch {
+        if (raw.includes("access_token") || raw.includes("refresh_token")) return true;
+      }
+    }
+  } catch {}
+  return false;
+}
 
 const HEXA_RUNTIME_CONFIG = {
   supabaseUrl: SUPABASE_URL || "",
@@ -735,7 +756,19 @@ async function ensureHexaProfile(user) {
     }
 
     if (existing) {
-      return existing;
+      const patch = {
+        email: user.email || existing.email || null,
+        is_anonymous: Boolean(user.is_anonymous),
+        guest_created_at: existing.guest_created_at || user.created_at || new Date().toISOString(),
+        guest_last_seen_at: Boolean(user.is_anonymous) ? new Date().toISOString() : existing.guest_last_seen_at || null,
+        updated_at: new Date().toISOString(),
+      };
+      try {
+        const { data: refreshed } = await supabase.from("profiles").update(patch).eq("id", user.id).select("*").single();
+        return refreshed || { ...existing, ...patch };
+      } catch {
+        return existing;
+      }
     }
 
     let username = makeUsername(user.email, fullName);
@@ -756,6 +789,9 @@ async function ensureHexaProfile(user) {
       username,
       full_name: fullName || username,
       avatar_url: avatarUrl,
+      is_anonymous: Boolean(user.is_anonymous),
+      guest_created_at: user.created_at || new Date().toISOString(),
+      guest_last_seen_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
@@ -1028,6 +1064,22 @@ function AuthScreen() {
     }
   }
 
+  async function handleContinueAsGuest() {
+    clearMessages();
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.auth.signInAnonymously();
+      if (error) throw error;
+      if (!data?.session) throw new Error("Unable to create a temporary HEXA profile.");
+      try { localStorage.removeItem(HEXA_EXPLICIT_SIGNOUT_KEY); } catch {}
+      await ensureHexaProfile(data.user);
+    } catch (err) {
+      setError(getAuthErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleResetPassword() {
     clearMessages();
 
@@ -1246,10 +1298,48 @@ function AuthScreen() {
           )}
         </div>
 
+        <div className="hexa-guest-auth-card">
+          <strong>Try HEXA without creating an account first</strong>
+          <p>We create a secure, temporary profile in your browser. Add an email and password later in Settings to keep access on another device.</p>
+          <button type="button" className="hero-secondary guest-auth-button" onClick={handleContinueAsGuest} disabled={busy}>
+            {busy ? "Opening HEXA…" : "Continue as guest"}
+          </button>
+          <a href="/privacy" className="privacy-link">Privacy Policy</a>
+        </div>
         <p className="auth-footer">
-          By continuing, you agree to use HEXA responsibly.
+          By continuing, you agree to use HEXA responsibly. We do not request location or device IDs just to create a temporary profile.
         </p>
       </main>
+    </div>
+  );
+}
+
+function GuestWelcomeScreen({ onStart, busy }) {
+  return (
+    <div className="hexa-guest-welcome">
+      <div className="hexa-guest-welcome-glow hexa-guest-welcome-glow-a" />
+      <div className="hexa-guest-welcome-glow hexa-guest-welcome-glow-b" />
+      <div className="hexa-guest-welcome-card">
+        <div className="hexa-guest-welcome-logo">H</div>
+        <div className="hexa-guest-welcome-eyebrow">PRIVATE • SIMPLE • VOICE-FIRST</div>
+        <h1>Welcome to HEXA!</h1>
+        <p className="hexa-guest-welcome-lead">Your temporary profile is ready.</p>
+        <p className="hexa-guest-welcome-copy">Start chatting without creating a password first. Your temporary session stays in this browser until you secure it from Settings.</p>
+        <button type="button" className="hexa-guest-start-button" onClick={onStart} disabled={busy}>
+          <span className="hexa-guest-start-icon">{busy ? "…" : "→"}</span>
+          <span>{busy ? "Opening HEXA…" : "Start Chatting"}</span>
+        </button>
+        <div className="hexa-guest-welcome-note">
+          <span>🔐</span>
+          <div>
+            <strong>Secure your account later</strong>
+            <small>To use this chat on another device, add an email and password in Settings.</small>
+          </div>
+        </div>
+        <div className="hexa-guest-welcome-privacy">
+          HEXA does not need your GPS location or device ID just to start a temporary profile. <a href="/privacy">Privacy Policy</a>
+        </div>
+      </div>
     </div>
   );
 }
@@ -6634,9 +6724,62 @@ function KoraPage({ profile }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const recognitionRef = useRef(null);
 
-  async function send() {
-    const text = input.trim();
+  useEffect(() => {
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) return;
+    setVoiceSupported(true);
+
+    const recognition = new Recognition();
+    recognition.lang = document.documentElement.lang || "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => setListening(true);
+    recognition.onend = () => setListening(false);
+    recognition.onerror = () => setListening(false);
+    recognition.onresult = (event) => {
+      let finalText = "";
+      let interimText = "";
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const text = event.results[i][0]?.transcript || "";
+        if (event.results[i].isFinal) finalText += text;
+        else interimText += text;
+      }
+      setInput((finalText || interimText || "").trim());
+      if (finalText.trim()) {
+        window.setTimeout(() => {
+          const spoken = finalText.trim();
+          if (!spoken) return;
+          setInput(spoken);
+        }, 0);
+      }
+    };
+
+    recognitionRef.current = recognition;
+    return () => {
+      try { recognition.stop(); } catch {}
+      recognitionRef.current = null;
+    };
+  }, []);
+
+  function toggleVoice() {
+    if (!recognitionRef.current) return;
+    if (listening) {
+      try { recognitionRef.current.stop(); } catch {}
+      return;
+    }
+    try {
+      recognitionRef.current.lang = document.documentElement.lang || "en-US";
+      recognitionRef.current.start();
+    } catch {}
+  }
+
+  async function send(textOverride = "") {
+    const text = String(textOverride || input).trim();
     if (!text || busy) return;
 
     setInput("");
@@ -6694,13 +6837,26 @@ function KoraPage({ profile }) {
 
   return (
     <section className="workspace-page">
-      <div className="page-heading">
+      <div className="page-heading kora-heading">
         <div className="page-heading-icon">✦</div>
-        <div><h1>Kora</h1><p>Your HEXA assistant.</p></div>
+        <div><h1>Kora</h1><p>Your voice-first HEXA assistant.</p></div>
       </div>
       <div className="kora-page-card">
+        <div className="kora-voice-hero">
+          <div className={`kora-orb ${listening ? "listening" : ""}`}>✦</div>
+          <div>
+            <strong>{listening ? "Kora is listening…" : "Talk to Kora"}</strong>
+            <span>{voiceSupported ? "Press the microphone and speak naturally." : "Voice input is unavailable in this browser."}</span>
+          </div>
+          <button type="button" className={`kora-hero-mic ${listening ? "active" : ""}`} onClick={toggleVoice} disabled={!voiceSupported} aria-label={listening ? "Stop listening" : "Talk to Kora"}>🎙</button>
+        </div>
+        <div className="kora-voice-prompts">
+          {["Kora, call my son", "Kora, tell me what this message means", "Kora, translate this into Yoruba"].map((prompt) => (
+            <button key={prompt} type="button" onClick={() => { setInput(prompt); if (voiceSupported) toggleVoice(); }}>{prompt}</button>
+          ))}
+        </div>
         <div className="kora-page-messages">
-          {!messages.length && <div className="kora-empty"><div>✦</div><h2>Ask Kora</h2><p>Get help navigating HEXA, messages, calls, groups and settings.</p></div>}
+          {!messages.length && <div className="kora-empty"><div>✦</div><h2>Just say what you need</h2><p>Speak a request, ask what a message means, translate something, find a setting, or tell Kora what you want to do in HEXA.</p></div>}
           {messages.map(item => (
             <div key={item.id} className={`kora-message ${item.role}`}>
               <span>{item.role === "kora" ? "✦" : "You"}</span>
@@ -6710,7 +6866,8 @@ function KoraPage({ profile }) {
           {busy && <div className="kora-message kora"><span>✦</span><p>Kora is thinking…</p></div>}
         </div>
         <form className="kora-composer" onSubmit={e => { e.preventDefault(); send(); }}>
-          <input value={input} onChange={e => setInput(e.target.value)} placeholder="Ask Kora anything…" />
+          <button type="button" className={`kora-mic-btn ${listening ? "active" : ""}`} onClick={toggleVoice} disabled={!voiceSupported || busy} aria-label={listening ? "Stop voice input" : "Start voice input"}>🎙</button>
+          <input value={input} onChange={e => setInput(e.target.value)} placeholder="Say it or type it…" />
           <button className="hero-primary" type="submit" disabled={busy || !input.trim()}>Send</button>
         </form>
       </div>
@@ -7345,7 +7502,7 @@ function ProfileEditModal({ profile, onClose, onSaved }) {
   </div></div>;
 }
 
-function SettingsPage({ profile, onSignOut, onProfileUpdated }) {
+function SettingsPage({ profile, session, onSignOut, onProfileUpdated }) {
   const [theme, setTheme] = useState(getSavedHexaTheme());
   const [showThemes, setShowThemes] = useState(true);
   const [savedLanguage, setSavedLanguage] = useState(getSavedHexaLanguage());
@@ -7388,6 +7545,8 @@ function SettingsPage({ profile, onSignOut, onProfileUpdated }) {
         <div className="page-heading-icon">⚙</div>
         <div><h1>{hexLang(lang,"settings")}</h1><p>Customize HEXA, including appearance and language.</p></div>
       </div>
+
+      <GuestAccountUpgrade session={session} profile={profile}/>
 
       <div className="settings-card hexa-profile-settings">
         <Avatar src={profile?.avatar_url} name={profile?.full_name || profile?.username || "HEXA User"} size={64} />
@@ -7615,6 +7774,89 @@ function ActionDialogInput({ config, close }) {
   );
 }
 
+
+function PrivacyPolicyPage() {
+  return (
+    <div className="hexa-policy-page">
+      <div className="hexa-policy-card">
+        <div className="hexa-brand"><div className="hexa-logo">H</div><div><strong>HEXA</strong><span>Privacy, explained simply.</span></div></div>
+        <h1>Privacy Policy</h1>
+        <p>HEXA uses your account information and messages to provide communication features. HEXA can start a temporary guest profile automatically so people can enter the app without a login barrier.</p>
+        <h2>Temporary guest profiles</h2>
+        <p>A guest profile is associated with a Supabase Auth user and a browser session. HEXA does not need your GPS location or a device identifier to create this profile. You can add an email and password in Settings to keep access on another device.</p>
+        <h2>Messages and media</h2>
+        <p>Messages and uploaded media are stored to provide the communication features you use. HEXA does not silently read unrelated files on your device.</p>
+        <h2>Retention</h2>
+        <p>Abandoned, empty anonymous profiles are eligible for automatic cleanup after the configured retention period. Accounts with sent messages are not removed by the empty-profile cleanup.</p>
+        <h2>Your choices</h2>
+        <p>You can upgrade a temporary profile to a permanent account, sign out, and use the Settings area to manage profile information and privacy controls.</p>
+        <div className="hexa-policy-actions"><a className="hero-primary" href="/">Back to HEXA</a></div>
+      </div>
+    </div>
+  );
+}
+
+function TemporaryGuestBanner({ profile, onOpenSettings }) {
+  const [dismissed, setDismissed] = useState(() => {
+    try { return localStorage.getItem(HEXA_GUEST_NOTICE_KEY) === "1"; } catch { return false; }
+  });
+  if (!profile?.is_anonymous || dismissed) return null;
+  return <div className="hexa-guest-banner">
+    <span className="hexa-guest-banner-icon">🛡️</span>
+    <div className="hexa-guest-banner-copy">
+      <strong>Temporary HEXA profile</strong>
+      <span>We've created a secure, temporary profile for you. To access this chat from another device or phone, add an email and password in your settings. Supabase keeps your session token in your browser so this temporary session can persist.</span>
+      <a href="/privacy">Privacy Policy</a>
+    </div>
+    <button type="button" className="hexa-guest-secure" onClick={onOpenSettings}>Secure my account</button>
+    <button type="button" aria-label="Dismiss" className="hexa-guest-dismiss" onClick={() => { try { localStorage.setItem(HEXA_GUEST_NOTICE_KEY,"1"); } catch {} setDismissed(true); }}>×</button>
+  </div>;
+}
+
+function GuestAccountUpgrade({ session, profile }) {
+  const isGuestLineage = Boolean(profile?.guest_created_at);
+  const isAnonymous = Boolean(session?.user?.is_anonymous);
+  const [email, setEmail] = useState(profile?.email || "");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  if (!isGuestLineage) return null;
+
+  async function addEmail(e) {
+    e.preventDefault(); setBusy(true); setError(""); setMessage("");
+    try {
+      const value = email.trim().toLowerCase();
+      if (!value) throw new Error("Enter the email address you want to keep this HEXA profile with.");
+      const { error: updateError } = await supabase.auth.updateUser({ email: value });
+      if (updateError) throw updateError;
+      await supabase.from("profiles").update({ email: value, updated_at: new Date().toISOString() }).eq("id", session.user.id);
+      setMessage("Verification email sent. After you verify it, return to Settings to set your password.");
+    } catch (err) { setError(err?.message || "Unable to add this email."); }
+    finally { setBusy(false); }
+  }
+
+  async function setAccountPassword(e) {
+    e.preventDefault(); setBusy(true); setError(""); setMessage("");
+    try {
+      if (password.length < 8) throw new Error("Your password must be at least 8 characters.");
+      if (password !== confirmPassword) throw new Error("Passwords do not match.");
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+      if (updateError) throw updateError;
+      setPassword(""); setConfirmPassword("");
+      setMessage("Password added. Your HEXA profile can now be recovered with your email and password.");
+    } catch (err) { setError(err?.message || "Unable to set your password."); }
+    finally { setBusy(false); }
+  }
+
+  return <div className="settings-card guest-upgrade-card">
+    <div><strong>🔐 Secure your temporary profile</strong><p>{isAnonymous ? "Add an email now so you can keep this HEXA profile. Supabase will ask you to verify it." : "Your email is linked. Add a password now so you can sign in on another device."}</p></div>
+    {isAnonymous ? <form onSubmit={addEmail} className="guest-upgrade-form"><input className="modal-input" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email"/><button className="hero-primary" disabled={busy}>{busy?"Sending…":"Add email"}</button></form> : <form onSubmit={setAccountPassword} className="guest-upgrade-form"><input className="modal-input" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Create a password" autoComplete="new-password"/><input className="modal-input" type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} placeholder="Repeat password" autoComplete="new-password"/><button className="hero-primary" disabled={busy}>{busy?"Saving…":"Add password"}</button></form>}
+    {error&&<div className="auth-alert auth-error"><span>!</span>{error}</div>}{message&&<div className="auth-alert auth-success"><span>✓</span>{message}</div>}
+  </div>;
+}
+
 function AuthenticatedHEXA({ session, onSignOut }) {
 
   const [profile,setProfile]=useState(null),[profileLoading,setProfileLoading]=useState(true),[activePage,setActivePage]=useState("chat"),[search,setSearch]=useState(""),[notifications,setNotifications]=useState([]),[showNotifications,setShowNotifications]=useState(false),[chatTarget,setChatTarget]=useState(null),[callTarget,setCallTarget]=useState(null);
@@ -7635,11 +7877,11 @@ function AuthenticatedHEXA({ session, onSignOut }) {
     case "moments":page=<StatusPage profile={profile}/>;break;
     case "calls":page=<CallsPage profile={profile}/>;break;
     case "kora":page=<KoraPage profile={profile}/>;break;
-    case "settings":page=<SettingsPage profile={profile} onSignOut={onSignOut} onProfileUpdated={setProfile}/>;break;
+    case "settings":page=<SettingsPage profile={profile} session={session} onSignOut={onSignOut} onProfileUpdated={setProfile}/>;break;
         case "developer":page=<WorkspacePlaceholder title="" description="Build and connect with HEXA." icon="</>"/>;break;
     default:page=<ChatPage profile={profile} initialConversation={chatTarget?.id ? chatTarget : undefined} onStartCall={(c,type)=>setCallTarget({conversation:c,type})} onOpenChatWithUser={()=>setSearch("")}/>;
   }
-  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div></div>;
+  return <div className="hexa-app"><IncomingCallWatcher profile={profile}/><Sidebar activePage={activePage} setActivePage={setActivePage} profile={profile}/><div className="hexa-main"><Topbar profile={profile} search={search} setSearch={setSearch} activePage={activePage} onNotifications={()=>setShowNotifications(v=>!v)} notificationCount={notifications.length} onSettings={()=>setActivePage("settings")}/><main className="hexa-content"><TemporaryGuestBanner profile={profile} onOpenSettings={()=>setActivePage("settings")}/><UniversalSearch search={search} profile={profile} onMessage={async p=>{setSearch("");const {data}=await supabase.from("conversations").select("*").eq("type","direct").or(`and(user_a.eq.${profile.id},user_b.eq.${p.id}),and(user_a.eq.${p.id},user_b.eq.${profile.id})`).limit(1).maybeSingle();if(data){setChatTarget({...data,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}else{const {data:newChat,error}=await supabase.rpc("hexa_get_or_create_direct",{p_other_user_id:p.id});if(error){alert(error.message);return}setChatTarget({...newChat,name:p.full_name||p.username,kind:"direct"});setActivePage("chat")}}}/>{showNotifications&&<div className="notifications-panel"><div className="notifications-header"><strong>Notifications</strong><button onClick={()=>setNotifications([])}>Clear</button></div>{notifications.length?notifications.map(n=><div className="notification-item" key={n.id}><span>●</span><div><strong>{n.title}</strong><p>{n.body}</p><small>{new Date(n.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></div></div>):<div className="notification-empty">You're all caught up.</div>}</div>}{page}{callTarget&&<WebRTCCallLauncher profile={profile} target={callTarget} onClose={()=>setCallTarget(null)}/>}</main></div></div>;
 }
 
 
@@ -7652,6 +7894,8 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
 
   const [authError, setAuthError] = useState("");
+  const [showGuestWelcome, setShowGuestWelcome] = useState(false);
+  const [guestStarting, setGuestStarting] = useState(false);
 
   const mountedRef = useRef(true);
 
@@ -7709,13 +7953,25 @@ export default function App() {
           }
         }
 
-        const {
+        let {
           data: { session: currentSession },
           error,
         } = await supabase.auth.getSession();
 
         if (error) {
           throw error;
+        }
+
+        if (!currentSession) {
+          let explicitSignout = false;
+          try { explicitSignout = localStorage.getItem(HEXA_EXPLICIT_SIGNOUT_KEY) === "1"; } catch {}
+
+          // Never create a new Supabase guest user during initial page load.
+          // First honor any persisted browser session, then wait for one explicit click.
+          const hasLocalToken = hasPersistedSupabaseSessionInBrowser();
+          if (!explicitSignout && !hasLocalToken) {
+            if (mountedRef.current) setShowGuestWelcome(true);
+          }
         }
 
         if (mountedRef.current) {
@@ -7792,8 +8048,59 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (!uid || !session?.user?.is_anonymous) return;
+    let stopped = false;
+    const touch = async () => {
+      if (stopped) return;
+      const stamp = new Date().toISOString();
+      try { await supabase.from("profiles").update({ guest_last_seen_at: stamp, is_anonymous: true, updated_at: stamp }).eq("id", uid); } catch {}
+    };
+    touch();
+    const timer = window.setInterval(touch, 15 * 60 * 1000);
+    const onVisible = () => { if (document.visibilityState === "visible") touch(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { stopped = true; window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
+  }, [session?.user?.id, session?.user?.is_anonymous]);
+
+  async function handleStartGuestChat() {
+    if (guestStarting) return;
+    setGuestStarting(true);
+    setAuthError("");
+    try {
+      // Double-check the browser session immediately before creating anything.
+      const { data: existingSessionData } = await supabase.auth.getSession();
+      if (existingSessionData?.session) {
+        if (mountedRef.current) {
+          setSession(existingSessionData.session);
+          setShowGuestWelcome(false);
+        }
+        return;
+      }
+
+      const guest = await supabase.auth.signInAnonymously();
+      if (guest.error) throw guest.error;
+      if (!guest.data?.session) throw new Error("HEXA could not open the temporary profile.");
+
+      try { localStorage.removeItem(HEXA_EXPLICIT_SIGNOUT_KEY); } catch {}
+      await ensureHexaProfile(guest.data.user);
+
+      if (mountedRef.current) {
+        setSession(guest.data.session);
+        setShowGuestWelcome(false);
+      }
+    } catch (error) {
+      console.error("HEXA guest start:", error);
+      if (mountedRef.current) setAuthError(getAuthErrorMessage(error) || "Unable to start HEXA safely. Please try again.");
+    } finally {
+      if (mountedRef.current) setGuestStarting(false);
+    }
+  }
+
   async function handleSignOut() {
     try {
+      try { localStorage.setItem(HEXA_EXPLICIT_SIGNOUT_KEY, "1"); } catch {}
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
     } catch (error) {
@@ -7816,6 +8123,10 @@ export default function App() {
     flashing during email verification/OAuth redirects.
     ============================================================
   */
+
+  if (typeof window !== "undefined" && window.location.pathname === "/privacy") {
+    return <HexaLanguageProvider><style>{APP_STYLES}</style><PrivacyPolicyPage /></HexaLanguageProvider>;
+  }
 
   if (HEXA_CONFIG_ERROR) {
     return (
@@ -7843,6 +8154,31 @@ export default function App() {
           <span>Connecting your account...</span>
         </div>
       </>
+    );
+  }
+
+  if (showGuestWelcome && !session && !authError) {
+    return (
+      <HexaLanguageProvider>
+        <style>{APP_STYLES + `
+.hexa-guest-welcome{position:relative;min-height:100dvh;overflow:hidden;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 20% 15%,rgba(124,92,255,.18),transparent 34%),radial-gradient(circle at 80% 85%,rgba(0,210,190,.13),transparent 30%),var(--hexa-bg,#080a12);color:var(--hexa-text,#fff)}
+.hexa-guest-welcome-card{position:relative;z-index:2;width:min(560px,100%);padding:42px 38px;border:1px solid var(--hexa-border-strong,rgba(255,255,255,.12));border-radius:34px;background:color-mix(in srgb,var(--hexa-panel,#121622) 92%,transparent);box-shadow:0 35px 100px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.05);backdrop-filter:blur(26px);text-align:center}
+.hexa-guest-welcome-logo{width:76px;height:76px;margin:0 auto 20px;border-radius:24px;display:grid;place-items:center;font-size:34px;font-weight:950;color:#fff;background:linear-gradient(135deg,#7657ff,#27d6c5);box-shadow:0 18px 45px rgba(118,87,255,.28)}
+.hexa-guest-welcome-eyebrow{font-size:10px;letter-spacing:.16em;font-weight:900;color:var(--hexa-accent-2,#bcaeff)}
+.hexa-guest-welcome-card h1{margin:9px 0 4px;font-size:clamp(32px,6vw,46px);letter-spacing:-.04em}
+.hexa-guest-welcome-lead{margin:0;font-size:18px;font-weight:850}
+.hexa-guest-welcome-copy{max-width:430px;margin:12px auto 22px;color:var(--hexa-muted,#aeb7c8);font-size:13px;line-height:1.7}
+.hexa-guest-start-button{width:100%;min-height:60px;border:0;border-radius:18px;padding:0 20px;display:flex;align-items:center;justify-content:center;gap:12px;background:linear-gradient(135deg,#7657ff,#5b7cff);color:#fff;font-size:16px;font-weight:900;cursor:pointer;box-shadow:0 18px 38px rgba(91,124,255,.26);transition:transform .18s ease,box-shadow .18s ease}
+.hexa-guest-start-button:hover{transform:translateY(-2px);box-shadow:0 22px 46px rgba(91,124,255,.34)}.hexa-guest-start-button:disabled{opacity:.65;cursor:wait;transform:none}
+.hexa-guest-start-icon{width:34px;height:34px;border-radius:11px;background:rgba(255,255,255,.16);display:grid;place-items:center;font-size:19px}
+.hexa-guest-welcome-note{display:flex;gap:11px;text-align:left;margin-top:16px;padding:13px;border:1px solid var(--hexa-border,#252b3a);border-radius:16px;background:rgba(255,255,255,.03)}
+.hexa-guest-welcome-note>span{font-size:20px}.hexa-guest-welcome-note div{display:grid;gap:3px}.hexa-guest-welcome-note strong{font-size:11px}.hexa-guest-welcome-note small{font-size:10px;line-height:1.5;color:var(--hexa-muted,#aeb7c8)}
+.hexa-guest-welcome-privacy{margin-top:15px;font-size:9px;line-height:1.6;color:var(--hexa-muted,#aeb7c8)}.hexa-guest-welcome-privacy a{color:var(--hexa-accent-2,#bcaeff);text-decoration:underline}
+.hexa-guest-welcome-glow{position:absolute;border-radius:50%;filter:blur(45px);pointer-events:none}.hexa-guest-welcome-glow-a{width:260px;height:260px;left:-90px;top:-70px;background:rgba(118,87,255,.18)}.hexa-guest-welcome-glow-b{width:240px;height:240px;right:-80px;bottom:-70px;background:rgba(39,214,197,.12)}
+@media(max-width:700px){.hexa-guest-welcome{padding:14px}.hexa-guest-welcome-card{padding:30px 20px;border-radius:27px}.hexa-guest-welcome-logo{width:64px;height:64px;border-radius:20px;font-size:28px}.hexa-guest-welcome-card h1{font-size:34px}.hexa-guest-welcome-copy{font-size:12px}.hexa-guest-start-button{min-height:58px}}
+`}</style>
+        <GuestWelcomeScreen onStart={handleStartGuestChat} busy={guestStarting} />
+      </HexaLanguageProvider>
     );
   }
 
@@ -10113,7 +10449,7 @@ const HEXA_MOMENTS_CSS = `
 .moments-highlights-section{margin:0 0 18px;padding:16px;border:1px solid var(--hexa-border);border-radius:18px;background:var(--hexa-panel);box-shadow:var(--hexa-shadow)}.moments-highlights-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}.moments-highlights-heading>div{display:flex;flex-direction:column;gap:3px}.moments-highlights-heading strong{font-size:14px;color:var(--hexa-text)}.moments-highlights-heading span{font-size:10px;color:var(--hexa-muted)}.moments-highlights-heading>button{border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:10px;padding:8px 10px;font-size:10px;cursor:pointer}.moments-highlights-row{display:flex;align-items:flex-start;gap:14px;overflow:auto;padding:2px 2px 5px}.moment-highlight-card-wrap{position:relative;min-width:88px}.moment-highlight-card,.moment-highlight-add{width:88px;border:0;background:transparent;color:var(--hexa-text);display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer}.moment-highlight-ring{width:64px;height:64px;border-radius:50%;padding:3px;background:linear-gradient(135deg,#7c5cff,#00c2ff,#ff3b81);display:grid;place-items:center}.moment-highlight-ring img{width:100%;height:100%;object-fit:cover;border-radius:50%;border:3px solid var(--hexa-panel)}.moment-highlight-ring span{width:100%;height:100%;border-radius:50%;display:grid;place-items:center;background:var(--hexa-panel-2);font-size:22px}.moment-highlight-card strong,.moment-highlight-card small{max-width:88px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.moment-highlight-card strong{font-size:10px}.moment-highlight-card small{font-size:8px;color:var(--hexa-muted)}.moment-highlight-add span{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;border:2px dashed var(--hexa-accent);font-size:26px;background:var(--hexa-panel-2)}.moment-highlight-add b{font-size:10px}.moment-highlight-more{position:absolute;top:2px;right:-1px;width:24px;height:24px;border:1px solid var(--hexa-border);border-radius:50%;background:var(--hexa-panel);color:var(--hexa-text);cursor:pointer}.moments-highlights-empty{display:flex;align-items:center;gap:10px;padding:6px 10px;color:var(--hexa-muted)}.moments-highlights-empty>span{width:48px;height:48px;display:grid;place-items:center;border-radius:50%;background:var(--hexa-panel-2);font-size:20px}.moments-highlights-empty>div{display:flex;flex-direction:column;gap:2px}.moments-highlights-empty strong{font-size:11px;color:var(--hexa-text)}.moments-highlights-empty small{font-size:9px;max-width:260px}.highlight-modal{width:min(520px,92vw);background:var(--hexa-panel);color:var(--hexa-text);border:1px solid var(--hexa-border);border-radius:22px;box-shadow:0 28px 90px rgba(0,0,0,.3);padding:18px}.highlight-create-form{display:flex;flex-direction:column;gap:12px}.highlight-choice-list{display:flex;flex-direction:column;gap:7px}.highlight-choice{display:flex;align-items:center;gap:11px;width:100%;padding:9px 10px;border:1px solid var(--hexa-border);border-radius:14px;background:var(--hexa-panel-2);color:var(--hexa-text);cursor:pointer;text-align:left}.highlight-choice:hover{transform:translateY(-1px);box-shadow:0 8px 18px rgba(0,0,0,.08)}.highlight-choice-cover{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:var(--hexa-panel);flex:0 0 auto;font-size:17px}.highlight-choice-cover img{width:100%;height:100%;object-fit:cover}.highlight-choice span:nth-child(2){min-width:0;display:flex;flex-direction:column;gap:2px;flex:1}.highlight-choice b{font-size:11px}.highlight-choice small{font-size:9px;color:var(--hexa-muted)}.highlight-choice>strong{font-size:20px;color:var(--hexa-muted)}.highlight-choice-cover.plus{border:1px dashed var(--hexa-accent);font-size:21px}.highlight-viewer{position:fixed;inset:0;z-index:5000;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;padding:20px}.highlight-viewer-card{width:min(520px,92vw);max-height:92vh;display:flex;flex-direction:column;background:#111;color:#fff;border-radius:20px;overflow:hidden;box-shadow:0 30px 100px rgba(0,0,0,.5)}.highlight-viewer-card>img,.highlight-viewer-card>video{width:100%;max-height:72vh;object-fit:contain;background:#000}.highlight-viewer-top{display:flex;align-items:center;justify-content:space-between;padding:12px 14px}.highlight-viewer-top>div{display:flex;flex-direction:column;gap:3px}.highlight-viewer-top strong{font-size:13px}.highlight-viewer-top small{font-size:9px;opacity:.7}.highlight-viewer-top button{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:#fff;border-radius:9px;padding:7px 10px;font-size:9px}.highlight-viewer-text{min-height:420px;display:grid;place-items:center;padding:30px;font-size:22px;text-align:center;white-space:pre-wrap}.highlight-viewer-caption{display:flex;align-items:center;gap:12px;padding:12px 14px;font-size:11px}.highlight-viewer-caption>button{margin-left:auto;border:0;background:rgba(255,255,255,.08);color:#fff;border-radius:9px;padding:7px 9px;font-size:9px}.highlight-viewer .story-nav{color:#fff}.highlight-viewer .story-close{color:#fff}@media(max-width:700px){.moments-highlights-section{padding:12px;border-radius:15px}.moments-highlights-heading span{display:none}.moments-highlights-row{gap:10px}.highlight-modal{padding:14px}.highlight-viewer{padding:10px}.highlight-viewer-card{width:100%}}
 `;
 const HEXA_KORA_CSS = `
-.hexa-inline-warning{margin:0 0 14px;padding:12px 14px;border:1px solid rgba(245,158,11,.35);background:rgba(245,158,11,.08);border-radius:12px;color:var(--hexa-text);font-size:12px}.kora-page-card{height:min(680px,calc(100vh - 180px));display:flex;flex-direction:column;border:1px solid var(--hexa-border);background:var(--hexa-panel);border-radius:22px;overflow:hidden;box-shadow:var(--hexa-shadow)}.kora-page-messages{flex:1;overflow:auto;padding:22px}.kora-empty{text-align:center;max-width:440px;margin:auto;color:var(--hexa-muted)}.kora-empty>div{width:56px;height:56px;display:grid;place-items:center;margin:0 auto 12px;border-radius:18px;background:var(--hexa-accent);color:#fff;font-size:26px}.kora-empty h2{margin:0;color:var(--hexa-text)}.kora-message{display:flex;gap:10px;align-items:flex-start;max-width:min(760px,90%);margin:0 0 14px}.kora-message>span{flex:0 0 auto;font-size:11px;font-weight:800;color:var(--hexa-muted);padding-top:8px}.kora-message p{margin:0;padding:11px 14px;border-radius:16px;background:var(--hexa-panel-2);color:var(--hexa-text);line-height:1.55;white-space:pre-wrap}.kora-message.user{margin-left:auto;justify-content:flex-end}.kora-message.user>span{order:2}.kora-message.user p{background:var(--hexa-accent);color:#fff}.kora-composer{display:flex;gap:10px;padding:14px;border-top:1px solid var(--hexa-border);background:var(--hexa-panel)}.kora-composer input{flex:1;min-width:0;height:46px;padding:0 15px;border:1px solid var(--hexa-border);border-radius:14px;background:var(--hexa-panel-2);color:var(--hexa-text);outline:none}.kora-composer input:focus{border-color:var(--hexa-accent);box-shadow:0 0 0 3px rgba(124,92,255,.10)}@media(max-width:700px){.kora-page-card{height:calc(100vh - 150px);border-radius:16px}.kora-page-messages{padding:14px}.kora-message{max-width:94%}}
+.hexa-inline-warning{margin:0 0 14px;padding:12px 14px;border:1px solid rgba(245,158,11,.35);background:rgba(245,158,11,.08);border-radius:12px;color:var(--hexa-text);font-size:12px}.kora-page-card{height:min(700px,calc(100vh - 180px));display:flex;flex-direction:column;border:1px solid var(--hexa-border);background:var(--hexa-panel);border-radius:22px;overflow:hidden;box-shadow:var(--hexa-shadow)}.kora-page-messages{flex:1;overflow:auto;padding:22px}.kora-empty{text-align:center;max-width:520px;margin:auto;color:var(--hexa-muted)}.kora-empty>div{width:62px;height:62px;display:grid;place-items:center;margin:0 auto 12px;border-radius:20px;background:var(--hexa-accent);color:#fff;font-size:28px;box-shadow:0 10px 30px rgba(124,92,255,.28)}.kora-empty h2{margin:0;color:var(--hexa-text)}.kora-message{display:flex;gap:10px;align-items:flex-start;max-width:min(760px,90%);margin:0 0 14px}.kora-message>span{flex:0 0 auto;font-size:11px;font-weight:800;color:var(--hexa-muted);padding-top:8px}.kora-message p{margin:0;padding:11px 14px;border-radius:16px;background:var(--hexa-panel-2);color:var(--hexa-text);line-height:1.55;white-space:pre-wrap}.kora-message.user{margin-left:auto;justify-content:flex-end}.kora-message.user>span{order:2}.kora-message.user p{background:var(--hexa-accent);color:#fff}.kora-composer{display:flex;gap:10px;padding:14px;border-top:1px solid var(--hexa-border);background:var(--hexa-panel)}.kora-composer input{flex:1;min-width:0;height:46px;padding:0 15px;border:1px solid var(--hexa-border);border-radius:14px;background:var(--hexa-panel-2);color:var(--hexa-text);outline:none}.kora-composer input:focus{border-color:var(--hexa-accent);box-shadow:0 0 0 3px rgba(124,92,255,.10)}.kora-voice-hero{display:flex;align-items:center;gap:14px;padding:16px 18px;border-bottom:1px solid var(--hexa-border);background:linear-gradient(135deg,rgba(124,92,255,.14),rgba(0,194,255,.07));}.kora-orb{width:48px;height:48px;flex:0 0 48px;border-radius:50%;display:grid;place-items:center;background:var(--hexa-accent);color:#fff;font-size:22px;box-shadow:0 8px 24px rgba(124,92,255,.28)}.kora-orb.listening{animation:koraListenPulse 1.1s ease-in-out infinite}.kora-voice-hero>div:nth-child(2){display:flex;flex-direction:column;gap:3px;min-width:0}.kora-voice-hero strong{color:var(--hexa-text);font-size:13px}.kora-voice-hero span{color:var(--hexa-muted);font-size:10px}.kora-hero-mic,.kora-mic-btn{border:0;display:grid;place-items:center;background:var(--hexa-panel-2);color:var(--hexa-text);cursor:pointer}.kora-hero-mic{margin-left:auto;width:44px;height:44px;border-radius:50%;font-size:19px}.kora-hero-mic.active,.kora-mic-btn.active{background:#ef4444;color:#fff;box-shadow:0 0 0 6px rgba(239,68,68,.12);animation:koraListenPulse 1.1s ease-in-out infinite}.kora-voice-prompts{display:flex;gap:8px;padding:12px 16px;overflow:auto;border-bottom:1px solid var(--hexa-border)}.kora-voice-prompts button{flex:0 0 auto;border:1px solid var(--hexa-border);background:var(--hexa-panel-2);color:var(--hexa-text);border-radius:999px;padding:9px 12px;font-size:10px;cursor:pointer;white-space:nowrap}.kora-mic-btn{flex:0 0 44px;width:44px;height:44px;border-radius:50%;font-size:19px}.kora-mic-btn:disabled,.kora-hero-mic:disabled{opacity:.45;cursor:not-allowed}.kora-heading p{margin:3px 0 0;color:var(--hexa-muted)}@keyframes koraListenPulse{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(124,92,255,.25)}50%{transform:scale(1.04);box-shadow:0 0 0 12px rgba(124,92,255,0)}}@media(max-width:700px){.kora-page-card{height:calc(100vh - 150px);border-radius:16px}.kora-page-messages{padding:14px}.kora-message{max-width:94%}.kora-voice-hero{padding:13px}.kora-voice-prompts{padding:10px 12px}.kora-composer{padding:10px}.kora-composer .hero-primary{min-width:64px}}
 `;
 
 
@@ -10188,6 +10524,247 @@ const HEXA_PROFILE_EDIT_CSS = `
 
 `;
 
-const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_PROFILE_EDIT_CSS + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS + HEXA_MOMENTS_CSS + HEXA_KORA_CSS + HEXA_COMPOSER_CSS + HEXA_PINNED_MESSAGES_CSS + HEXA_UI_POLISH_CSS;
+
+
+const HEXA_MOBILE_CSS = `
+/* ============================================================
+   HEXA MOBILE EXPERIENCE — phone-first polish
+   ============================================================ */
+@media (max-width: 700px){
+  :root{--hexa-mobile-pad:10px}
+  html,body,#root{min-height:100%;}
+  body{overflow-x:hidden;-webkit-tap-highlight-color:transparent}
+
+  .workspace-page{padding:10px var(--hexa-mobile-pad) 16px!important}
+  .page-heading{gap:10px!important;margin-bottom:12px!important}
+  .page-heading h1{font-size:24px!important;letter-spacing:-.02em}
+  .page-heading p{font-size:11px!important;line-height:1.45}
+
+  /* Chat becomes a real two-screen phone flow. */
+  .chat-layout{
+    position:relative!important;
+    display:block!important;
+    width:100%!important;
+    height:calc(100dvh - 56px)!important;
+    min-height:0!important;
+    overflow:hidden!important;
+    grid-template-columns:none!important;
+  }
+  .chat-list-panel,
+  .chat-main{
+    position:absolute!important;
+    inset:0!important;
+    width:100%!important;
+    min-width:0!important;
+    height:100%!important;
+  }
+  .chat-list-panel{
+    display:flex!important;
+    flex-direction:column!important;
+    border-right:0!important;
+    z-index:2!important;
+    transform:translateX(0)!important;
+    opacity:1!important;
+    visibility:visible!important;
+  }
+  .mobile-chat-open .chat-list-panel,
+  .focus-mode .chat-list-panel{display:none!important}
+  .mobile-chat-list .chat-main{display:none!important}
+  .mobile-chat-open .chat-main{display:flex!important}
+
+  .chat-list-header{
+    min-height:58px!important;
+    padding:12px 12px 9px!important;
+  }
+  .chat-list-header h2{font-size:20px!important}
+  .chat-list-header span{font-size:9px!important}
+  .new-chat-button{width:40px!important;height:40px!important;border-radius:13px!important;font-size:20px!important}
+
+  .chat-search{margin:3px 10px 10px!important}
+  .chat-search input{
+    height:44px!important;
+    border-radius:14px!important;
+    font-size:12px!important;
+    padding-left:38px!important;
+  }
+  .conversation-list{
+    flex:1!important;
+    max-height:none!important;
+    min-height:0!important;
+    padding:0 4px 8px!important;
+    overscroll-behavior:contain!important;
+    -webkit-overflow-scrolling:touch!important;
+  }
+  .conversation{
+    width:100%!important;
+    min-height:70px!important;
+    margin:1px 0!important;
+    padding:10px 8px!important;
+    gap:10px!important;
+    border-radius:16px!important;
+  }
+  .conversation:active{transform:scale(.992)}
+  .conversation-content strong{font-size:12px!important}
+  .conversation-content span{font-size:10px!important}
+  .conversation-topline time{font-size:9px!important}
+  .unread-badge{min-width:20px!important;height:20px!important}
+
+  .chat-header{
+    min-height:60px!important;
+    height:60px!important;
+    padding:7px 8px!important;
+    gap:8px!important;
+    flex:0 0 60px!important;
+  }
+  .mobile-chat-back{
+    display:grid!important;
+    place-items:center!important;
+    width:40px!important;
+    height:40px!important;
+    flex:0 0 40px!important;
+    border:1px solid var(--hexa-border)!important;
+    border-radius:13px!important;
+    background:var(--hexa-panel-2)!important;
+    color:var(--hexa-text)!important;
+    font-size:20px!important;
+  }
+  .chat-header .avatar{flex:0 0 auto}
+  .chat-header-copy{min-width:0!important;flex:1 1 auto!important}
+  .chat-header-copy strong{font-size:12px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chat-header-copy span{font-size:9px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chat-header-actions{
+    max-width:48vw!important;
+    min-width:0!important;
+    overflow-x:auto!important;
+    overflow-y:hidden!important;
+    scrollbar-width:none!important;
+    -ms-overflow-style:none!important;
+    gap:4px!important;
+    flex:0 1 auto!important;
+    overscroll-behavior-x:contain!important;
+  }
+  .chat-header-actions::-webkit-scrollbar{display:none}
+  .chat-header-actions button{
+    flex:0 0 36px!important;
+    width:36px!important;
+    height:36px!important;
+    border-radius:11px!important;
+    font-size:15px!important;
+  }
+
+  .messages-area{
+    padding:12px 9px 10px!important;
+    overscroll-behavior:contain!important;
+    -webkit-overflow-scrolling:touch!important;
+  }
+  .message-row{margin-bottom:5px!important}
+  .message-bubble-wrap{max-width:88%!important}
+  .message-bubble{
+    max-width:100%!important;
+    border-radius:17px!important;
+    padding:9px 11px!important;
+    font-size:13px!important;
+    line-height:1.42!important;
+  }
+  .message-bubble small{font-size:8px!important}
+  .message-media{max-width:min(78vw,280px)!important;max-height:42vh!important}
+  .reply-bar{padding:8px 10px!important;gap:8px!important}
+  .reply-bar > div{min-width:0}
+  .reply-bar button{width:34px;height:34px;border-radius:10px;background:var(--hexa-panel-3)}
+
+  .message-tools{display:none!important}
+  .message-action-popover{
+    left:8px!important;
+    right:8px!important;
+    bottom:max(8px,env(safe-area-inset-bottom))!important;
+    width:auto!important;
+    max-height:72dvh!important;
+    border-radius:22px!important;
+    padding:8px!important;
+  }
+
+  .quick-actions-popover,
+  .chat-settings-popover,
+  .emoji-panel,
+  .gif-panel,
+  .sticker-panel,
+  .feature-popover{
+    max-width:calc(100vw - 16px)!important;
+  }
+  .quick-actions-popover,
+  .chat-settings-popover{right:8px!important}
+
+  .message-composer,
+  .hexa-message-composer{
+    padding-left:7px!important;
+    padding-right:7px!important;
+    padding-bottom:max(8px,env(safe-area-inset-bottom))!important;
+  }
+  .composer-shell{border-radius:19px!important}
+  .composer-main-row{min-height:52px!important;gap:3px!important;padding:5px!important}
+  .composer-icon-btn,.composer-voice-btn,.composer-send-btn{
+    flex:0 0 38px!important;
+    width:38px!important;
+    height:38px!important;
+    border-radius:12px!important;
+  }
+  .composer-voice-btn{border-radius:50%!important}
+  .composer-textarea{
+    min-height:40px!important;
+    max-height:112px!important;
+    font-size:14px!important;
+    line-height:1.4!important;
+    padding:8px 4px!important;
+  }
+  .composer-recording-bar{padding:7px 11px 8px!important}
+
+  .empty-chat{padding:22px!important}
+  .empty-chat h3{font-size:17px!important}
+  .empty-chat p{font-size:10px!important;line-height:1.45}
+
+  /* Prevent wide cards/modals from becoming horizontally scrollable. */
+  .entity-modal,.status-modal,.profile-edit-modal,.hexa-translate-modal,.call-shell{
+    width:calc(100vw - 16px)!important;
+    max-width:calc(100vw - 16px)!important;
+    max-height:calc(100dvh - 24px)!important;
+    border-radius:19px!important;
+  }
+  .hexa-translate-overlay,.story-viewer,.hexa-modal-backdrop{padding:8px!important}
+  .story-content{width:100%!important;height:calc(100dvh - 16px)!important;border-radius:16px!important}
+
+  /* Larger touch targets across phone pages. */
+  button,input,select,textarea{touch-action:manipulation}
+  .settings-card,.entity-card{border-radius:16px!important}
+  .settings-card{padding:14px!important;gap:10px!important;align-items:flex-start!important}
+  .settings-card button{min-height:40px!important}
+
+  /* Calls */
+  .call-shell{height:calc(100dvh - 16px)!important}
+  .call-header{padding:11px 12px!important}
+  .call-local-video{right:10px!important;bottom:10px!important;width:34%!important}
+  .call-controls{padding:12px!important;padding-bottom:max(12px,env(safe-area-inset-bottom))!important}
+}
+
+@media (max-width: 390px){
+  .chat-header-actions{max-width:42vw!important}
+  .chat-header-actions button{flex-basis:34px!important;width:34px!important;height:34px!important}
+  .chat-header-copy strong{font-size:11px!important}
+  .message-bubble{font-size:12.5px!important}
+  .conversation{min-height:66px!important}
+  .composer-icon-btn,.composer-voice-btn,.composer-send-btn{flex-basis:36px!important;width:36px!important;height:36px!important}
+}
+
+@media (prefers-reduced-motion: reduce){
+  .conversation,.message-bubble,.chat-header-actions button{transition:none!important}
+}
+`;
+
+const HEXA_GUEST_PRIVACY_CSS = `
+.hexa-guest-banner{position:relative;z-index:20;display:flex;align-items:center;gap:12px;margin:10px 14px 0;padding:11px 14px;border:1px solid color-mix(in srgb,var(--hexa-accent,#6d5dfc) 30%,var(--hexa-border,#ddd));border-radius:16px;background:color-mix(in srgb,var(--hexa-card,#fff) 92%,var(--hexa-accent,#6d5dfc));box-shadow:0 10px 30px rgba(0,0,0,.08)}
+.hexa-guest-banner-icon{font-size:21px}.hexa-guest-banner-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:2px}.hexa-guest-banner-copy strong{font-size:13px}.hexa-guest-banner-copy span{font-size:11px;line-height:1.45;opacity:.78}.hexa-guest-banner-copy a,.privacy-link{font-size:11px;color:var(--hexa-accent,#5b4bdb);text-decoration:underline}.hexa-guest-secure{border:0;border-radius:10px;padding:9px 12px;font-weight:800;background:var(--hexa-accent,#6d5dfc);color:#fff;cursor:pointer;white-space:nowrap}.hexa-guest-dismiss{border:0;background:transparent;font-size:20px;opacity:.55;cursor:pointer}.hexa-guest-auth-card{margin-top:16px;padding:14px;border:1px solid var(--hexa-border,#ddd);border-radius:15px;background:color-mix(in srgb,var(--hexa-card,#fff) 92%,var(--hexa-accent,#6d5dfc));display:flex;flex-direction:column;gap:8px}.hexa-guest-auth-card strong{font-size:13px}.hexa-guest-auth-card p{margin:0;font-size:11px;line-height:1.5;opacity:.78}.guest-auth-button{align-self:flex-start}.guest-upgrade-card{display:flex;flex-direction:column;gap:12px;margin-bottom:14px}.guest-upgrade-card p{margin:5px 0 0;opacity:.72}.guest-upgrade-form{display:flex;gap:8px;align-items:center}.guest-upgrade-form .modal-input{flex:1}.hexa-policy-page{min-height:100dvh;padding:28px;background:var(--hexa-bg,#f6f7fb);display:grid;place-items:center}.hexa-policy-card{width:min(760px,100%);padding:28px;border-radius:24px;background:var(--hexa-card,#fff);border:1px solid var(--hexa-border,#ddd);box-shadow:0 20px 60px rgba(0,0,0,.08)}.hexa-policy-card h1{font-size:34px;margin:24px 0 12px}.hexa-policy-card h2{font-size:18px;margin:24px 0 8px}.hexa-policy-card p{line-height:1.7;opacity:.82}.hexa-policy-actions{margin-top:24px}.hexa-policy-actions a{text-decoration:none;display:inline-flex}
+@media(max-width:700px){.hexa-guest-banner{margin:8px 8px 0;align-items:flex-start;flex-wrap:wrap}.hexa-guest-secure{width:100%}.hexa-guest-dismiss{position:absolute;top:5px;right:6px}.guest-upgrade-form{flex-direction:column;align-items:stretch}.hexa-policy-page{padding:12px}.hexa-policy-card{padding:20px}.hexa-policy-card h1{font-size:28px}}
+`;
+
+const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_PROFILE_EDIT_CSS + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS + HEXA_MOMENTS_CSS + HEXA_KORA_CSS + HEXA_COMPOSER_CSS + HEXA_PINNED_MESSAGES_CSS + HEXA_UI_POLISH_CSS + HEXA_MOBILE_CSS + HEXA_GUEST_PRIVACY_CSS;
 
 
