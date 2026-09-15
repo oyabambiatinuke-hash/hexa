@@ -1345,7 +1345,7 @@ function AuthScreen() {
   );
 }
 
-function HexaTurnstile({ onToken, disabled }) {
+function HexaTurnstile({ onToken, onError, disabled, onReady }) {
   const mountRef = useRef(null);
   const widgetIdRef = useRef(null);
 
@@ -1364,13 +1364,24 @@ function HexaTurnstile({ onToken, disabled }) {
           sitekey: TURNSTILE_SITE_KEY,
           action: "guest_signup",
           theme: "auto",
-          size: "flexible",
+          size: "normal",
+          execution: "execute",
           callback: (token) => onToken(token || ""),
           "expired-callback": () => onToken(""),
-          "error-callback": () => onToken(""),
-          "timeout-callback": () => onToken(""),
+          "error-callback": (code) => { onToken(""); onError?.(`Turnstile error ${code || "unknown"}. Check the authorized hostname and widget settings.`); },
+          "timeout-callback": () => { onToken(""); onError?.("Turnstile verification timed out. Please try again."); },
         });
-        try { window[HEXA_TURNSTILE_WIDGET_KEY] = widgetIdRef.current; } catch {}
+        try {
+          window[HEXA_TURNSTILE_WIDGET_KEY] = widgetIdRef.current;
+          window.__HEXA_TURNSTILE_EXECUTE__ = () => {
+            if (widgetIdRef.current !== null && window.turnstile?.execute) {
+              window.turnstile.execute(widgetIdRef.current);
+              return true;
+            }
+            return false;
+          };
+        } catch {}
+        onReady?.();
       } catch (error) {
         console.warn("HEXA Turnstile render:", error);
         onToken("");
@@ -1403,6 +1414,7 @@ function HexaTurnstile({ onToken, disabled }) {
       } catch {}
       if (typeof window !== "undefined") {
         try { delete window[HEXA_TURNSTILE_WIDGET_KEY]; } catch {}
+        try { delete window.__HEXA_TURNSTILE_EXECUTE__; } catch {}
       }
       widgetIdRef.current = null;
     };
@@ -1419,7 +1431,7 @@ function HexaTurnstile({ onToken, disabled }) {
   return <div ref={mountRef} className={`hexa-turnstile${disabled ? " is-disabled" : ""}`} aria-label="Security verification" />;
 }
 
-function GuestWelcomeScreen({ onStart, busy, captchaToken, onCaptchaToken }) {
+function GuestWelcomeScreen({ onStart, busy, captchaToken, onCaptchaToken, onCaptchaError }) {
   return (
     <div className="hexa-guest-welcome">
       <div className="hexa-guest-welcome-glow hexa-guest-welcome-glow-a" />
@@ -1430,7 +1442,7 @@ function GuestWelcomeScreen({ onStart, busy, captchaToken, onCaptchaToken }) {
         <h1>Welcome to HEXA!</h1>
         <p className="hexa-guest-welcome-lead">Your temporary profile is ready.</p>
         <p className="hexa-guest-welcome-copy">Start chatting without creating a password first. Your temporary session stays in this browser until you secure it from Settings.</p>
-        <div className="hexa-captcha-wrap"><HexaTurnstile onToken={onCaptchaToken} disabled={busy} /></div>
+        <div className="hexa-captcha-wrap"><HexaTurnstile onToken={onCaptchaToken} onError={onCaptchaError} disabled={busy} /></div>
         <button type="button" className="hexa-guest-start-button" onClick={onStart} disabled={busy || (!!TURNSTILE_SITE_KEY && !captchaToken)}>
           <span className="hexa-guest-start-icon">{busy ? "…" : "→"}</span>
           <span>{busy ? "Opening HEXA…" : "Start Chatting"}</span>
@@ -8003,6 +8015,7 @@ export default function App() {
   const [showGuestWelcome, setShowGuestWelcome] = useState(false);
   const [guestStarting, setGuestStarting] = useState(false);
   const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaError, setCaptchaError] = useState("");
 
   const mountedRef = useRef(true);
 
@@ -8186,9 +8199,16 @@ export default function App() {
         return;
       }
 
-      const resolvedCaptchaToken = TURNSTILE_SITE_KEY ? getCurrentTurnstileToken(captchaToken) : "";
+      let resolvedCaptchaToken = TURNSTILE_SITE_KEY ? getCurrentTurnstileToken(captchaToken) : "";
       if (TURNSTILE_SITE_KEY && !resolvedCaptchaToken) {
-        throw new Error("Please complete the security check before starting HEXA.");
+        try { if (window.__HEXA_TURNSTILE_EXECUTE__) window.__HEXA_TURNSTILE_EXECUTE__(); } catch {}
+        const started = Date.now();
+        while (!resolvedCaptchaToken && Date.now() - started < 15000) {
+          await new Promise((r) => setTimeout(r, 250));
+          resolvedCaptchaToken = getCurrentTurnstileToken(captchaToken);
+          if (!resolvedCaptchaToken) resolvedCaptchaToken = captchaToken || "";
+        }
+        if (!resolvedCaptchaToken) throw new Error("Cloudflare security verification could not be completed. Please retry.");
       }
 
       const guest = await supabase.auth.signInAnonymously({
@@ -8200,7 +8220,7 @@ export default function App() {
           throw new Error("HEXA anonymous sign-in is not enabled in Supabase. In Supabase Dashboard open Authentication → Sign In / Providers → Anonymous Sign-Ins and enable it. Then save the settings and try again.");
         }
         if (/captcha|turnstile/i.test(message)) {
-          throw new Error("HEXA security verification failed. Please complete the CAPTCHA again and retry.");
+          throw new Error(`HEXA security verification was rejected by Supabase: ${message}`);
         }
         throw guest.error;
       }
@@ -8304,7 +8324,11 @@ export default function App() {
 .hexa-guest-welcome-glow{position:absolute;border-radius:50%;filter:blur(45px);pointer-events:none}.hexa-guest-welcome-glow-a{width:260px;height:260px;left:-90px;top:-70px;background:rgba(118,87,255,.18)}.hexa-guest-welcome-glow-b{width:240px;height:240px;right:-80px;bottom:-70px;background:rgba(39,214,197,.12)}
 @media(max-width:700px){.hexa-guest-welcome{padding:14px}.hexa-guest-welcome-card{padding:30px 20px;border-radius:27px}.hexa-guest-welcome-logo{width:64px;height:64px;border-radius:20px;font-size:28px}.hexa-guest-welcome-card h1{font-size:34px}.hexa-guest-welcome-copy{font-size:12px}.hexa-guest-start-button{min-height:58px}}
 `}</style>
-        <GuestWelcomeScreen onStart={handleStartGuestChat} busy={guestStarting} captchaToken={captchaToken} onCaptchaToken={setCaptchaToken} />
+        <GuestWelcomeScreen onStart={() => {
+          try { if (window.__HEXA_TURNSTILE_EXECUTE__) window.__HEXA_TURNSTILE_EXECUTE__(); } catch {}
+          handleStartGuestChat();
+        }} busy={guestStarting} captchaToken={captchaToken} onCaptchaToken={(token) => { setCaptchaError(""); setCaptchaToken(token); }} onCaptchaError={(message) => { setCaptchaError(message); setCaptchaToken(""); }} />
+        {captchaError ? <div style={{marginTop:10,color:"#b42318",fontSize:12,fontWeight:700,textAlign:"center"}}>{captchaError} <button type="button" onClick={() => window.turnstile?.reset?.(window[HEXA_TURNSTILE_WIDGET_KEY])} style={{marginLeft:6,textDecoration:"underline",background:"none",border:0,cursor:"pointer",fontWeight:800}}>Retry</button></div> : null}
       </HexaLanguageProvider>
     );
   }
