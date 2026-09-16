@@ -521,7 +521,7 @@ const DEFAULT_CONVERSATIONS = [
     readOnly: true,
     online: true,
     avatar: "H",
-    description: "Official HEXA announcements",
+    description: "Official HEXAchi announcements",
     messages: [],
   },
   {
@@ -541,7 +541,7 @@ const DEFAULT_CONVERSATIONS = [
     readOnly: false,
     online: true,
     avatar: "K",
-    description: "HEXA AI",
+    description: "HEXAchi AI",
     messages: [],
   },
 ];
@@ -1152,7 +1152,7 @@ function AuthScreen() {
           <div className="hexa-logo">H</div>
 
           <div>
-            <strong>HEXA</strong>
+            <strong>HEXAchi</strong>
             <span>Communication, connected.</span>
           </div>
         </div>
@@ -1333,12 +1333,12 @@ function AuthScreen() {
           <p>We create a secure, temporary profile in your browser. Add an email and password later in Settings to keep access on another device.</p>
           <div className="hexa-captcha-wrap"><HexaTurnstile onToken={setGuestCaptchaToken} disabled={busy} /></div>
           <button type="button" className="hero-secondary guest-auth-button" onClick={handleContinueAsGuest} disabled={busy || (!!TURNSTILE_SITE_KEY && !guestCaptchaToken)}>
-            {busy ? "Opening HEXA…" : "Continue as guest"}
+            {busy ? "Opening HEXAchi…" : "Continue as guest"}
           </button>
           <a href="/privacy" className="privacy-link">Privacy Policy</a>
         </div>
         <p className="auth-footer">
-          By continuing, you agree to use HEXA responsibly. We do not request location or device IDs just to create a temporary profile.
+          By continuing, you agree to use HEXA responsibly. HEXAchi does not require GPS location or a device ID just to create a temporary profile.
         </p>
       </main>
     </div>
@@ -1470,13 +1470,13 @@ function GuestWelcomeScreen({ onStart, busy, captchaToken, onCaptchaToken, onCap
       <div className="hexa-guest-welcome-card">
         <div className="hexa-guest-welcome-logo">H</div>
         <div className="hexa-guest-welcome-eyebrow">PRIVATE • SIMPLE • VOICE-FIRST</div>
-        <h1>Welcome to HEXA!</h1>
-        <p className="hexa-guest-welcome-lead">Your temporary profile is ready.</p>
+        <h1>Welcome to HEXAchichi!</h1>
+        <p className="hexa-guest-welcome-lead">Your temporary profile is ready to start.</p>
         <p className="hexa-guest-welcome-copy">Start chatting without creating a password first. Your temporary session stays in this browser until you secure it from Settings.</p>
         <div className="hexa-captcha-wrap"><HexaTurnstile onToken={onCaptchaToken} onError={onCaptchaError} disabled={busy} /></div>
         <button type="button" className="hexa-guest-start-button" onClick={onStart} disabled={busy || (!!TURNSTILE_SITE_KEY && !captchaToken)}>
           <span className="hexa-guest-start-icon">{busy ? "…" : "→"}</span>
-          <span>{busy ? "Opening HEXA…" : "Start Chatting"}</span>
+          <span>{busy ? "Opening HEXAchi…" : "Start Chatting"}</span>
         </button>
         <div className="hexa-guest-welcome-note">
           <span>🔐</span>
@@ -1486,7 +1486,7 @@ function GuestWelcomeScreen({ onStart, busy, captchaToken, onCaptchaToken, onCap
           </div>
         </div>
         <div className="hexa-guest-welcome-privacy">
-          HEXA does not need your GPS location or device ID just to start a temporary profile. <a href="/privacy">Privacy Policy</a>
+          HEXAchi does not need your GPS location or device ID just to start a temporary profile. <a href="/privacy">Privacy Policy</a>
         </div>
       </div>
     </div>
@@ -1536,7 +1536,7 @@ function Sidebar({
           <div className="small-logo">H</div>
 
           <div>
-            <strong>HEXA</strong>
+            <strong>HEXAchi</strong>
             <span>NEXUS</span>
           </div>
 
@@ -1574,7 +1574,7 @@ function Sidebar({
               name={
                 profile?.full_name ||
                 profile?.username ||
-                "HEXA User"
+                "HEXAchi User"
               }
               size={38}
               online
@@ -1584,7 +1584,7 @@ function Sidebar({
               <strong>
                 {profile?.full_name ||
                   profile?.username ||
-                  "HEXA User"}
+                  "HEXAchi User"}
               </strong>
 
               <span>
@@ -1607,7 +1607,7 @@ function Topbar({ profile, search, setSearch, activePage, onNotifications, notif
   const { language } = useHexaLanguage();
   return (
     <header className="hexa-topbar">
-      <div className="mobile-page-title"><strong>HEXA</strong></div>
+      <div className="mobile-page-title"><strong>HEXAchi</strong></div>
       <div className="topbar-search">
         <span>⌕</span>
         <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={hexLang(language,"search") + "…"} />
@@ -1731,7 +1731,7 @@ function koraReply(input) {
   if (q.includes("status")) return "You can create a HEXA Moments with text, photos or videos from the Moments workspace.";
   if (q.includes("call")) return "Open a direct chat and use the phone or video button to start a WebRTC call.";
   if (q.includes("group")) return "Open Groups, create a group, and select the HEXA users you want to add.";
-  return "I’m Kora. I can help you navigate HEXA, plan messages, explain features, and work with the tools connected to your workspace.";
+  return "I’m Kora. I can help you navigate HEXAchi, plan messages, explain features, and work with the tools connected to your workspace.";
 }
 
 function FeatureAudio({ url, voice = false }) {
@@ -2658,7 +2658,7 @@ function ChatPage({
         name:
           person.full_name ||
           person.username ||
-          "HEXA User",
+          "HEXAchi User",
         username:
           person.username ||
           "",
@@ -5056,13 +5056,13 @@ function renderMessage(item) {
                   ? "THE HEXA GROUP"
                   : `Chat with ${
                       selected?.name ||
-                      "HEXA User"
+                      "HEXAchi User"
                     }`}
               </h3>
 
               <p>
                 {isSystem
-                  ? "Official HEXA announcements appear here."
+                  ? "Official HEXAchi announcements appear here."
                   : "Messages are end-to-end encrypted in the HEXA architecture."}
               </p>
 
@@ -5646,7 +5646,7 @@ function renderMessage(item) {
                         {
                           person.full_name ||
                           person.username ||
-                          "HEXA User"
+                          "HEXAchi User"
                         }
                       </strong>
 
@@ -6178,7 +6178,7 @@ async function loadHexaConversations(profile) {
           const displayName =
             person?.full_name ||
             person?.username ||
-            "HEXA User";
+            "HEXAchi User";
 
           return {
             ...conversation,
@@ -6722,7 +6722,7 @@ function StatusPage({ profile }) {
     {statusError && <div className="settings-card status-error"><strong>Status</strong><p>{statusError}</p><button onClick={() => setStatusError("")}>Dismiss</button></div>}
     <div className="status-row status-scroll-row">
       <button className="create-status-card" onClick={() => setShow(true)}><div className="create-status-plus">＋</div><strong>Create Moment</strong><span>Text, photo or video</span></button>
-      {loading ? <div className="coming-card"><h2>Loading statuses…</h2></div> : statuses.map((s) => <button key={s.id} className={`status-card moments-story-card ${viewed[s.id] ? "seen" : "unseen"}`} onClick={() => openStatus(s)}><div className="status-preview">{s.media_url && s.media_type === "image" ? <img src={s.media_url} alt=""/> : s.media_url && s.media_type === "video" ? <video src={s.media_url} muted playsInline/> : <span className="moment-text-preview">Aa</span>}<span className="moment-story-badge">{viewed[s.id] ? "Viewed" : "New"}</span></div><div className="moment-card-body"><div className="moment-card-author"><Avatar src={s.user_id === profile.id ? profile.avatar_url : ""} name={s.user_id === profile.id ? (profile.full_name || profile.username || "You") : "HEXA User"} size={32}/><div><strong>{s.user_id === profile.id ? (profile.full_name || profile.username || "You") : "HEXA User"}</strong><small>{s.created_at ? new Date(s.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</small></div></div><p>{s.description || s.text || "Media Moment"}</p><div className="moment-card-stats"><span>❤️ {counts[s.id] || 0}</span><span>👁 {counts[`${s.id}:views`] || 0}</span><span>💬 {counts[`${s.id}:comments`] || 0}</span></div></div></button>)}
+      {loading ? <div className="coming-card"><h2>Loading statuses…</h2></div> : statuses.map((s) => <button key={s.id} className={`status-card moments-story-card ${viewed[s.id] ? "seen" : "unseen"}`} onClick={() => openStatus(s)}><div className="status-preview">{s.media_url && s.media_type === "image" ? <img src={s.media_url} alt=""/> : s.media_url && s.media_type === "video" ? <video src={s.media_url} muted playsInline/> : <span className="moment-text-preview">Aa</span>}<span className="moment-story-badge">{viewed[s.id] ? "Viewed" : "New"}</span></div><div className="moment-card-body"><div className="moment-card-author"><Avatar src={s.user_id === profile.id ? profile.avatar_url : ""} name={s.user_id === profile.id ? (profile.full_name || profile.username || "You") : "HEXAchi User"} size={32}/><div><strong>{s.user_id === profile.id ? (profile.full_name || profile.username || "You") : "HEXAchi User"}</strong><small>{s.created_at ? new Date(s.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</small></div></div><p>{s.description || s.text || "Media Moment"}</p><div className="moment-card-stats"><span>❤️ {counts[s.id] || 0}</span><span>👁 {counts[`${s.id}:views`] || 0}</span><span>💬 {counts[`${s.id}:comments`] || 0}</span></div></div></button>)}
     </div>
     {show && <div className="modal-backdrop" onClick={() => !posting && setShow(false)}><div className="status-modal" onClick={(e) => e.stopPropagation()}><div className="modal-header"><div><h2>Create Moment</h2><p>Share something with your contacts.</p></div><button type="button" onClick={() => !posting && setShow(false)}>×</button></div><form onSubmit={create}><textarea className="modal-input modal-textarea" value={text} onChange={(e) => setText(e.target.value)} placeholder="What's happening?" maxLength={HEXA_MAX_MESSAGE_LENGTH}/><input className="modal-input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Caption / description" maxLength={1000}/><button type="button" className="media-picker" onClick={() => fileRef.current?.click()} disabled={posting}><span>📷</span><div><strong>{file ? file.file.name : "Add photo or video"}</strong><small>Camera, gallery or laptop file</small></div></button><input ref={fileRef} hidden type="file" accept="image/*,video/*" capture="environment" onChange={pick}/>{file && <div className="status-media-preview">{file.kind === "video" ? <video controls src={file.url}/> : <img src={file.url} alt="Preview"/>}</div>}<button className="hero-primary" type="submit" disabled={posting}>{posting ? "Posting…" : "Post Moment"}</button></form></div></div>}
     {viewer && (
@@ -6739,7 +6739,7 @@ function StatusPage({ profile }) {
         </button>
 
         <div className="story-content moments-viewer-content" onClick={(e) => e.stopPropagation()}>
-          <div className="moments-viewer-topbar"><div className="moment-viewer-identity"><Avatar name={viewer.user_id === profile.id ? (profile.full_name || profile.username || "You") : "HEXA User"} src={viewer.user_id === profile.id ? profile.avatar_url : ""} size={36}/><div><strong>{viewer.user_id === profile.id ? (profile.full_name || profile.username || "You") : "HEXA User"}</strong><small>{viewer.created_at ? new Date(viewer.created_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : ""}</small></div></div><button type="button" className="moment-viewer-more" onClick={() => setShareOpen(x => !x)}>⋯</button></div>
+          <div className="moments-viewer-topbar"><div className="moment-viewer-identity"><Avatar name={viewer.user_id === profile.id ? (profile.full_name || profile.username || "You") : "HEXAchi User"} src={viewer.user_id === profile.id ? profile.avatar_url : ""} size={36}/><div><strong>{viewer.user_id === profile.id ? (profile.full_name || profile.username || "You") : "HEXAchi User"}</strong><small>{viewer.created_at ? new Date(viewer.created_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : ""}</small></div></div><button type="button" className="moment-viewer-more" onClick={() => setShareOpen(x => !x)}>⋯</button></div>
           {viewer.media_url && viewer.media_type === "video" ? (
             <video controls autoPlay playsInline src={viewer.media_url} />
           ) : viewer.media_url ? (
@@ -6797,11 +6797,11 @@ function StatusPage({ profile }) {
                 <div className="status-comment premium-comment" key={c.id}>
                   <Avatar
                     src={c.profile?.avatar_url}
-                    name={c.profile?.full_name || c.profile?.username || "HEXA User"}
+                    name={c.profile?.full_name || c.profile?.username || "HEXAchi User"}
                     size={32}
                   />
                   <div>
-                    <b>{c.profile?.full_name || c.profile?.username || "HEXA User"}</b>
+                    <b>{c.profile?.full_name || c.profile?.username || "HEXAchi User"}</b>
                     <p>{c.text}</p>
                     <div className="status-comment-meta"><small>{new Date(c.created_at).toLocaleString()}</small><button type="button" onClick={() => { setCommentText(`@${c.profile?.username || c.profile?.full_name || "user"} `); }}>Reply</button></div>
                   </div>
@@ -7103,7 +7103,7 @@ function CallsPage({ profile }) {
           {people.map((person) => (
             <button key={person.id} className="person-result" type="button" onClick={() => { setPeer(person); setSearch(person.username ? `@${person.username}` : person.full_name || ""); setPeople([]); setStatus(""); }}>
               <Avatar src={person.avatar_url} name={person.full_name || person.username} size={42} />
-              <div><strong>{person.full_name || person.username || "HEXA User"}</strong><span>{person.username ? `@${person.username}` : "HEXA account"}</span></div>
+              <div><strong>{person.full_name || person.username || "HEXAchi User"}</strong><span>{person.username ? `@${person.username}` : "HEXA account"}</span></div>
             </button>
           ))}
         </div>
@@ -7252,12 +7252,12 @@ function WebRTCCall({ profile, call, type, peer, onEnd }) {
     onEnd?.();
   }
 
-  const displayName = peer?.name || peer?.full_name || peer?.username || "HEXA User";
+  const displayName = peer?.name || peer?.full_name || peer?.username || "HEXAchi User";
   return (
     <div className="story-viewer" style={{ zIndex: 800 }}>
       <div className="call-shell">
         <div className="call-header">
-          <strong>{type === "video" ? "HEXA Video Call" : "HEXA Voice Call"}</strong>
+          <strong>{type === "video" ? "HEXAchi Video Call" : "HEXAchi Voice Call"}</strong>
           <span>{connected ? "Connected" : call?.status === "ringing" ? "Ringing…" : "Connecting…"}</span>
         </div>
         {type === "video" ? (
@@ -7310,7 +7310,7 @@ function WebRTCCallLauncher({ profile, target, onClose }) {
         .select("id,username,full_name,avatar_url")
         .eq("id", user)
         .maybeSingle();
-      if (mounted) setCall({ data, peer: peer || { id: user, full_name: "HEXA User" } });
+      if (mounted) setCall({ data, peer: peer || { id: user, full_name: "HEXAchi User" } });
     })();
     return () => { mounted = false; };
   }, [profile?.id, target?.conversation?.id, target?.type]);
@@ -7345,7 +7345,7 @@ function IncomingCallWatcher({ profile }) {
           .select("id,username,full_name,avatar_url")
           .eq("id", call.caller_id)
           .maybeSingle();
-        if (active) setIncoming({ call, peer: peer || { id: call.caller_id, full_name: "HEXA User" } });
+        if (active) setIncoming({ call, peer: peer || { id: call.caller_id, full_name: "HEXAchi User" } });
       }
     })();
 
@@ -7354,7 +7354,7 @@ function IncomingCallWatcher({ profile }) {
         const call = payload.new;
         if (!active || call.status !== "ringing") return;
         const { data: peer } = await supabase.from("profiles").select("id,username,full_name,avatar_url").eq("id", call.caller_id).maybeSingle();
-        if (active) setIncoming({ call, peer: peer || { id: call.caller_id, full_name: "HEXA User" } });
+        if (active) setIncoming({ call, peer: peer || { id: call.caller_id, full_name: "HEXAchi User" } });
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "calls", filter: `callee_id=eq.${profile.id}` }, (payload) => {
         if (["ended", "declined", "rejected", "missed"].includes(payload.new?.status)) {
@@ -7387,7 +7387,7 @@ function IncomingCallWatcher({ profile }) {
   return <div className="story-viewer" style={{ zIndex: 700 }}>
     <div className="coming-card" style={{ width: "min(420px, 92vw)", textAlign: "center" }}>
       <Avatar src={incoming.peer?.avatar_url} name={incoming.peer?.full_name || incoming.peer?.username} size={82} />
-      <h2>{incoming.peer?.full_name || incoming.peer?.username || "HEXA User"}</h2>
+      <h2>{incoming.peer?.full_name || incoming.peer?.username || "HEXAchi User"}</h2>
       <p>Incoming {incoming.call.type === "video" ? "video" : "voice"} call</p>
       <div className="hero-actions">
         <button className="hero-secondary" onClick={decline}>Decline</button>
@@ -7561,11 +7561,11 @@ function WalletPage({ profile }) {
           <div><h2>Buy HEXA Credits</h2><p>Simple phone-style payment. Verify your HEXA account, then complete payment securely.</p></div>
           <button className="hero-secondary" onClick={() => { setShowBuyCredits(false); setPassword(""); setError(""); }}>Close</button>
         </div>
-        <label className="wallet-security-field"><span>HEXA Username</span><input className="modal-input" value={username} onChange={e => setUsername(e.target.value)} placeholder="@yourusername" autoComplete="username" /></label>
+        <label className="wallet-security-field"><span>HEXAchi Username</span><input className="modal-input" value={username} onChange={e => setUsername(e.target.value)} placeholder="@yourusername" autoComplete="username" /></label>
         <label className="wallet-security-field"><span>Phone Number</span><input className="modal-input" value={phone} onChange={e => setPhone(e.target.value)} placeholder="080XXXXXXXX" inputMode="tel" autoComplete="tel" /></label>
         <label className="wallet-security-field"><span>HEXA Password</span><input className="modal-input" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your HEXA password" autoComplete="current-password" /></label>
         <label className="wallet-security-field"><span>Amount (₦)</span><input className="modal-input" type="number" min="100" step="100" value={amount} onChange={e => setAmount(e.target.value)} /></label>
-        <div className="wallet-security-note">🔐 Your password is used only for the Supabase authentication check. HEXA does not store it and never sends it to the payment provider. Payment confirmation is verified server-side.</div>
+        <div className="wallet-security-note">🔐 Your password is used only for the Supabase authentication check. HEXAchi does not store it and never sends it to the payment provider. Payment confirmation is verified server-side.</div>
         {error && <div className="auth-alert auth-error"><span>!</span>{error}</div>}
         <button className="hero-primary wallet-buy-button" onClick={startFunding} disabled={funding}>{funding ? "Starting secure payment…" : `Buy ${Number(amount || 0).toLocaleString("en-NG")} HEXA Credits`}</button>
       </div>
@@ -7591,7 +7591,7 @@ function UniversalSearch({ search, profile, onMessage }) {
       supabase.from("statuses").select("id,user_id,text,description,media_type,created_at").or(`text.ilike.${pattern},description.ilike.${pattern}`).gt("expires_at",new Date().toISOString()).limit(8)
     ]);
     if(cancelled)return;const out=[];
-    (peopleR.data||[]).forEach(x=>out.push({kind:"person",id:`p-${x.id}`,title:x.full_name||x.username||"HEXA User",subtitle:x.username?`@${x.username}`:"Contact",data:x}));
+    (peopleR.data||[]).forEach(x=>out.push({kind:"person",id:`p-${x.id}`,title:x.full_name||x.username||"HEXAchi User",subtitle:x.username?`@${x.username}`:"Contact",data:x}));
     (chatsR.data||[]).filter(x=>x.type!=="direct").forEach(x=>out.push({kind:x.name?.toLowerCase().startsWith("channel:")?"channel":x.type==="group"?"group":"chat",id:`c-${x.id}`,title:String(x.name||"").replace(/^channel:/i,""),subtitle:x.type==="group"?"Group":"Chat",data:x}));
     (msgsR.data||[]).forEach(x=>out.push({kind:"message",id:`m-${x.id}`,title:x.content||x.message_type||"Message",subtitle:`Message · ${new Date(x.created_at).toLocaleString()}`,data:x}));
     (communitiesR.data||[]).forEach(x=>out.push({kind:"community",id:`co-${x.id}`,title:x.name,subtitle:"Community",data:x}));
@@ -7638,7 +7638,7 @@ function ProfileEditModal({ profile, onClose, onSaved }) {
   return <div className="modal-backdrop" onClick={()=>!saving&&onClose?.()}><div className="profile-edit-modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-header"><div><h2>Edit profile</h2><p>Update the details people see across HEXA.</p></div><button type="button" onClick={()=>!saving&&onClose?.()}>×</button></div>
     <form onSubmit={save}>
-      <button type="button" className="profile-edit-avatar-picker" onClick={()=>fileRef.current?.click()}><Avatar src={avatarPreview} name={fullName||username||"HEXA User"} size={96}/><span>📷 Change photo</span></button>
+      <button type="button" className="profile-edit-avatar-picker" onClick={()=>fileRef.current?.click()}><Avatar src={avatarPreview} name={fullName||username||"HEXAchi User"} size={96}/><span>📷 Change photo</span></button>
       <input ref={fileRef} hidden type="file" accept="image/*" onChange={pick}/>
       <label className="wallet-security-field"><span>Full name</span><input className="modal-input" value={fullName} onChange={e=>setFullName(e.target.value)} maxLength={80} required/></label>
       <label className="wallet-security-field"><span>Username</span><input className="modal-input" value={username} onChange={e=>setUsername(e.target.value)} maxLength={30} autoCapitalize="none" required/></label>
@@ -7692,14 +7692,14 @@ function SettingsPage({ profile, session, onSignOut, onProfileUpdated }) {
     <section className="workspace-page settings-page">
       <div className="page-heading">
         <div className="page-heading-icon">⚙</div>
-        <div><h1>{hexLang(lang,"settings")}</h1><p>Customize HEXA, including appearance and language.</p></div>
+        <div><h1>{hexLang(lang,"settings")}</h1><p>Customize HEXAchi, including appearance and language.</p></div>
       </div>
 
       <GuestAccountUpgrade session={session} profile={profile}/>
 
       <div className="settings-card hexa-profile-settings">
-        <Avatar src={profile?.avatar_url} name={profile?.full_name || profile?.username || "HEXA User"} size={64} />
-        <div className="profile-settings-copy"><strong>{profile?.full_name || profile?.username || "HEXA User"}</strong><p>{profile?.username ? `@${profile.username}` : profile?.email || "HEXA account"}</p><small>{profile?.about || "Add an About description to your profile."}</small></div>
+        <Avatar src={profile?.avatar_url} name={profile?.full_name || profile?.username || "HEXAchi User"} size={64} />
+        <div className="profile-settings-copy"><strong>{profile?.full_name || profile?.username || "HEXAchi User"}</strong><p>{profile?.username ? `@${profile.username}` : profile?.email || "HEXA account"}</p><small>{profile?.about || "Add an About description to your profile."}</small></div>
         <button type="button" className="hero-secondary" onClick={()=>setShowProfileEditor(true)}>Edit profile</button>
       </div>
 
@@ -7843,7 +7843,7 @@ function CallLinkJoinPage({ profile }) {
 
         if (!active) return;
         setCall(row);
-        setPeer(profileRow || { id: peerId, full_name: "HEXA User" });
+        setPeer(profileRow || { id: peerId, full_name: "HEXAchi User" });
         setLoading(false);
 
         channel = supabase.channel(`hexa-call-link-${row.id}-${profile.id}`)
@@ -7898,11 +7898,11 @@ function CallLinkJoinPage({ profile }) {
     return <div className="story-viewer" style={{ zIndex: 1200 }}><div className="coming-card" style={{ width: "min(460px, 92vw)", textAlign: "center" }}><div className="page-heading-icon">✓</div><h2>Call ended</h2><p>This HEXA call session is no longer active.</p><button className="hero-primary" type="button" onClick={() => { window.history.replaceState({}, "", "/"); window.location.reload(); }}>Return to HEXA</button></div></div>;
   }
 
-  const displayName = peer?.full_name || peer?.username || "HEXA User";
+  const displayName = peer?.full_name || peer?.username || "HEXAchi User";
   const isCaller = String(call?.caller_id) === String(profile.id);
 
   if ((isCaller && call?.status === "ringing") || (!isCaller && call?.status === "ringing")) {
-    return <div className="story-viewer" style={{ zIndex: 1200 }}><div className="coming-card" style={{ width: "min(480px, 94vw)", textAlign: "center" }}><Avatar src={peer?.avatar_url} name={displayName} size={92} /><h2>{call?.type === "video" ? "HEXA Video Call" : "HEXA Voice Call"}</h2><p>{isCaller ? `Waiting for ${displayName} to join…` : `Incoming call from ${displayName}.`}</p><div className="hero-actions">{!isCaller && <button className="hero-primary" type="button" onClick={joinCall} disabled={joining}>{joining ? "Joining…" : "Join call"}</button>}<button className="hero-secondary" type="button" onClick={() => { window.history.replaceState({}, "", "/"); window.location.reload(); }}>Close</button></div></div></div>;
+    return <div className="story-viewer" style={{ zIndex: 1200 }}><div className="coming-card" style={{ width: "min(480px, 94vw)", textAlign: "center" }}><Avatar src={peer?.avatar_url} name={displayName} size={92} /><h2>{call?.type === "video" ? "HEXAchi Video Call" : "HEXAchi Voice Call"}</h2><p>{isCaller ? `Waiting for ${displayName} to join…` : `Incoming call from ${displayName}.`}</p><div className="hero-actions">{!isCaller && <button className="hero-primary" type="button" onClick={joinCall} disabled={joining}>{joining ? "Joining…" : "Join call"}</button>}<button className="hero-secondary" type="button" onClick={() => { window.history.replaceState({}, "", "/"); window.location.reload(); }}>Close</button></div></div></div>;
   }
 
   return <WebRTCCall profile={profile} call={call} type={call.type} peer={peer} onEnd={() => setFinished(true)} />;
@@ -7928,18 +7928,28 @@ function PrivacyPolicyPage() {
   return (
     <div className="hexa-policy-page">
       <div className="hexa-policy-card">
-        <div className="hexa-brand"><div className="hexa-logo">H</div><div><strong>HEXA</strong><span>Privacy, explained simply.</span></div></div>
+        <div className="hexa-brand"><div className="hexa-logo">H</div><div><strong>HEXAchi</strong><span>Privacy, explained simply.</span></div></div>
         <h1>Privacy Policy</h1>
-        <p>HEXA uses your account information and messages to provide communication features. HEXA can start a temporary guest profile automatically so people can enter the app without a login barrier.</p>
-        <h2>Temporary guest profiles</h2>
-        <p>A guest profile is associated with a Supabase Auth user and a browser session. HEXA does not need your GPS location or a device identifier to create this profile. You can add an email and password in Settings to keep access on another device.</p>
-        <h2>Messages and media</h2>
-        <p>Messages and uploaded media are stored to provide the communication features you use. HEXA does not silently read unrelated files on your device.</p>
-        <h2>Retention</h2>
-        <p>Abandoned, empty anonymous profiles are eligible for automatic cleanup after the configured retention period. Accounts with sent messages are not removed by the empty-profile cleanup.</p>
-        <h2>Your choices</h2>
-        <p>You can upgrade a temporary profile to a permanent account, sign out, and use the Settings area to manage profile information and privacy controls.</p>
-        <div className="hexa-policy-actions"><a className="hero-primary" href="/">Back to HEXA</a></div>
+        <p>This page explains the information HEXAchi uses to provide messaging, calling, Moments, Kora, profiles, and account-security features.</p>
+        <h2>1. Temporary profiles</h2>
+        <p>When a new visitor chooses <strong>Start Chatting</strong>, HEXAchi can create a temporary Supabase Auth profile for that browser session. HEXAchi does not create that profile merely because the page loaded. A browser session token may be stored locally so the session can persist.</p>
+        <h2>2. Information you provide</h2>
+        <p>Depending on the features you use, HEXAchi may store information you voluntarily provide, such as your name, username, email address, phone number, profile picture, About text, messages, reactions, voice notes, photos, videos, files, Moments, and channel or group content.</p>
+        <h2>3. Location and device information</h2>
+        <p>HEXAchi does not require GPS location or a device identifier just to create a temporary profile. Location features are intended to be used only when you explicitly choose a location-sharing feature and grant the relevant browser permission.</p>
+        <h2>4. Microphone and camera</h2>
+        <p>Voice messages, voice calls, video calls, and camera features may request browser permission. The app should only access those capabilities when you start a feature that needs them.</p>
+        <h2>5. CAPTCHA and abuse protection</h2>
+        <p>HEXAchi may use Cloudflare Turnstile and Supabase authentication protections to reduce automated abuse during account creation. The CAPTCHA is part of the security process for guest onboarding.</p>
+        <h2>6. Messages and media</h2>
+        <p>Messages and uploaded media may be stored in order to provide the communication features you use. HEXAchi does not need access to unrelated files on your device just to provide the chat service.</p>
+        <h2>7. Retention</h2>
+        <p>Abandoned empty anonymous profiles may be eligible for automatic cleanup after the configured retention period. Profiles that have sent messages are not covered by an empty-profile cleanup rule.</p>
+        <h2>8. Securing your account</h2>
+        <p>You can add an email address and password in Settings to make a temporary profile recoverable on another device. You can also manage profile information and sign out from Settings.</p>
+        <h2>9. Your choices</h2>
+        <p>You choose whether to use optional features such as location sharing, microphone, camera, and profile details. You can review and change many of these choices through browser permissions and HEXAchi settings.</p>
+        <div className="hexa-policy-actions"><a className="hero-primary" href="/">← Back to HEXAchi</a></div>
       </div>
     </div>
   );
@@ -7953,7 +7963,7 @@ function TemporaryGuestBanner({ profile, onOpenSettings }) {
   return <div className="hexa-guest-banner">
     <span className="hexa-guest-banner-icon">🛡️</span>
     <div className="hexa-guest-banner-copy">
-      <strong>Temporary HEXA profile</strong>
+      <strong>Temporary HEXAchi profile</strong>
       <span>We've created a secure, temporary profile for you. To access this chat from another device or phone, add an email and password in your settings. Supabase keeps your session token in your browser so this temporary session can persist.</span>
       <a href="/privacy">Privacy Policy</a>
     </div>
@@ -8013,7 +8023,7 @@ function AuthenticatedHEXA({ session, onSignOut }) {
   const { setLanguage: setGlobalLanguage } = useHexaLanguage();
   useEffect(()=>{ if(profile?.language && profile.language !== getSavedHexaLanguage()) setGlobalLanguage(profile.language); },[profile?.language]);
   useEffect(()=>{if(!profile?.id)return;const channel=supabase.channel(`hexa-notifications-${profile.id}`).on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},p=>{if(p.new?.sender_id===profile.id)return;setNotifications(x=>[{id:Date.now(),title:"New message",body:p.new?.content||"New message",created_at:new Date().toISOString()},...x].slice(0,50))}).subscribe();return()=>supabase.removeChannel(channel)},[profile?.id]);
-  if(profileLoading)return <div className="hexa-loading-screen"><div className="loading-logo">H</div><div className="loading-spinner"/><strong>Opening HEXA…</strong><span>Preparing your workspace</span></div>;
+  if(profileLoading)return <div className="hexa-loading-screen"><div className="loading-logo">H</div><div className="loading-spinner"/><strong>Opening HEXAchi…</strong><span>Preparing your workspace</span></div>;
   if (typeof window !== "undefined" && /^\/call\/[0-9a-f-]{36}$/i.test(window.location.pathname)) {
     return <CallLinkJoinPage profile={profile} />;
   }
@@ -8328,7 +8338,7 @@ export default function App() {
         <div className="hexa-loading-screen">
           <div className="loading-logo">H</div>
           <div className="loading-spinner" />
-          <strong>HEXA</strong>
+          <strong>HEXAchi</strong>
           <span>Connecting your account...</span>
         </div>
       </>
