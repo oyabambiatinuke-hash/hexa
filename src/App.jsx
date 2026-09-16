@@ -8139,9 +8139,34 @@ function GuestAccountUpgrade({ session, profile }) {
     finally { setBusy(false); }
   }
 
+  async function continueWithGoogle() {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const { data: current } = await supabase.auth.getSession();
+      const redirectTo = getAuthRedirectUrl();
+      if (current?.session?.user?.is_anonymous) {
+        const { error: linkError } = await supabase.auth.linkIdentity({
+          provider: "google",
+          options: { redirectTo },
+        });
+        if (linkError) throw linkError;
+        return;
+      }
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo },
+      });
+      if (oauthError) throw oauthError;
+    } catch (err) {
+      setError(err?.message || "Unable to continue with Google.");
+      setBusy(false);
+    }
+  }
+
   return <div className="settings-card guest-upgrade-card">
-    <div><strong>🔐 Secure your temporary profile</strong><p>{isAnonymous ? "Add an email now so you can keep this HEXA profile. Supabase will ask you to verify it." : "Your email is linked. Add a password now so you can sign in on another device."}</p></div>
+    <div><strong>🔐 Secure your temporary profile</strong><p>{isAnonymous ? "Add an email or Google account now so you can keep this HEXA profile on another device." : "Your email is linked. Add a password or use Google to keep your HEXA account easy to recover."}</p></div>
     {isAnonymous ? <form onSubmit={addEmail} className="guest-upgrade-form"><input className="modal-input" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email"/><button className="hero-primary" disabled={busy}>{busy?"Sending…":"Add email"}</button></form> : <form onSubmit={setAccountPassword} className="guest-upgrade-form"><input className="modal-input" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Create a password" autoComplete="new-password"/><input className="modal-input" type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} placeholder="Repeat password" autoComplete="new-password"/><button className="hero-primary" disabled={busy}>{busy?"Saving…":"Add password"}</button></form>}
+    <button type="button" className="google-auth-button" onClick={continueWithGoogle} disabled={busy}><span className="google-icon">G</span>{busy ? "Opening Google…" : isAnonymous ? "Secure with Google" : "Continue with Google"}</button>
     {error&&<div className="auth-alert auth-error"><span>!</span>{error}</div>}{message&&<div className="auth-alert auth-success"><span>✓</span>{message}</div>}
   </div>;
 }
