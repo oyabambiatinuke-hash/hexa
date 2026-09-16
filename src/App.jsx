@@ -902,181 +902,37 @@ function AuthField({
    ============================================================ */
 
 function AuthScreen() {
-  const [mode, setMode] = useState("signin");
-
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
   const [guestCaptchaToken, setGuestCaptchaToken] = useState("");
-
-  const passwordStrength = getPasswordStrength(password);
 
   function clearMessages() {
     setError("");
-    setSuccess("");
   }
 
-  function switchMode(nextMode) {
+  async function handleOAuth(provider) {
     clearMessages();
-    setMode(nextMode);
-  }
-
-  async function handleSignUp(event) {
-    event.preventDefault();
-
-    clearMessages();
-
-    const trimmedName = fullName.trim();
-    const trimmedEmail = email.trim().toLowerCase();
-
-    if (!trimmedName) {
-      setError("Enter your full name.");
-      return;
-    }
-
-    if (!trimmedEmail) {
-      setError("Enter your email.");
-      return;
-    }
-
-    if (password.length < 8) {
-      setError("Your password must be at least 8 characters.");
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-
     setBusy(true);
-
     try {
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email: trimmedEmail,
-        password,
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider,
         options: {
-          data: {
-            full_name: trimmedName,
-            display_name: trimmedName,
-          },
-
-          /*
-            Return verified users to HEXA's auth callback. The current
-            browser origin is used so localhost, preview deployments,
-            and production deployments all use the correct domain.
-          */
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: getAuthRedirectUrl(),
         },
       });
-
-      if (signUpError) {
-        throw signUpError;
-      }
-
-      /*
-        If email confirmation is enabled, Supabase normally returns
-        a user but no session. That is expected.
-      */
-      if (!data.session) {
-        setSuccess(
-          "Account created. Check your email and verify your HEXA account. After verification, you will be taken directly into HEXA."
-        );
-
-        setMode("signin");
-        setPassword("");
-        setConfirmPassword("");
-
-        return;
-      }
-
-      /*
-        If email confirmation is disabled, a session can be returned
-        immediately.
-      */
-      await ensureHexaProfile(data.user);
-
-      setSuccess("Account created. Opening HEXA...");
+      if (oauthError) throw oauthError;
     } catch (err) {
       setError(getAuthErrorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleSignIn(event) {
-    event.preventDefault();
-
-    clearMessages();
-
-    const trimmedEmail = email.trim().toLowerCase();
-
-    if (!trimmedEmail || !password) {
-      setError("Enter your email and password.");
-      return;
-    }
-
-    setBusy(true);
-
-    try {
-      const { data, error: signInError } =
-        await supabase.auth.signInWithPassword({
-          email: trimmedEmail,
-          password,
-        });
-
-      if (signInError) {
-        throw signInError;
-      }
-
-      if (!data.session || !data.user) {
-        throw new Error("Unable to create a HEXA session.");
-      }
-
-      await ensureHexaProfile(data.user);
-
-      /*
-        App's auth listener will now move the user into the
-        authenticated workspace.
-      */
-    } catch (err) {
-      setError(getAuthErrorMessage(err));
-    } finally {
       setBusy(false);
     }
   }
 
   async function handleGoogle() {
-    clearMessages();
-    setBusy(true);
+    await handleOAuth("google");
+  }
 
-    try {
-      const { error: oauthError } =
-        await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo: getAuthRedirectUrl(),
-          },
-        });
-
-      if (oauthError) {
-        throw oauthError;
-      }
-
-      /*
-        Browser is redirected to Google.
-        The Supabase client detects the callback when the user
-        returns to the HEXA URL.
-      */
-    } catch (err) {
-      setError(getAuthErrorMessage(err));
-      setBusy(false);
-    }
+  async function handleGitHub() {
+    await handleOAuth("github");
   }
 
   async function handleContinueAsGuest() {
@@ -1088,53 +944,39 @@ function AuthScreen() {
         await ensureHexaProfile(existingSessionData.session.user);
         return;
       }
-      const resolvedCaptchaToken = TURNSTILE_SITE_KEY ? getCurrentTurnstileToken(guestCaptchaToken) : "";
+
+      const resolvedCaptchaToken = TURNSTILE_SITE_KEY
+        ? getCurrentTurnstileToken(guestCaptchaToken)
+        : "";
+
       if (TURNSTILE_SITE_KEY && !resolvedCaptchaToken) {
         throw new Error("Please complete the security check before continuing as a guest.");
       }
+
       const { data, error } = await supabase.auth.signInAnonymously({
-        options: TURNSTILE_SITE_KEY ? { captchaToken: resolvedCaptchaToken } : undefined,
+        options: TURNSTILE_SITE_KEY
+          ? { captchaToken: resolvedCaptchaToken }
+          : undefined,
       });
+
       if (error) throw error;
-      if (!data?.session) throw new Error("Unable to create a temporary HEXA profile.");
+      if (!data?.session) throw new Error("Unable to create a temporary HEXAchi profile.");
+
       try {
-        const widgetId = typeof window !== "undefined" ? window[HEXA_TURNSTILE_WIDGET_KEY] : null;
-        if (widgetId !== null && widgetId !== undefined && window.turnstile?.reset) window.turnstile.reset(widgetId);
+        const widgetId = typeof window !== "undefined"
+          ? window[HEXA_TURNSTILE_WIDGET_KEY]
+          : null;
+        if (
+          widgetId !== null &&
+          widgetId !== undefined &&
+          window.turnstile?.reset
+        ) {
+          window.turnstile.reset(widgetId);
+        }
       } catch {}
+
       try { localStorage.removeItem(HEXA_EXPLICIT_SIGNOUT_KEY); } catch {}
       await ensureHexaProfile(data.user);
-    } catch (err) {
-      setError(getAuthErrorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleResetPassword() {
-    clearMessages();
-
-    const trimmedEmail = email.trim().toLowerCase();
-
-    if (!trimmedEmail) {
-      setError("Enter your email first.");
-      return;
-    }
-
-    setBusy(true);
-
-    try {
-      const { error: resetError } =
-        await supabase.auth.resetPasswordForEmail(trimmedEmail, {
-          redirectTo: getAuthRedirectUrl(),
-        });
-
-      if (resetError) {
-        throw resetError;
-      }
-
-      setSuccess(
-        "Password reset instructions have been sent to your email."
-      );
     } catch (err) {
       setError(getAuthErrorMessage(err));
     } finally {
@@ -1147,28 +989,18 @@ function AuthScreen() {
       <div className="hexa-auth-glow glow-one" />
       <div className="hexa-auth-glow glow-two" />
 
-      <main className="hexa-auth-card">
+      <main className="hexa-auth-card social-auth-card">
         <div className="hexa-brand">
           <div className="hexa-logo">H</div>
-
           <div>
-            <strong>HEXA</strong>
+            <strong>HEXAchi</strong>
             <span>Communication, connected.</span>
           </div>
         </div>
 
         <div className="auth-heading">
-          <h1>
-            {mode === "signin"
-              ? "Welcome back"
-              : "Create your HEXA account"}
-          </h1>
-
-          <p>
-            {mode === "signin"
-              ? "Sign in and continue where you left off."
-              : "Create your account and enter the HEXA workspace."}
-          </p>
+          <h1>Welcome to HEXAchi</h1>
+          <p>Sign in or create your account with a trusted identity provider.</p>
         </div>
 
         {error && (
@@ -1178,167 +1010,61 @@ function AuthScreen() {
           </div>
         )}
 
-        {success && (
-          <div className="auth-alert auth-success">
-            <span>✓</span>
-            {success}
-          </div>
-        )}
+        <div className="social-auth-stack">
+          <button
+            type="button"
+            className="google-auth-button"
+            onClick={handleGoogle}
+            disabled={busy}
+          >
+            <span className="google-icon">G</span>
+            {busy ? "Opening Google…" : "Continue with Google"}
+          </button>
 
-        {mode === "signin" ? (
-          <form onSubmit={handleSignIn}>
-            <AuthField
-              label="Email"
-              type="email"
-              value={email}
-              onChange={setEmail}
-              placeholder="you@example.com"
-              autoComplete="email"
-            />
-
-            <AuthField
-              label="Password"
-              type="password"
-              value={password}
-              onChange={setPassword}
-              placeholder="Your password"
-              autoComplete="current-password"
-            />
-
-            <div className="auth-forgot-row">
-              <button
-                type="button"
-                className="text-button"
-                onClick={handleResetPassword}
-                disabled={busy}
-              >
-                Forgot password?
-              </button>
-            </div>
-
-            <button
-              className="primary-auth-button"
-              type="submit"
-              disabled={busy}
-            >
-              {busy ? "Signing in..." : "Sign in"}
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handleSignUp}>
-            <AuthField
-              label="Full name"
-              value={fullName}
-              onChange={setFullName}
-              placeholder="Your full name"
-              autoComplete="name"
-            />
-
-            <AuthField
-              label="Email"
-              type="email"
-              value={email}
-              onChange={setEmail}
-              placeholder="you@example.com"
-              autoComplete="email"
-            />
-
-            <AuthField
-              label="Password"
-              type="password"
-              value={password}
-              onChange={setPassword}
-              placeholder="At least 8 characters"
-              autoComplete="new-password"
-            />
-
-            {password && (
-              <div className="password-strength">
-                <div className="strength-bars">
-                  {[1, 2, 3, 4, 5, 6].map((item) => (
-                    <i
-                      key={item}
-                      className={
-                        item <= passwordStrength.score
-                          ? "filled"
-                          : ""
-                      }
-                    />
-                  ))}
-                </div>
-
-                <span>{passwordStrength.label}</span>
-              </div>
-            )}
-
-            <AuthField
-              label="Confirm password"
-              type="password"
-              value={confirmPassword}
-              onChange={setConfirmPassword}
-              placeholder="Repeat your password"
-              autoComplete="new-password"
-            />
-
-            <button
-              className="primary-auth-button"
-              type="submit"
-              disabled={busy}
-            >
-              {busy ? "Creating account..." : "Create account"}
-            </button>
-          </form>
-        )}
+          <button
+            type="button"
+            className="github-auth-button"
+            onClick={handleGitHub}
+            disabled={busy}
+          >
+            <span className="github-icon">◖</span>
+            {busy ? "Opening GitHub…" : "Continue with GitHub"}
+          </button>
+        </div>
 
         <div className="auth-divider">
           <span>or</span>
         </div>
 
-        <button
-          type="button"
-          className="google-auth-button"
-          onClick={handleGoogle}
-          disabled={busy}
-        >
-          <span className="google-icon">G</span>
-          Continue with Google
-        </button>
-
-        <div className="auth-switch">
-          {mode === "signin" ? (
-            <>
-              Don't have a HEXA account?
-              <button
-                type="button"
-                onClick={() => switchMode("signup")}
-              >
-                Create one
-              </button>
-            </>
-          ) : (
-            <>
-              Already have a HEXA account?
-              <button
-                type="button"
-                onClick={() => switchMode("signin")}
-              >
-                Sign in
-              </button>
-            </>
-          )}
-        </div>
-
         <div className="hexa-guest-auth-card">
-          <strong>Try HEXA without creating an account first</strong>
-          <p>We create a secure, temporary profile in your browser. Add an email and password later in Settings to keep access on another device.</p>
-          <div className="hexa-captcha-wrap"><HexaTurnstile onToken={setGuestCaptchaToken} disabled={busy} /></div>
-          <button type="button" className="hero-secondary guest-auth-button" onClick={handleContinueAsGuest} disabled={busy || (!!TURNSTILE_SITE_KEY && !guestCaptchaToken)}>
-            {busy ? "Opening HEXA…" : "Continue as guest"}
+          <strong>Try HEXAchi without creating an account first</strong>
+          <p>
+            Start with a secure temporary profile in this browser. Add an
+            identity later from Settings to keep access on another device.
+          </p>
+          <div className="hexa-captcha-wrap">
+            <HexaTurnstile
+              onToken={setGuestCaptchaToken}
+              disabled={busy}
+            />
+          </div>
+          <button
+            type="button"
+            className="hero-secondary guest-auth-button"
+            onClick={handleContinueAsGuest}
+            disabled={
+              busy ||
+              (!!TURNSTILE_SITE_KEY && !guestCaptchaToken)
+            }
+          >
+            {busy ? "Opening HEXAchi…" : "Continue as guest"}
           </button>
           <a href="/privacy" className="privacy-link">Privacy Policy</a>
         </div>
+
         <p className="auth-footer">
-          By continuing, you agree to use HEXA responsibly. We do not request location or device IDs just to create a temporary profile.
+          HEXAchi does not require your GPS location or device ID just to start
+          a temporary profile.
         </p>
       </main>
     </div>
