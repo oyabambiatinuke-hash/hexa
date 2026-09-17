@@ -1,7 +1,4 @@
 {
-  "rewrites": [
-    { "source": "/privacy", "destination": "/" }
-  ],
   "headers": [
     {
       "source": "/(.*)",
@@ -12,5 +9,10 @@
         }
       ]
     }
+  ],
+  "rewrites": [
+    { "source": "/privacy", "destination": "/" },
+    { "source": "/call/:id", "destination": "/" },
+    { "source": "/community-invite/:token", "destination": "/" }
   ]
 }

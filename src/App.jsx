@@ -481,7 +481,7 @@ const HEXA_FEATURES = [
   ["Groups", "Create", "Add/remove members", "Owner", "Multiple admins", "Permissions", "Invite links", "Name/photo/description", "Member search", "Mentions", "Announcements", "Group media/files", "Polls", "Reactions", "Replies", "Group calls", "Participant management", "Leave/report/delete"],
   ["Calls", "1:1 voice", "1:1 video", "Group voice", "Group video", "Incoming/outgoing", "Accept/decline/missed", "Mute", "Speaker", "Camera", "Front/rear camera", "PiP", "Call history", "Add participants", "Call links", "Privacy/security", "WebRTC", "STUN/TURN", "Network quality"],
   ["Moments", "Text/photo/video/GIF", "Captions", "Emoji/stickers/drawing", "Privacy", "Viewers", "Seen/unseen", "Reactions", "Replies", "Navigation", "24-hour expiry", "Delete", "Notifications", "Mute"],
-  ["Channels", "Create/follow/unfollow", "Profile", "Posts", "Media", "Links", "Polls", "Reactions", "Forward/share", "Search", "Notifications", "Admins", "Followers", "Privacy", "Verification"],
+  ["Channels", "Create/follow/unfollow", "Profile", "Posts", "Media", "Links", "Polls", "Reactions", "Forward/share", "Edit/delete", "Search", "Notifications", "Admins", "Followers", "Privacy", "Verification"],
   ["Search", "Contacts", "Chats", "Messages", "Groups", "Channels", "Media", "Documents", "Links", "GIFs", "Audio", "Date filters", "Within conversation", "Advanced filters"],
   ["Profiles & Contacts", "Photo", "Name", "About", "Phone", "QR", "Add/invite", "Block/report", "Last seen", "Online", "Privacy", "Read receipts", "Group-add controls"],
   ["Privacy & Security", "E2E encryption", "Encrypted calls", "2FA", "Passkeys", "App lock", "Biometrics", "Security notifications", "Disappearing", "View-once", "Privacy checkup", "Device management", "Linked devices", "Logout"],
@@ -489,7 +489,7 @@ const HEXA_FEATURES = [
   ["Organization", "Starred", "Pinned", "Archived", "Favorites", "Unread", "Chat filters", "Folders/categories", "Saved search"],
   ["Notifications", "Messages", "Groups", "Calls", "Missed calls", "Moments", "Mentions", "Replies", "Reactions", "Channels", "Sounds", "Vibration", "Previews", "Mute", "Custom notifications"],
   ["Payments & Business", "Payments", "Business profiles", "Catalogs", "Shopping", "Cart", "Orders", "Customer messaging", "Broadcasts", "Automated replies", "Labels", "Business tools"],
-  ["Communities", "Create", "Description/icon", "Groups", "Announcement group", "Admins", "Members", "Invites", "Notifications", "Announcements"],
+  ["Communities", "Create", "Description/icon", "Groups", "Announcement group", "Admins", "Members", "Invites", "Notifications", "Announcements", "Join/leave", "Group ordering", "Admin promotion"],
   ["Broadcasts", "Create list", "Send to many", "Manage", "Private replies", "Edit/delete"],
   ["Polls", "Single choice", "Multiple choice", "Multiple answers", "Vote", "Change vote", "Results", "Forward", "Reactions", "Replies"],
   ["Location", "Current", "Live", "Select", "Preview", "Stop sharing", "Duration", "Maps"],
@@ -5933,30 +5933,348 @@ function getChatPreviewText(message) {
    GENERIC WORKSPACE PAGE
    ============================================================ */
 
-function CreateEntityModal({ type, profile, onClose, onCreated }) {
-  const [name,setName]=useState(""); const [description,setDescription]=useState(""); const [people,setPeople]=useState([]); const [members,setMembers]=useState([]); const [busy,setBusy]=useState(false);
-  useEffect(()=>{supabase.from("profiles").select("id,username,full_name,avatar_url").neq("id",profile.id).limit(50).then(({data})=>setPeople(data||[]));},[profile.id]);
-  async function create(e){e.preventDefault();if(!name.trim())return;setBusy(true);
-    if(type==="Group"){
-      const {data,error}=await supabase.from("conversations").insert({type:"group",name:name.trim(),created_by:profile.id,owner_id:profile.id}).select("*").single();
-      if(error){alert(error.message);setBusy(false);return;}
-      const rows=[{conversation_id:data.id,user_id:profile.id,is_admin:true},...members.map(id=>({conversation_id:data.id,user_id:id,is_admin:false}))];
-      await supabase.from("conversation_members").insert(rows); onCreated({...data,member_ids:[profile.id,...members],description});
-    } else {
-      const {data,error}=await supabase.from("communities").insert({name:name.trim(),description:description.trim(),created_by:profile.id}).select("*").single();
-      if(error){alert(error.message);setBusy(false);return;}
-      await supabase.from("community_members").insert({community_id:data.id,user_id:profile.id,is_admin:true});
-      onCreated({...data,member_ids:[profile.id]});
-    }
-    setBusy(false);onClose();
+
+/* ============================================================
+   GROUPS / COMMUNITIES / CHANNELS — FULL WORKSPACE LAYER
+   ============================================================ */
+
+function hexaWorkspaceUrl(kind, id) {
+  if (typeof window === "undefined") return "";
+  return `${window.location.origin}/${kind}/${id}`;
+}
+
+async function hexaCopy(value) {
+  try {
+    await navigator.clipboard?.writeText(String(value || ""));
+    safeAlert("Copied.", "success");
+  } catch {
+    safeAlert("Copy is unavailable in this browser.", "danger");
   }
-  return <div className="modal-backdrop" onClick={onClose}><div className="entity-modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><div><h2>Create {type}</h2><p>Create a real HEXA {type.toLowerCase()}.</p></div><button onClick={onClose}>×</button></div><form onSubmit={create}><input className="modal-input" value={name} onChange={e=>setName(e.target.value)} placeholder={`${type} name`} required/><textarea className="modal-input modal-textarea" value={description} onChange={e=>setDescription(e.target.value)} placeholder="Description"/>{type==="Group"&&<div className="member-picker"><strong>Add HEXA members</strong>{people.map(p=><label key={p.id} className="member-option"><input type="checkbox" checked={members.includes(p.id)} onChange={()=>setMembers(m=>m.includes(p.id)?m.filter(x=>x!==p.id):[...m,p.id])}/><Avatar src={p.avatar_url} name={p.full_name||p.username} size={34}/><span>{p.full_name||p.username||p.id}</span></label>)}</div>}<button className="hero-primary" disabled={busy}>{busy?"Creating…":`Create ${type}`}</button></form></div></div>;
+}
+
+function hexaFirstUrl(text) {
+  const match = String(text || "").match(/https?:\/\/[^\s<]+/i);
+  return match ? match[0].replace(/[),.!?]+$/, "") : "";
+}
+
+async function hexaUploadWorkspaceMedia(file, scope) {
+  if (!file) return null;
+  const bucket = "hexa-media";
+  const ext = (file.name || "bin").split(".").pop()?.toLowerCase() || "bin";
+  const id = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const path = `${scope}/${id}.${ext}`;
+  const { error } = await supabase.storage.from(bucket).upload(path, file, {
+    contentType: file.type || "application/octet-stream",
+    upsert: false,
+  });
+  if (error) throw error;
+  return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+}
+
+async function hexaNotifyUsers(userIds, payload) {
+  const ids = Array.from(new Set((userIds || []).filter(Boolean).map(String)));
+  if (!ids.length) return;
+  try {
+    const { error } = await supabase.rpc("hexa_notify_users", {
+      p_user_ids: ids,
+      p_type: payload.type || "workspace",
+      p_title: payload.title || "HEXAchi",
+      p_body: payload.body || "You have a new update.",
+      p_entity_type: payload.entity_type || null,
+      p_entity_id: payload.entity_id || null,
+      p_metadata: payload.metadata || {},
+    });
+    if (error) throw error;
+  } catch {
+    // Notifications are additive; a missing migration must not stop publishing.
+  }
+}
+
+function CreateEntityModal({ type, profile, onClose, onCreated }) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [people, setPeople] = useState([]);
+  const [members, setMembers] = useState([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    supabase.from("profiles").select("id,username,full_name,avatar_url").neq("id", profile.id).limit(100).then(({ data }) => setPeople(data || []));
+  }, [profile.id]);
+
+  async function create(e) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setBusy(true);
+    try {
+      if (type === "Group") {
+        const { data, error } = await supabase.from("conversations").insert({
+          type: "group",
+          name: name.trim(),
+          description: description.trim(),
+          created_by: profile.id,
+          owner_id: profile.id,
+          metadata: { workspace_group: true },
+        }).select("*").single();
+        if (error) throw error;
+        const rows = [{ conversation_id: data.id, user_id: profile.id, is_admin: true }, ...members.map(id => ({ conversation_id: data.id, user_id: id, is_admin: false }))];
+        await supabase.from("conversation_members").insert(rows);
+        onCreated?.({ ...data, member_ids: [profile.id, ...members], description });
+      } else if (type === "Community") {
+        const { data, error } = await supabase.from("communities").insert({
+          name: name.trim(),
+          description: description.trim(),
+          created_by: profile.id,
+        }).select("*").single();
+        if (error) throw error;
+        await supabase.from("community_members").insert({ community_id: data.id, user_id: profile.id, is_admin: true });
+        onCreated?.({ ...data, member_ids: [profile.id] });
+      }
+      onClose?.();
+    } catch (error) {
+      safeAlert(error?.message || `Unable to create ${type.toLowerCase()}.`, "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <div className="modal-backdrop" onClick={onClose}>
+    <div className="entity-modal workspace-create-modal" onClick={e => e.stopPropagation()}>
+      <div className="modal-header">
+        <div><span className="community-kicker">HEXA WORKSPACE</span><h2>Create {type}</h2><p>Build a real connected HEXAchi {type.toLowerCase()}.</p></div>
+        <button onClick={onClose}>×</button>
+      </div>
+      <form onSubmit={create}>
+        <input className="modal-input" value={name} onChange={e => setName(e.target.value)} placeholder={`${type} name`} maxLength={80} required />
+        <textarea className="modal-input modal-textarea" value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" maxLength={500} />
+        {type === "Group" && <div className="member-picker workspace-member-picker">
+          <strong>Add HEXA members</strong>
+          <div className="workspace-member-picker-grid">
+            {people.map(p => <label key={p.id} className="member-option">
+              <input type="checkbox" checked={members.includes(p.id)} onChange={() => setMembers(m => m.includes(p.id) ? m.filter(x => x !== p.id) : [...m, p.id])} />
+              <Avatar src={p.avatar_url} name={p.full_name || p.username} size={34} />
+              <span>{p.full_name || p.username || p.id}</span>
+            </label>)}
+          </div>
+        </div>}
+        <button className="hero-primary" disabled={busy}>{busy ? "Creating…" : `Create ${type}`}</button>
+      </form>
+    </div>
+  </div>;
 }
 
 function GroupsPage({ profile, onOpenChat }) {
-  const [groups,setGroups]=useState([]);const[show,setShow]=useState(false);const[loading,setLoading]=useState(true);
-  useEffect(()=>{(async()=>{const {data}=await supabase.from("conversations").select("*").eq("type","group").order("created_at",{ascending:false});setGroups(data||[]);setLoading(false)})();},[]);
-  return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">👥</div><div><h1>Groups</h1><p>Create group conversations and manage members.</p></div><button className="hero-primary heading-action" onClick={()=>setShow(true)}>＋ Create Group</button></div><div className="entity-grid">{loading?<div className="coming-card"><h2>Loading groups…</h2></div>:groups.length?groups.map(g=><button className="entity-card" key={g.id} onClick={()=>onOpenChat?.({...g,kind:"group",online:true})}><Avatar name={g.name} size={54}/><strong>{g.name}</strong><span>{g.description||"HEXA group conversation"}</span></button>):<div className="coming-card"><div>👥</div><h2>Your groups</h2><p>No groups yet. Create one and add HEXA users.</p></div>}</div>{show&&<CreateEntityModal type="Group" profile={profile} onClose={()=>setShow(false)} onCreated={g=>setGroups(x=>[g,...x])}/>}</section>;
+  const [groups, setGroups] = useState([]);
+  const [show, setShow] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+
+  async function load() {
+    setLoading(true);
+    const { data } = await supabase.from("conversations").select("*").eq("type", "group").order("created_at", { ascending: false });
+    setGroups(data || []);
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, [profile?.id]);
+  const visible = groups.filter(g => !query.trim() || `${g.name || ""} ${g.description || ""}`.toLowerCase().includes(query.trim().toLowerCase()));
+
+  return <section className="workspace-page">
+    <div className="page-heading">
+      <div className="page-heading-icon">👥</div><div><h1>Groups</h1><p>Create group conversations and connect groups to Communities.</p></div>
+      <button className="hero-primary heading-action" onClick={() => setShow(true)}>＋ Create Group</button>
+    </div>
+    <div className="entity-toolbar workspace-toolbar"><div className="workspace-search"><span>⌕</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search groups…" /></div><button className="hero-secondary compact-action" onClick={load}>Refresh</button></div>
+    <div className="entity-grid">
+      {loading ? <div className="coming-card"><h2>Loading groups…</h2></div> : visible.length ? visible.map(g => <button className="entity-card group-entity-card" key={g.id} onClick={() => onOpenChat?.({ ...g, kind: "group", online: true })}>
+        <Avatar src={g.avatar_url} name={g.name} size={54} /><div className="entity-card-copy"><strong>{g.name}</strong><span>{g.description || "HEXA group conversation"}</span></div><b>Open →</b>
+      </button>) : <div className="coming-card"><div>👥</div><h2>{query ? "No groups found" : "Your groups"}</h2><p>{query ? "Try another search." : "No groups yet. Create one and add HEXA users."}</p></div>}
+    </div>
+    {show && <CreateEntityModal type="Group" profile={profile} onClose={() => setShow(false)} onCreated={g => { setGroups(x => [g, ...x]); setShow(false); }} />}
+  </section>;
+}
+
+function CommunityDetailModal({ community, profile, onClose, onChanged }) {
+  const [members, setMembers] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [availableGroups, setAvailableGroups] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isMember, setIsMember] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState("");
+  const [newAnnouncement, setNewAnnouncement] = useState("");
+  const [invite, setInvite] = useState("");
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [membersR, linksR, groupR, annR] = await Promise.all([
+        supabase.from("community_members").select("user_id,is_admin").eq("community_id", community.id),
+        supabase.from("community_groups").select("conversation_id,sort_order,is_announcement").eq("community_id", community.id).order("sort_order"),
+        supabase.from("conversations").select("id,name,description,avatar_url,created_by,owner_id").eq("type", "group").order("created_at", { ascending: false }),
+        supabase.from("community_announcements").select("*").eq("community_id", community.id).order("created_at", { ascending: false }).limit(20),
+      ]);
+      const memberRows = membersR.data || [];
+      setIsMember(memberRows.some(x => String(x.user_id) === String(profile.id)));
+      setIsAdmin(memberRows.some(x => String(x.user_id) === String(profile.id) && x.is_admin) || String(community.created_by) === String(profile.id));
+      const ids = memberRows.map(x => x.user_id);
+      if (ids.length) {
+        const users = await supabase.from("profiles").select("id,username,full_name,avatar_url,about").in("id", ids);
+        const admins = new Set(memberRows.filter(x => x.is_admin).map(x => String(x.user_id)));
+        setMembers((users.data || []).map(u => ({ ...u, is_admin: admins.has(String(u.id)) })));
+      } else setMembers([]);
+      const convs = groupR.data || [];
+      const linkMap = new Map((linksR.data || []).map(x => [String(x.conversation_id), x]));
+      setGroups(convs.filter(g => linkMap.has(String(g.id))).map(g => ({ ...g, ...linkMap.get(String(g.id)) })));
+      setAvailableGroups(convs.filter(g => !linkMap.has(String(g.id))));
+      setAnnouncements(annR.data || []);
+    } catch (error) {
+      safeAlert(error?.message || "Unable to load community.", "danger");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, [community.id, profile.id]);
+
+  async function toggleMembership() {
+    setBusy(true);
+    try {
+      if (isMember) {
+        if (isAdmin && String(community.created_by) === String(profile.id)) {
+          safeAlert("The community owner must transfer ownership before leaving.", "danger");
+          return;
+        }
+        await supabase.from("community_members").delete().eq("community_id", community.id).eq("user_id", profile.id);
+        setIsMember(false);
+      } else {
+        const { error } = await supabase.from("community_members").insert({ community_id: community.id, user_id: profile.id, is_admin: false });
+        if (error) throw error;
+        setIsMember(true);
+      }
+      await load();
+      onChanged?.();
+    } catch (error) {
+      safeAlert(error?.message || "Unable to update membership.", "danger");
+    } finally { setBusy(false); }
+  }
+
+  async function toggleAdmin(member) {
+    if (!isAdmin || String(member.id) === String(community.created_by)) return;
+    const { error } = await supabase.from("community_members").update({ is_admin: !member.is_admin }).eq("community_id", community.id).eq("user_id", member.id);
+    if (error) return safeAlert(error.message, "danger");
+    await load();
+  }
+
+  async function attachGroup(groupId, isAnnouncement = false) {
+    if (!isAdmin || !groupId) return;
+    const { error } = await supabase.from("community_groups").insert({ community_id: community.id, conversation_id: groupId, is_announcement: isAnnouncement, sort_order: groups.length });
+    if (error) return safeAlert(error.message, "danger");
+    if (isAnnouncement) {
+      await supabase.from("communities").update({ announcement_group_id: groupId }).eq("id", community.id);
+    }
+    await load();
+  }
+
+  async function detachGroup(groupId) {
+    if (!isAdmin) return;
+    const { error } = await supabase.from("community_groups").delete().eq("community_id", community.id).eq("conversation_id", groupId);
+    if (error) return safeAlert(error.message, "danger");
+    await load();
+  }
+
+  async function createAnnouncementGroup() {
+    if (!isAdmin) return;
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.from("conversations").insert({
+        type: "group",
+        name: `${community.name} — Announcements`,
+        description: `Official announcements for ${community.name}`,
+        created_by: profile.id,
+        owner_id: profile.id,
+        metadata: { community_announcement_group: true, community_id: community.id, admin_only: true },
+      }).select("*").single();
+      if (error) throw error;
+      await supabase.from("conversation_members").insert({ conversation_id: data.id, user_id: profile.id, is_admin: true });
+      await attachGroup(data.id, true);
+      setInvite("");
+    } catch (error) {
+      safeAlert(error?.message || "Unable to create announcement group.", "danger");
+    } finally { setBusy(false); }
+  }
+
+  async function createInvite() {
+    if (!isAdmin) return;
+    const token = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID().replace(/-/g, "").slice(0, 18) : `${Date.now()}${Math.random().toString(36).slice(2, 10)}`;
+    const { error } = await supabase.from("community_invites").insert({ community_id: community.id, token, created_by: profile.id, max_uses: 100 });
+    if (error) return safeAlert(error.message, "danger");
+    const url = `${window.location.origin}/community-invite/${token}`;
+    setInvite(url);
+    await hexaCopy(url);
+  }
+
+  async function publishAnnouncement() {
+    const text = newAnnouncement.trim();
+    if (!isAdmin || !text) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase.from("community_announcements").insert({ community_id: community.id, author_id: profile.id, content: text });
+      if (error) throw error;
+      const memberIds = members.map(x => x.id).filter(id => String(id) !== String(profile.id));
+      await hexaNotifyUsers(memberIds, { type: "community_announcement", title: community.name, body: text.slice(0, 180), entity_type: "community", entity_id: community.id });
+      setNewAnnouncement("");
+      await load();
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification(community.name, { body: text.slice(0, 140) });
+    } catch (error) {
+      safeAlert(error?.message || "Unable to publish announcement.", "danger");
+    } finally { setBusy(false); }
+  }
+
+  const filteredMembers = members.filter(member => {
+    const q = search.trim().toLowerCase();
+    return !q || [member.full_name, member.username, member.about].filter(Boolean).join(" ").toLowerCase().includes(q);
+  });
+
+  return <div className="hexa-modal-backdrop" onMouseDown={onClose}>
+    <div className="community-detail-modal community-detail-modal-expanded" onMouseDown={e => e.stopPropagation()}>
+      <div className="community-detail-hero">
+        <div className="community-detail-cover"><Avatar name={community.name} src={community.avatar_url} size={78} /></div>
+        <div className="community-detail-copy">
+          <div className="community-detail-title-row"><div><span className="community-kicker">COMMUNITY</span><h2>{community.name}</h2></div><button className="icon-button" onClick={onClose}>×</button></div>
+          <p>{community.description || "Bring your HEXA groups, members and announcements together."}</p>
+          <div className="community-stat-row"><span>👥 {members.length} members</span><span>👥 {groups.length} groups</span><span>🛡 {members.filter(m => m.is_admin).length} admins</span><span>{isMember ? "Joined" : "Discovering"}</span></div>
+          <div className="community-hero-actions"><button className={isMember ? "hero-secondary" : "hero-primary"} onClick={toggleMembership} disabled={busy}>{busy ? "Updating…" : isMember ? "Leave community" : "Join community"}</button><button className="hero-secondary" onClick={() => hexaCopy(hexaWorkspaceUrl("community", community.id))}>Share</button>{isAdmin && <button className="hero-secondary" onClick={createInvite}>Create invite</button>}</div>
+          {invite && <div className="workspace-invite-box"><span>{invite}</span><button onClick={() => hexaCopy(invite)}>Copy</button></div>}
+        </div>
+      </div>
+
+      <div className="community-detail-tabs">
+        <span>Groups</span><span>Announcements</span><span>Members</span>
+      </div>
+
+      <div className="community-detail-grid">
+        <section className="community-section-card">
+          <div className="community-panel-head"><div><strong>Groups in this community</strong><span>Connected group conversations.</span></div></div>
+          <div className="community-group-list">
+            {groups.map(group => <div className="community-group-row" key={group.id}><Avatar src={group.avatar_url} name={group.name} size={40}/><div><strong>{group.name}</strong><span>{group.is_announcement ? "Official announcement group" : group.description || "Community group"}</span></div><div className="community-group-actions">{group.is_announcement && <b>📣</b>}{isAdmin && <button onClick={() => detachGroup(group.id)}>Remove</button>}</div></div>)}
+            {!groups.length && <div className="community-empty-state">No groups are linked yet.</div>}
+          </div>
+          {isAdmin && <div className="community-group-controls"><select defaultValue="" onChange={e => { const id = e.target.value; if (id) attachGroup(id); e.target.value = ""; }}><option value="">＋ Add an existing group</option>{availableGroups.map(g => <option value={g.id} key={g.id}>{g.name}</option>)}</select><button className="hero-secondary compact-action" onClick={createAnnouncementGroup} disabled={busy}>＋ Announcement group</button></div>}
+        </section>
+
+        <section className="community-section-card">
+          <div className="community-panel-head"><div><strong>Announcements</strong><span>Important updates for the whole community.</span></div></div>
+          {isAdmin && <div className="community-announcement-composer"><textarea value={newAnnouncement} onChange={e => setNewAnnouncement(e.target.value)} maxLength={1000} placeholder="Post an announcement…"/><div><span>{newAnnouncement.length}/1000</span><button className="hero-primary compact-action" onClick={publishAnnouncement} disabled={busy || !newAnnouncement.trim()}>Publish</button></div></div>}
+          <div className="community-announcement-list">{announcements.map(a => <article key={a.id}><div className="announcement-icon">📣</div><div><strong>{a.content}</strong><span>{new Date(a.created_at).toLocaleString()}</span></div></article>)}{!announcements.length && <div className="community-empty-state">No announcements yet.</div>}</div>
+        </section>
+
+        <section className="community-section-card community-members-card">
+          <div className="community-panel-head"><div><strong>Members & admins</strong><span>Manage people connected to the community.</span></div><div className="community-member-search"><span>⌕</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search members…" /></div></div>
+          {loading ? <div className="community-empty-state">Loading members…</div> : <div className="community-member-list">{filteredMembers.map(member => <div className="community-member-row" key={member.id}><Avatar src={member.avatar_url} name={member.full_name || member.username} size={42}/><div className="community-member-copy"><strong>{member.full_name || member.username || "HEXA User"}</strong><span>@{member.username || "member"}</span></div>{member.is_admin && <span className="community-admin-badge">Admin</span>}{isAdmin && String(member.id) !== String(community.created_by) && <button className="community-admin-toggle" onClick={() => toggleAdmin(member)}>{member.is_admin ? "Demote" : "Make admin"}</button>}</div>)}{!filteredMembers.length && <div className="community-empty-state">No members match that search.</div>}</div>}
+        </section>
+      </div>
+    </div>
+  </div>;
 }
 
 function CommunitiesPage({ profile }) {
@@ -5964,64 +6282,377 @@ function CommunitiesPage({ profile }) {
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [selected, setSelected] = useState(null);
+  const [membership, setMembership] = useState({});
+  const [counts, setCounts] = useState({});
+  const [groupCounts, setGroupCounts] = useState({});
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError("");
-      try {
-        const result = await supabase
-          .from("communities")
-          .select("id,name,description,created_by,created_at")
-          .order("created_at", { ascending: false });
-        if (result.error) throw result.error;
-        if (!cancelled) setItems(result.data || []);
-      } catch (err) {
-        console.error("HEXA communities load:", err);
-        if (!cancelled) setError("Communities are temporarily unavailable. Your chats and other HEXA features are still available.");
-      } finally {
-        if (!cancelled) setLoading(false);
+  async function load() {
+    setLoading(true); setError("");
+    try {
+      const { data, error } = await supabase.from("communities").select("id,name,description,created_by,created_at,avatar_url,announcement_group_id").order("created_at", { ascending: false });
+      if (error) throw error;
+      const rows = data || [];
+      const memberMap = {}, countMap = {}, groupMap = {};
+      await Promise.all(rows.map(async community => {
+        const [membersR, groupsR] = await Promise.all([
+          supabase.from("community_members").select("user_id,is_admin").eq("community_id", community.id),
+          supabase.from("community_groups").select("conversation_id").eq("community_id", community.id),
+        ]);
+        const members = membersR.data || [];
+        countMap[community.id] = members.length;
+        groupMap[community.id] = (groupsR.data || []).length;
+        memberMap[community.id] = members.some(m => String(m.user_id) === String(profile.id));
+      }));
+      setItems(rows); setCounts(countMap); setGroupCounts(groupMap); setMembership(memberMap);
+    } catch (err) {
+      console.error("HEXA communities load:", err);
+      setError(err?.message || "Communities are temporarily unavailable.");
+    } finally { setLoading(false); }
+  }
+  useEffect(() => { load(); }, [profile?.id]);
+  const visible = items.filter(item => {
+    const q = query.trim().toLowerCase();
+    const matchesQuery = !q || [item.name, item.description].filter(Boolean).join(" ").toLowerCase().includes(q);
+    const matchesFilter = filter === "all" || (filter === "joined" && membership[item.id]);
+    return matchesQuery && matchesFilter;
+  });
+
+  return <section className="workspace-page communities-workspace">
+    <div className="page-heading communities-heading"><div className="page-heading-icon community-page-icon">◉</div><div className="page-heading-copy"><h1>Communities</h1><p>Bring groups, announcement rooms, members and shared interests into one connected space.</p></div><button className="hero-primary heading-action" onClick={() => setShow(true)}>＋ Create Community</button></div>
+    <div className="community-spotlight"><div className="community-spotlight-copy"><span className="community-kicker">HEXA COMMUNITY HUB</span><h2>One place for your people.</h2><p>Connect groups, publish announcements, manage admins and give members one place to stay together.</p><div className="community-feature-pills"><span>👥 Members</span><span>💬 Groups</span><span>📣 Announcements</span><span>🔗 Invites</span><span>🛡 Admin controls</span></div></div><div className="community-orbit"><div>◉</div><span>HEXA</span></div></div>
+    <div className="community-toolbar"><div className="community-search"><span>⌕</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search communities…" /></div><div className="community-filter-tabs"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>Discover</button><button className={filter === "joined" ? "active" : ""} onClick={() => setFilter("joined")}>Joined</button></div></div>
+    {error && <div className="hexa-inline-warning">{error}<button onClick={load}>Retry</button></div>}
+    <div className="community-grid">
+      {loading ? Array.from({ length: 4 }).map((_, i) => <div className="community-card skeleton" key={i}><div className="community-card-cover"/><div className="community-card-content"><span/><span/><span/></div></div>) : visible.length ? visible.map(community => <button className="community-card" key={community.id} onClick={() => setSelected(community)}><div className="community-card-cover"><div className="community-card-orb"><Avatar src={community.avatar_url} name={community.name} size={58}/></div><div className="community-card-chip-row"><span className="community-members-chip">👥 {counts[community.id] || 0}</span><span className="community-members-chip">💬 {groupCounts[community.id] || 0}</span></div></div><div className="community-card-content"><div className="community-card-title-row"><strong>{community.name}</strong>{membership[community.id] && <span className="community-joined-pill">Joined</span>}</div><p>{community.description || "A HEXA community for shared conversations and groups."}</p><div className="community-card-footer"><span>Created {new Date(community.created_at).toLocaleDateString()}</span><b>Open →</b></div></div></button>) : <div className="community-empty-landing"><div className="community-empty-icon">◉</div><h2>{filter === "joined" ? "No joined communities yet" : "No communities found"}</h2><p>{filter === "joined" ? "Join a community to keep its groups and announcements close." : "Create your first community or search for another one."}</p><button className="hero-primary" onClick={() => setShow(true)}>Create Community</button></div>}
+    </div>
+    {show && <CreateEntityModal type="Community" profile={profile} onClose={() => setShow(false)} onCreated={() => { setShow(false); load(); }} />}
+    {selected && <CommunityDetailModal community={selected} profile={profile} onClose={() => setSelected(null)} onChanged={load} />}
+  </section>;
+}
+
+function ChannelDetailModal({ channel, profile, onClose, onChanged }) {
+  const [posts, setPosts] = useState([]);
+  const [members, setMembers] = useState([]);
+  const [following, setFollowing] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [text, setText] = useState("");
+  const [mediaFile, setMediaFile] = useState(null);
+  const [pollQuestion, setPollQuestion] = useState("");
+  const [pollOptions, setPollOptions] = useState(["", ""]);
+  const [mode, setMode] = useState("post");
+  const [loading, setLoading] = useState(true);
+  const [publishing, setPublishing] = useState(false);
+  const [search, setSearch] = useState("");
+  const [privacy, setPrivacy] = useState(channel.metadata?.privacy || "public");
+  const [verificationStatus, setVerificationStatus] = useState(channel.metadata?.verification_status || "none");
+  const [adminPanel, setAdminPanel] = useState(false);
+  const [reactionBusy, setReactionBusy] = useState({});
+  const mediaRef = useRef(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [structuredR, legacyR, membersR] = await Promise.all([
+        supabase.from("channel_posts").select("*").eq("channel_id", channel.id).order("created_at", { ascending: true }).limit(100),
+        supabase.from("messages").select("id,conversation_id,sender_id,content,message_type,metadata,created_at,deleted_at").eq("conversation_id", channel.id).is("deleted_at", null).order("created_at", { ascending: true }).limit(100),
+        supabase.from("conversation_members").select("user_id,is_admin").eq("conversation_id", channel.id),
+      ]);
+      const structured = structuredR.data || [];
+      const legacy = (legacyR.data || []).filter(m => m.metadata?.channel_post || !structured.length).map(m => ({
+        id: m.id, channel_id: m.conversation_id, author_id: m.sender_id, content: m.content, media_url: m.metadata?.media_url || null, media_type: m.metadata?.media_type || null, post_type: m.message_type === "poll" ? "poll" : "post", metadata: m.metadata || {}, created_at: m.created_at, legacy: true,
+      }));
+      const merged = [...legacy, ...structured].sort((a,b) => new Date(a.created_at) - new Date(b.created_at)).filter((item, i, arr) => arr.findIndex(x => String(x.id) === String(item.id)) === i);
+      setPosts(merged);
+      const memberRows = membersR.data || [];
+      setMembers(memberRows);
+      const mine = memberRows.find(m => String(m.user_id) === String(profile.id));
+      setFollowing(Boolean(mine));
+      setIsAdmin(Boolean(mine?.is_admin) || String(channel.owner_id) === String(profile.id) || String(channel.created_by) === String(profile.id));
+    } finally { setLoading(false); }
+  }
+  useEffect(() => { load(); }, [channel.id, profile.id]);
+
+  async function toggleFollow() {
+    if (following) {
+      await supabase.from("conversation_members").delete().eq("conversation_id", channel.id).eq("user_id", profile.id);
+      setFollowing(false);
+    } else {
+      const { error } = await supabase.from("conversation_members").insert({ conversation_id: channel.id, user_id: profile.id, is_admin: false });
+      if (error) return safeAlert(error.message, "danger");
+      setFollowing(true);
+      const ownerId = channel.owner_id || channel.created_by;
+      if (ownerId && String(ownerId) !== String(profile.id)) await hexaNotifyUsers([ownerId], { type: "channel_follow", title: "New follower", body: `${profile.full_name || profile.username || "Someone"} followed your channel.`, entity_type: "channel", entity_id: channel.id });
+    }
+    onChanged?.();
+    await load();
+  }
+
+  async function publish() {
+    if (!isAdmin || publishing) return;
+    const value = text.trim();
+    const options = pollOptions.map(x => x.trim()).filter(Boolean);
+    if (mode === "post" && !value && !mediaFile) return;
+    if (mode === "poll" && (!pollQuestion.trim() || options.length < 2)) return safeAlert("A poll needs a question and at least two options.", "danger");
+    setPublishing(true);
+    try {
+      let mediaUrl = null;
+      let mediaType = null;
+      if (mediaFile) {
+        mediaUrl = await hexaUploadWorkspaceMedia(mediaFile, `channels/${channel.id}`);
+        mediaType = mediaFile.type || "application/octet-stream";
       }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+      const payload = {
+        channel_id: channel.id,
+        author_id: profile.id,
+        content: mode === "poll" ? pollQuestion.trim() : value,
+        post_type: mode,
+        media_url: mediaUrl,
+        media_type: mediaType,
+        link_url: hexaFirstUrl(value),
+        metadata: mode === "poll" ? { options } : { channel_post: true },
+      };
+      let result = await supabase.from("channel_posts").insert(payload).select("*").single();
+      if (result.error) {
+        const legacyPayload = { conversation_id: channel.id, sender_id: profile.id, content: payload.content, message_type: mode === "poll" ? "poll" : (mediaType?.startsWith("image/") ? "image" : mediaType?.startsWith("video/") ? "video" : "text"), metadata: { channel_post: true, media_url: mediaUrl, media_type: mediaType, link_url: payload.link_url, poll_options: options } };
+        result = await supabase.from("messages").insert(legacyPayload).select("*").single();
+        if (result.error) throw result.error;
+      }
+      const followerIds = members.filter(m => String(m.user_id) !== String(profile.id)).map(m => m.user_id);
+      await hexaNotifyUsers(followerIds, { type: "channel_post", title: String(channel.name || "Channel").replace(/^channel:/i, ""), body: payload.content?.slice(0, 180) || "New channel post", entity_type: "channel", entity_id: channel.id });
+      setText(""); setMediaFile(null); setPollQuestion(""); setPollOptions(["", ""]); setMode("post");
+      await load();
+    } catch (error) {
+      safeAlert(error?.message || "Unable to publish channel post.", "danger");
+    } finally { setPublishing(false); }
+  }
 
-  return (
-    <section className="workspace-page">
-      <div className="page-heading">
-        <div className="page-heading-icon">◉</div>
-        <div><h1>Communities</h1><p>Bring groups and people together.</p></div>
-        <button className="hero-primary heading-action" onClick={() => setShow(true)}>＋ Create Community</button>
+  async function deletePost(post) {
+    if (!isAdmin) return;
+    if (!window.confirm("Delete this channel post?")) return;
+    if (post.legacy) await supabase.from("messages").update({ deleted_at: new Date().toISOString() }).eq("id", post.id);
+    else await supabase.from("channel_posts").delete().eq("id", post.id);
+    await load();
+  }
+
+  async function editPost(post) {
+    if (!isAdmin) return;
+    const value = window.prompt("Edit channel post", post.content || "");
+    if (value === null) return;
+    const clean = value.trim();
+    if (!clean) return;
+    if (post.legacy) await supabase.from("messages").update({ content: clean }).eq("id", post.id);
+    else await supabase.from("channel_posts").update({ content: clean, edited_at: new Date().toISOString() }).eq("id", post.id);
+    await load();
+  }
+
+  async function react(post, emoji) {
+    const key = String(post.id);
+    if (reactionBusy[key]) return;
+    setReactionBusy(x => ({ ...x, [key]: true }));
+    try {
+      const existing = await supabase.from("channel_post_reactions").select("reaction").eq("post_id", post.id).eq("user_id", profile.id).maybeSingle();
+      if (existing.data?.reaction === emoji) await supabase.from("channel_post_reactions").delete().eq("post_id", post.id).eq("user_id", profile.id);
+      else await supabase.from("channel_post_reactions").upsert({ post_id: post.id, user_id: profile.id, reaction: emoji }, { onConflict: "post_id,user_id" });
+      await load();
+    } catch (error) {
+      // Legacy posts may not have structured reactions yet.
+    } finally { setReactionBusy(x => ({ ...x, [key]: false })); }
+  }
+
+  async function togglePrivacy(next) {
+    if (!isAdmin) return;
+    const metadata = { ...(channel.metadata || {}), channel: true, privacy: next };
+    const { error } = await supabase.from("conversations").update({ metadata }).eq("id", channel.id);
+    if (error) return safeAlert(error.message, "danger");
+    setPrivacy(next);
+    safeAlert(`Channel is now ${next}.`, "success");
+  }
+
+  async function requestVerification() {
+    if (!isAdmin) return;
+    const metadata = { ...(channel.metadata || {}), channel: true, verification_status: "requested", verification_requested_at: new Date().toISOString() };
+    const { error } = await supabase.from("conversations").update({ metadata }).eq("id", channel.id);
+    if (error) return safeAlert(error.message, "danger");
+    setVerificationStatus("requested");
+    safeAlert("Verification request submitted.", "success");
+  }
+
+  async function toggleAdmin(userId, next) {
+    if (!isAdmin || String(userId) === String(channel.owner_id || channel.created_by)) return;
+    const { error } = await supabase.from("conversation_members").update({ is_admin: next }).eq("conversation_id", channel.id).eq("user_id", userId);
+    if (error) return safeAlert(error.message, "danger");
+    await load();
+  }
+
+  const visiblePosts = posts.filter(post => !search.trim() || String(post.content || "").toLowerCase().includes(search.trim().toLowerCase()));
+  const title = String(channel.name || "").replace(/^channel:/i, "");
+  const publicLink = hexaWorkspaceUrl("channel", channel.id);
+
+  return <div className="hexa-modal-backdrop" onMouseDown={onClose}>
+    <div className="channel-detail-modal channel-detail-modal-expanded" onMouseDown={e => e.stopPropagation()}>
+      <div className="channel-detail-hero">
+        <div className="channel-avatar-large">📢</div>
+        <div className="channel-detail-copy">
+          <div className="channel-detail-title-row"><div><span className="community-kicker">HEXA CHANNEL</span><h2>{title}{verificationStatus === "verified" && <span className="verified-badge">✓</span>}</h2></div><button className="icon-button" onClick={onClose}>×</button></div>
+          <p>{channel.description || "A broadcast space for announcements, updates, links and media."}</p>
+          <div className="channel-stat-row"><span>👥 {members.length} followers</span><span>{isAdmin ? "Owner / admin" : following ? "Following" : "Not following"}</span><span>🔒 {privacy}</span><span>📌 {posts.length} posts</span></div>
+          <div className="channel-hero-actions"><button className={following ? "hero-secondary" : "hero-primary"} onClick={toggleFollow}>{following ? "Following ✓" : "Follow channel"}</button><button className="hero-secondary" onClick={() => hexaCopy(publicLink)}>Share</button>{isAdmin && <button className="hero-secondary" onClick={() => setAdminPanel(v => !v)}>Manage</button>}</div>
+        </div>
       </div>
-      {error && <div className="hexa-inline-warning">{error}</div>}
-      <div className="entity-grid">
-        {loading ? (
-          <div className="coming-card"><h2>Loading communities…</h2></div>
-        ) : items.length ? (
-          items.map(c => (
-            <div className="entity-card" key={c.id}>
-              <Avatar name={c.name} size={54}/>
-              <strong>{c.name}</strong>
-              <span>{c.description || "HEXA community"}</span>
-            </div>
-          ))
-        ) : (
-          <div className="coming-card">
-            <div>◉</div><h2>Your communities</h2><p>Create a community and add your groups.</p>
-          </div>
-        )}
+
+      {isAdmin && <div className="channel-management-panel">
+        <div><strong>Channel controls</strong><span>Privacy, verification and channel admins.</span></div>
+        <div className="channel-management-controls"><label>Privacy<select value={privacy} onChange={e => togglePrivacy(e.target.value)}><option value="public">Public</option><option value="private">Private</option></select></label><label>Verification<span className="verification-status">{verificationStatus === "verified" ? "✓ Verified" : verificationStatus === "requested" ? "⏳ Requested" : "Not verified"}</span></label>{verificationStatus === "none" && <button className="hero-secondary compact-action" onClick={requestVerification}>Request verification</button>}</div>
+        {adminPanel && <div className="channel-admin-list">{members.map(member => <div className="channel-admin-row" key={member.user_id}><span>{member.user_id === profile.id ? "You" : `User ${String(member.user_id).slice(0, 8)}`}</span><span>{member.is_admin ? "Admin" : "Follower"}</span>{member.user_id !== profile.id && <button onClick={() => toggleAdmin(member.user_id, !member.is_admin)}>{member.is_admin ? "Remove admin" : "Make admin"}</button>}</div>)}</div>}
+      </div>}
+
+      {isAdmin && <div className="channel-publish-card channel-publish-card-full">
+        <div className="channel-publish-heading"><div><strong>Publish to your channel</strong><span>Post text, photos, videos, links or polls.</span></div><span className="channel-live-badge">● LIVE</span></div>
+        <div className="channel-compose-tabs"><button className={mode === "post" ? "active" : ""} onClick={() => setMode("post")}>Post</button><button className={mode === "poll" ? "active" : ""} onClick={() => setMode("poll")}>Poll</button></div>
+        {mode === "post" ? <><textarea value={text} onChange={e => setText(e.target.value)} maxLength={5000} placeholder="Write an announcement, update or link…"/><div className="channel-attachment-row"><button onClick={() => mediaRef.current?.click()}>＋ Media</button>{mediaFile && <span>{mediaFile.name}</span>}{hexaFirstUrl(text) && <span>🔗 Link preview ready</span>}</div><input ref={mediaRef} type="file" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" hidden onChange={e => setMediaFile(e.target.files?.[0] || null)} /></> : <div className="channel-poll-builder"><input value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="Poll question" />{pollOptions.map((option, i) => <div className="channel-poll-option" key={i}><input value={option} onChange={e => setPollOptions(arr => arr.map((x, idx) => idx === i ? e.target.value : x))} placeholder={`Option ${i + 1}`} /><button onClick={() => setPollOptions(arr => arr.filter((_, idx) => idx !== i))} disabled={pollOptions.length <= 2}>×</button></div>)}<button className="hero-secondary compact-action" onClick={() => setPollOptions(arr => arr.length >= 6 ? arr : [...arr, ""])}>＋ Add option</button></div>}
+        <div className="channel-publish-footer"><span>{mode === "post" ? `${text.length}/5000` : `${pollOptions.filter(Boolean).length}/6 options`}</span><button className="hero-primary" onClick={publish} disabled={publishing}>{publishing ? "Publishing…" : mode === "post" ? "Publish post" : "Publish poll"}</button></div>
+      </div>}
+
+      <div className="channel-feed">
+        <div className="channel-feed-toolbar"><div className="community-panel-head"><div><strong>Channel feed</strong><span>Latest updates, media, links and polls.</span></div></div><div className="community-search channel-post-search"><span>⌕</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search posts…" /><button onClick={load}>↻</button></div></div>
+        {loading ? <div className="community-empty-state">Loading channel posts…</div> : visiblePosts.length ? <div className="channel-post-list">{visiblePosts.map(post => <ChannelPostCard key={post.id} post={post} profile={profile} isAdmin={isAdmin} onReact={react} onEdit={editPost} onDelete={deletePost} />)}</div> : <div className="channel-empty-feed"><div>📢</div><h3>No matching posts</h3><p>{isAdmin ? "Publish your first channel update above." : "This channel has not published anything yet."}</p></div>}
       </div>
-      {show && <CreateEntityModal type="Community" profile={profile} onClose={() => setShow(false)} onCreated={c => setItems(x => [c, ...x])}/>} 
-    </section>
-  );
+    </div>
+  </div>;
+}
+
+function ChannelPostCard({ post, profile, isAdmin, onReact, onEdit, onDelete }) {
+  const meta = post.metadata || {};
+  const [reactionCounts, setReactionCounts] = useState({});
+  const [mine, setMine] = useState("");
+  const [vote, setVote] = useState("");
+  const url = post.link_url || meta.link_url || hexaFirstUrl(post.content);
+  async function loadReactions() {
+    if (!post.id || post.legacy) return;
+    const { data } = await supabase.from("channel_post_reactions").select("user_id,reaction").eq("post_id", post.id);
+    const counts = {}; let current = "";
+    (data || []).forEach(r => { counts[r.reaction] = (counts[r.reaction] || 0) + 1; if (String(r.user_id) === String(profile.id)) current = r.reaction; });
+    setReactionCounts(counts); setMine(current);
+  }
+  useEffect(() => { loadReactions(); }, [post.id]);
+  async function votePoll(option) {
+    if (post.legacy || post.post_type !== "poll") return;
+    const { error } = await supabase.from("channel_poll_votes").upsert({ post_id: post.id, user_id: profile.id, option_key: option }, { onConflict: "post_id,user_id" });
+    if (!error) setVote(option);
+  }
+  const options = Array.isArray(meta.options) ? meta.options : [];
+  return <article className="channel-post channel-post-rich">
+    <div className="channel-post-avatar"><Avatar src={profile?.avatar_url} name={profile?.full_name || profile?.username} size={38}/></div>
+    <div className="channel-post-body">
+      <div className="channel-post-meta"><strong>{String(post.author_id) === String(profile.id) ? (profile.full_name || profile.username || "You") : "Channel admin"}</strong><span>{new Date(post.created_at).toLocaleString()}{post.edited_at ? " · edited" : ""}</span></div>
+      {post.content && <p>{post.content}</p>}
+      {url && <a className="channel-link-preview" href={url} target="_blank" rel="noreferrer"><span>🔗 LINK</span><strong>{url}</strong></a>}
+      {post.media_url && (String(post.media_type || "").startsWith("image/") ? <img className="channel-post-media" src={post.media_url} alt="Channel media" /> : String(post.media_type || "").startsWith("video/") ? <video className="channel-post-media" src={post.media_url} controls /> : <a className="channel-file-card" href={post.media_url} target="_blank" rel="noreferrer">📎 Open attachment</a>)}
+      {post.post_type === "poll" && <div className="channel-poll-card"><div className="channel-poll-question">📊 {post.content}</div>{options.map((option, i) => <button key={i} className={vote === option ? "voted" : ""} onClick={() => votePoll(option)}><span>{option}</span><b>{vote === option ? "✓" : "Vote"}</b></button>)}</div>}
+      <div className="channel-post-reactions"><button className={mine === "❤️" ? "active" : ""} onClick={() => onReact(post, "❤️")}>❤️ {reactionCounts["❤️"] || 0}</button><button className={mine === "👍" ? "active" : ""} onClick={() => onReact(post, "👍")}>👍 {reactionCounts["👍"] || 0}</button><button onClick={() => onReact(post, "🔥")}>🔥 {reactionCounts["🔥"] || 0}</button></div>
+      {isAdmin && <div className="channel-post-admin-actions"><button onClick={() => onEdit(post)}>Edit</button><button onClick={() => onDelete(post)}>Delete</button></div>}
+    </div>
+  </article>;
 }
 
 function ChannelsPage({ profile }) {
-  const[channels,setChannels]=useState([]);const[name,setName]=useState("");const[creating,setCreating]=useState(false);
-  useEffect(()=>{supabase.from("conversations").select("*").eq("type","group").order("created_at",{ascending:false}).then(({data})=>setChannels((data||[]).filter(x=>x.metadata?.channel===true||/^channel:/i.test(x.name||""))))},[]);
-  async function create(){if(!name.trim())return;setCreating(true);const {data,error}=await supabase.from("conversations").insert({type:"group",name:`channel:${name.trim()}`,created_by:profile.id,owner_id:profile.id}).select("*").single();if(error)alert(error.message);else{await supabase.from("conversation_members").insert({conversation_id:data.id,user_id:profile.id,is_admin:true});setChannels(x=>[data,...x]);setName("")}setCreating(false)}
-  return <section className="workspace-page"><div className="page-heading"><div className="page-heading-icon">▣</div><div><h1>Channels</h1><p>Broadcast-style HEXA spaces.</p></div></div><div className="settings-card"><div><strong>Create a channel</strong><p>Channels use the existing group conversation infrastructure.</p></div><input className="modal-input" style={{maxWidth:300}} value={name} onChange={e=>setName(e.target.value)} placeholder="Channel name"/><button onClick={create} disabled={creating}>Create</button></div><div className="entity-grid">{channels.map(c=><div className="entity-card" key={c.id}><strong>{String(c.name).replace(/^channel:/i,"")}</strong><span>Channel</span></div>)}</div></section>;
+  const [channels, setChannels] = useState([]);
+  const [search, setSearch] = useState("");
+  const [tab, setTab] = useState("discover");
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+  const [stats, setStats] = useState({});
+
+  async function load() {
+    setLoading(true);
+    const { data } = await supabase.from("conversations").select("*").eq("type", "group").order("created_at", { ascending: false });
+    const rows = (data || []).filter(x => x.metadata?.channel === true || /^channel:/i.test(x.name || ""));
+    const info = {};
+    await Promise.all(rows.map(async channel => {
+      const [membersR, postsR] = await Promise.all([
+        supabase.from("conversation_members").select("user_id,is_admin").eq("conversation_id", channel.id),
+        supabase.from("channel_posts").select("content,created_at").eq("channel_id", channel.id).order("created_at", { ascending: false }).limit(1),
+      ]);
+      const memberRows = membersR.data || [];
+      info[channel.id] = { count: memberRows.length, following: memberRows.some(m => String(m.user_id) === String(profile.id)), admin: memberRows.some(m => String(m.user_id) === String(profile.id) && m.is_admin) || String(channel.owner_id) === String(profile.id) || String(channel.created_by) === String(profile.id), latest: postsR.data?.[0] || null };
+    }));
+    setChannels(rows); setStats(info); setLoading(false);
+  }
+  useEffect(() => { load(); }, [profile?.id]);
+
+  async function create() {
+    const title = window.prompt("Channel name"); if (!title?.trim()) return;
+    const description = window.prompt("Channel description (optional)") || "";
+    const visibility = window.prompt("Privacy: public or private", "public")?.trim().toLowerCase() === "private" ? "private" : "public";
+    const { data, error } = await supabase.from("conversations").insert({ type: "group", name: `channel:${title.trim()}`, description: description.trim(), created_by: profile.id, owner_id: profile.id, metadata: { channel: true, privacy: visibility, verification_status: "none", channel_description: description.trim() } }).select("*").single();
+    if (error) return safeAlert(error.message, "danger");
+    await supabase.from("conversation_members").insert({ conversation_id: data.id, user_id: profile.id, is_admin: true });
+    await load(); setSelected(data);
+  }
+
+  const visible = channels.filter(channel => {
+    const title = String(channel.name || "").replace(/^channel:/i, "");
+    const matchSearch = !search.trim() || [title, channel.description].filter(Boolean).join(" ").toLowerCase().includes(search.trim().toLowerCase());
+    const isPrivate = channel.metadata?.privacy === "private";
+    const matchTab = tab === "discover" || (tab === "following" && stats[channel.id]?.following) || (tab === "mine" && stats[channel.id]?.admin);
+    return matchSearch && matchTab && (tab !== "discover" || !isPrivate || stats[channel.id]?.following || stats[channel.id]?.admin);
+  });
+
+  return <section className="workspace-page channels-workspace">
+    <div className="page-heading channels-heading"><div className="page-heading-icon channel-page-icon">▣</div><div className="page-heading-copy"><h1>Channels</h1><p>Broadcast posts, media, links and polls to your followers.</p></div><button className="hero-primary heading-action" onClick={create}>＋ Create Channel</button></div>
+    <div className="channel-spotlight"><div><span className="community-kicker">HEXA BROADCAST</span><h2>Turn updates into a live audience.</h2><p>Build a public or private broadcast space with admins, followers, rich posts, reactions and polls.</p><div className="channel-feature-pills"><span>📢 Broadcasts</span><span>📎 Media</span><span>📊 Polls</span><span>👥 Followers</span><span>✓ Verification</span><span>🔔 Notifications</span></div></div><div className="channel-spotlight-icon">📡</div></div>
+    <div className="channel-toolbar"><div className="community-search"><span>⌕</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search channels…" /></div><div className="channel-filter-tabs"><button className={tab === "discover" ? "active" : ""} onClick={() => setTab("discover")}>Discover</button><button className={tab === "following" ? "active" : ""} onClick={() => setTab("following")}>Following</button><button className={tab === "mine" ? "active" : ""} onClick={() => setTab("mine")}>My channels</button></div></div>
+    <div className="channel-grid">{loading ? Array.from({ length: 4 }).map((_, i) => <div className="channel-card skeleton" key={i}><div className="channel-card-top"/><div className="channel-card-body"><span/><span/><span/></div></div>) : visible.length ? visible.map(channel => { const title = String(channel.name || "").replace(/^channel:/i, ""); const s = stats[channel.id] || {}; return <button className="channel-card" key={channel.id} onClick={() => setSelected(channel)}><div className="channel-card-top"><div className="channel-card-avatar">📢</div><div className="channel-card-chip-row"><span className="channel-follow-chip">{s.following ? "Following" : channel.metadata?.privacy === "private" ? "Private" : "Preview"}</span>{channel.metadata?.verification_status === "verified" && <span className="channel-verified-chip">✓</span>}</div></div><div className="channel-card-body"><div className="channel-card-title-row"><strong>{title}</strong>{s.admin && <span className="channel-owner-pill">Admin</span>}</div><p>{channel.description || "A HEXA channel for updates, announcements and media."}</p><div className="channel-card-meta"><span>👥 {s.count || 0} followers</span><span>{s.latest ? new Date(s.latest.created_at).toLocaleDateString() : "No posts"}</span></div><div className="channel-card-latest">{s.latest ? <><span>Latest post</span><strong>{s.latest.content}</strong></> : <><span>Ready to broadcast</span><strong>Publish the first update</strong></>}</div></div></button>; }) : <div className="channel-empty-landing"><div className="channel-empty-icon">📢</div><h2>{tab === "following" ? "No followed channels" : tab === "mine" ? "You have no channels" : "No channels found"}</h2><p>{tab === "mine" ? "Create a channel to start broadcasting." : "Try another search or create your own channel."}</p><button className="hero-primary" onClick={create}>Create Channel</button></div>}</div>
+    {selected && <ChannelDetailModal channel={selected} profile={profile} onClose={() => setSelected(null)} onChanged={load} />}
+  </section>;
+}
+
+
+function CommunityInvitePage({ profile }) {
+  const [community, setCommunity] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const token = typeof window !== "undefined" ? (window.location.pathname.match(/^\/community-invite\/([^/]+)$/i)?.[1] || "") : "";
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data: invite, error } = await supabase.from("community_invites").select("id,community_id,expires_at,max_uses,uses,revoked").eq("token", token).maybeSingle();
+        if (error) throw error;
+        if (!invite || invite.revoked || (invite.expires_at && new Date(invite.expires_at) < new Date()) || (invite.max_uses && invite.uses >= invite.max_uses)) {
+          throw new Error("This community invite is no longer valid.");
+        }
+        const { data, error: communityError } = await supabase.from("communities").select("id,name,description,avatar_url").eq("id", invite.community_id).single();
+        if (communityError) throw communityError;
+        if (active) setCommunity({ ...data, invite_id: invite.id, invite_uses: invite.uses || 0 });
+      } catch (error) {
+        if (active) setMessage(error?.message || "This invite could not be opened.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [token]);
+
+  async function join() {
+    if (!community?.id || !profile?.id) return;
+    setBusy(true); setMessage("");
+    try {
+      const { error } = await supabase.from("community_members").upsert({ community_id: community.id, user_id: profile.id, is_admin: false }, { onConflict: "community_id,user_id" });
+      if (error) throw error;
+      try { await supabase.from("community_invites").update({ uses: Number(community.invite_uses || 0) + 1 }).eq("id", community.invite_id); } catch {}
+      setMessage("You joined the community. Open Communities to see its groups and announcements.");
+    } catch (error) {
+      setMessage(error?.message || "Unable to join this community.");
+    } finally { setBusy(false); }
+  }
+
+  return <div className="community-invite-page"><div className="community-invite-card">{loading ? <><div className="loading-spinner"/><h2>Opening community invite…</h2></> : community ? <><div className="community-invite-avatar"><Avatar src={community.avatar_url} name={community.name} size={76}/></div><span className="community-kicker">COMMUNITY INVITE</span><h1>{community.name}</h1><p>{community.description || "Join this HEXAchi community and connect with its groups and announcements."}</p><button className="hero-primary" onClick={join} disabled={busy}>{busy ? "Joining…" : "Join community"}</button>{message && <div className="community-invite-success">{message}</div>}</> : <><div className="community-empty-icon">🔗</div><h1>Invite unavailable</h1><p>{message || "This invite could not be opened."}</p></>}</div></div>;
 }
 
 function StatusPage({ profile }) {
@@ -7661,7 +8292,7 @@ function AuthenticatedHEXA({ session, onSignOut }) {
   useEffect(()=>{let cancelled=false;(async()=>{const result=await ensureHexaProfile(session?.user);if(!cancelled){setProfile(result);setProfileLoading(false)}})();return()=>{cancelled=true}},[session?.user?.id]);
   const { setLanguage: setGlobalLanguage } = useHexaLanguage();
   useEffect(()=>{ if(profile?.language && profile.language !== getSavedHexaLanguage()) setGlobalLanguage(profile.language); },[profile?.language]);
-  useEffect(()=>{if(!profile?.id)return;const channel=supabase.channel(`hexa-notifications-${profile.id}`).on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},p=>{if(p.new?.sender_id===profile.id)return;setNotifications(x=>[{id:Date.now(),title:"New message",body:p.new?.content||"New message",created_at:new Date().toISOString()},...x].slice(0,50))}).subscribe();return()=>supabase.removeChannel(channel)},[profile?.id]);
+  useEffect(()=>{if(!profile?.id)return;const channel=supabase.channel(`hexa-notifications-${profile.id}`).on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},p=>{if(p.new?.sender_id===profile.id)return;setNotifications(x=>[{id:Date.now(),title:"New message",body:p.new?.content||"New message",created_at:new Date().toISOString()},...x].slice(0,50))}).on("postgres_changes",{event:"INSERT",schema:"public",table:"hexa_notifications",filter:`user_id=eq.${profile.id}`},p=>{if(p.new?.user_id!==profile.id)return;setNotifications(x=>[{id:p.new.id||Date.now(),title:p.new.title||"HEXAchi",body:p.new.body||"New update",created_at:p.new.created_at||new Date().toISOString(),entity_type:p.new.entity_type,entity_id:p.new.entity_id},...x].slice(0,50));if(typeof Notification!=="undefined"&&Notification.permission==="granted")new Notification(p.new.title||"HEXAchi",{body:p.new.body||"New update"})}).subscribe();return()=>supabase.removeChannel(channel)},[profile?.id]);
   useEffect(()=>{
     const handler=(event)=>{
       const action=event?.detail||{};
@@ -7681,6 +8312,9 @@ function AuthenticatedHEXA({ session, onSignOut }) {
   if(profileLoading)return <div className="hexa-loading-screen"><div className="loading-logo">H</div><div className="loading-spinner"/><strong>Opening HEXA…</strong><span>Preparing your workspace</span></div>;
   if (typeof window !== "undefined" && /^\/call\/[0-9a-f-]{36}$/i.test(window.location.pathname)) {
     return <CallLinkJoinPage profile={profile} />;
+  }
+  if (typeof window !== "undefined" && /^\/community-invite\/[^/]+$/i.test(window.location.pathname)) {
+    return <CommunityInvitePage profile={profile} />;
   }
   let page; switch(activePage){
     case "nexus":page=<NexusHome profile={profile} setActivePage={setActivePage}/>;break;
@@ -10669,6 +11303,63 @@ const HEXA_MISSING_UI_CSS = `
 }
 `;
 
-const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_PROFILE_EDIT_CSS + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS + HEXA_MOMENTS_CSS + HEXA_KORA_CSS + HEXA_COMPOSER_CSS + HEXA_PINNED_MESSAGES_CSS + HEXA_UI_POLISH_CSS + HEXA_MOBILE_CSS + HEXA_GUEST_PRIVACY_CSS + HEXA_MISSING_UI_CSS;
+
+const HEXA_CHANNEL_COMMUNITY_CSS = `
+/* ============================================================
+   HEXAchi VOICE / CHANNELS / COMMUNITIES — PREMIUM LAYER
+   ============================================================ */
+.voice-recorder-panel,.voice-preview-panel{
+  position:relative;overflow:hidden;padding:14px 14px 12px;border-radius:20px;
+  background:
+    radial-gradient(circle at 92% 0%, rgba(124,92,255,.16), transparent 34%),
+    linear-gradient(145deg,color-mix(in srgb,var(--hexa-panel) 97%,transparent),color-mix(in srgb,var(--hexa-panel-2) 94%,transparent));
+  border:1px solid color-mix(in srgb,var(--hexa-accent) 22%,var(--hexa-border));
+  box-shadow:0 18px 45px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.04)
+}
+.voice-recorder-panel::before,.voice-preview-panel::before{content:"";position:absolute;inset:0 0 auto;height:1px;background:linear-gradient(90deg,transparent,var(--hexa-accent),transparent);opacity:.8}
+.voice-recorder-live{gap:11px;min-height:28px}.voice-recorder-live strong{font-size:12px;letter-spacing:.01em}.voice-recording-time{font-size:11px;font-weight:850;color:var(--hexa-text);background:var(--hexa-panel-3);border:1px solid var(--hexa-border);padding:5px 9px;border-radius:999px}
+.voice-recording-dot{width:10px;height:10px;background:#ff4965;box-shadow:0 0 0 5px rgba(255,73,101,.10),0 0 18px rgba(255,73,101,.35)}
+.voice-waveform{position:relative;min-height:72px;margin:11px 0;padding:11px 12px;border-radius:16px;background:linear-gradient(180deg,rgba(124,92,255,.10),rgba(124,92,255,.03));border-color:rgba(124,92,255,.17);overflow:hidden}
+.voice-waveform::before{content:"";position:absolute;left:12px;right:12px;top:50%;height:1px;background:rgba(255,255,255,.08)}
+.voice-waveform i{position:relative;width:3px;min-height:6px;max-height:48px;filter:drop-shadow(0 0 4px rgba(167,139,250,.22));transition:height .16s ease;animation:hexaWaveFloat 1s ease-in-out infinite alternate}
+.voice-waveform i:nth-child(3n){animation-delay:-.22s}.voice-waveform i:nth-child(4n){animation-delay:-.4s}.voice-waveform i:nth-child(5n){animation-delay:-.64s}
+@keyframes hexaWaveFloat{from{transform:scaleY(.74);opacity:.62}to{transform:scaleY(1);opacity:1}}
+.voice-recorder-actions{gap:8px}.voice-recorder-actions button{min-height:40px;padding:0 14px;border-radius:12px;font-size:10px;letter-spacing:.01em;box-shadow:0 5px 16px rgba(0,0,0,.12)}
+.voice-stop{background:linear-gradient(135deg,rgba(255,82,103,.14),rgba(255,82,103,.06))}.voice-send{background:linear-gradient(135deg,var(--hexa-accent),var(--hexa-accent-2));box-shadow:0 10px 24px color-mix(in srgb,var(--hexa-accent) 28%,transparent)!important}
+.voice-preview-heading{margin-bottom:10px}.voice-preview-heading strong{font-size:12px}.voice-preview-heading span{padding:4px 8px;border-radius:999px;background:var(--hexa-panel-3);border:1px solid var(--hexa-border);color:var(--hexa-text);font-weight:800}.voice-preview-panel audio{height:42px;border-radius:12px;filter:saturate(.9)}
+.composer-recording-bar{min-height:31px;padding:7px 10px;margin-top:6px;border-top:1px solid var(--hexa-border);display:flex;align-items:center;gap:8px}.composer-recording-bar strong{font-size:9px}.recording-hint{margin-left:auto;color:var(--hexa-muted);font-size:8px}.recording-pulse{width:7px;height:7px;border-radius:50%;background:#ff4965;box-shadow:0 0 0 5px rgba(255,73,101,.10);animation:hexaVoicePulse 1s infinite}
+.composer-voice-btn.active{background:rgba(255,73,101,.13)!important;border-color:rgba(255,73,101,.35)!important;color:#ff7184!important;box-shadow:0 0 0 5px rgba(255,73,101,.06)}
+
+.communities-workspace,.channels-workspace{gap:18px}.communities-heading,.channels-heading{align-items:center}.page-heading-copy{min-width:0}.page-heading-copy p{max-width:720px}
+.community-spotlight,.channel-spotlight{position:relative;display:flex;justify-content:space-between;gap:24px;padding:24px;border:1px solid var(--hexa-border-strong);border-radius:24px;overflow:hidden;background:radial-gradient(circle at 84% 18%,color-mix(in srgb,var(--hexa-accent) 16%,transparent),transparent 28%),linear-gradient(135deg,var(--hexa-panel),var(--hexa-panel-2));box-shadow:0 24px 60px rgba(0,0,0,.16)}
+.community-spotlight::after,.channel-spotlight::after{content:"";position:absolute;inset:auto -10% -70%;height:170px;background:radial-gradient(circle,color-mix(in srgb,var(--hexa-accent) 12%,transparent),transparent 66%)}
+.community-spotlight-copy,.channel-spotlight>div:first-child{position:relative;z-index:1;max-width:760px}.community-kicker{display:block;color:var(--hexa-accent-2);font-size:8px;font-weight:900;letter-spacing:.18em}.community-spotlight h2,.channel-spotlight h2{margin:8px 0 7px;font-size:clamp(22px,3vw,34px);letter-spacing:-.03em}.community-spotlight p,.channel-spotlight p{margin:0;color:var(--hexa-muted);font-size:11px;line-height:1.7;max-width:680px}.community-feature-pills,.channel-feature-pills{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px}.community-feature-pills span,.channel-feature-pills span{padding:7px 10px;border-radius:999px;border:1px solid var(--hexa-border);background:rgba(255,255,255,.025);font-size:9px;color:var(--hexa-text)}
+.community-orbit,.channel-spotlight-icon{width:150px;height:150px;flex:0 0 150px;border-radius:40px;display:grid;place-items:center;align-self:center;background:radial-gradient(circle at 30% 30%,color-mix(in srgb,var(--hexa-accent-2) 60%,transparent),transparent 34%),linear-gradient(145deg,rgba(255,255,255,.08),rgba(255,255,255,.02));border:1px solid var(--hexa-border-strong);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 18px 35px rgba(0,0,0,.18)}.community-orbit div{font-size:54px}.community-orbit span{position:absolute;margin-top:92px;font-size:9px;font-weight:900;letter-spacing:.18em;color:var(--hexa-muted)}.channel-spotlight-icon{font-size:66px}
+.community-toolbar,.channel-toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between}.community-search{display:flex;align-items:center;gap:8px;min-height:44px;flex:1;max-width:560px;padding:0 13px;border:1px solid var(--hexa-border);border-radius:14px;background:var(--hexa-panel);box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}.community-search span{color:var(--hexa-muted)}.community-search input{flex:1;border:0;outline:0;background:transparent;color:var(--hexa-text);font-size:11px}.community-filter-tabs,.channel-filter-tabs{display:flex;gap:5px;padding:4px;border:1px solid var(--hexa-border);border-radius:13px;background:var(--hexa-panel)}.community-filter-tabs button,.channel-filter-tabs button{min-height:34px;padding:0 12px;border:0;border-radius:9px;background:transparent;color:var(--hexa-muted);font-size:9px;font-weight:800}.community-filter-tabs button.active,.channel-filter-tabs button.active{background:var(--hexa-panel-3);color:var(--hexa-text);box-shadow:0 5px 15px rgba(0,0,0,.12)}
+.community-grid,.channel-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.community-card,.channel-card{display:block;width:100%;text-align:left;padding:0;overflow:hidden;border:1px solid var(--hexa-border);border-radius:19px;background:linear-gradient(160deg,var(--hexa-panel),var(--hexa-panel-2));color:var(--hexa-text);box-shadow:0 12px 34px rgba(0,0,0,.10);transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}.community-card:hover,.channel-card:hover{transform:translateY(-3px);border-color:var(--hexa-border-strong);box-shadow:0 20px 45px rgba(0,0,0,.18)}
+.community-card-cover,.channel-card-top{position:relative;height:118px;background:radial-gradient(circle at 80% 22%,color-mix(in srgb,var(--hexa-accent) 18%,transparent),transparent 40%),linear-gradient(135deg,var(--hexa-panel-2),var(--hexa-panel-3));border-bottom:1px solid var(--hexa-border);display:flex;align-items:flex-end;padding:16px}.community-card-orb{width:76px;height:76px;display:grid;place-items:center;border-radius:25px;background:rgba(255,255,255,.06);border:1px solid var(--hexa-border-strong);backdrop-filter:blur(12px)}.community-members-chip,.channel-follow-chip{margin-left:auto;align-self:flex-start;padding:6px 9px;border-radius:999px;background:rgba(0,0,0,.22);color:#fff;font-size:8px;font-weight:900;border:1px solid rgba(255,255,255,.11)}.community-card-content,.channel-card-body{padding:14px}.community-card-title-row,.channel-card-title-row{display:flex;align-items:center;gap:7px}.community-card-title-row strong,.channel-card-title-row strong{font-size:13px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.community-card-content p,.channel-card-body p{margin:7px 0 13px;color:var(--hexa-muted);font-size:9px;line-height:1.6;min-height:30px}.community-card-footer,.channel-card-meta{display:flex;justify-content:space-between;gap:8px;align-items:center;color:var(--hexa-muted);font-size:8px}.community-card-footer b{color:var(--hexa-accent-2);font-size:9px}.community-joined-pill,.channel-owner-pill{padding:3px 6px;border-radius:999px;background:rgba(48,209,88,.08);border:1px solid rgba(48,209,88,.18);color:#6de794;font-size:7px;font-weight:900}.channel-card-avatar{width:58px;height:58px;border-radius:19px;display:grid;place-items:center;background:linear-gradient(145deg,color-mix(in srgb,var(--hexa-accent) 26%,var(--hexa-panel)),var(--hexa-panel-3));border:1px solid var(--hexa-border-strong);font-size:28px}.channel-card-latest{margin-top:11px;padding:9px 10px;border-radius:12px;background:rgba(255,255,255,.025);border:1px solid var(--hexa-border);display:grid;gap:3px}.channel-card-latest span{font-size:7px;color:var(--hexa-muted);text-transform:uppercase;letter-spacing:.1em;font-weight:900}.channel-card-latest strong{font-size:9px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.channel-follow-chip{background:rgba(124,92,255,.14);border-color:rgba(124,92,255,.2);color:#d6ccff}
+.community-empty-landing,.channel-empty-landing{grid-column:1/-1;padding:58px 22px;text-align:center;border:1px dashed var(--hexa-border-strong);border-radius:22px;background:var(--hexa-panel)}.community-empty-icon,.channel-empty-icon{width:64px;height:64px;display:grid;place-items:center;margin:0 auto 10px;border-radius:20px;background:rgba(124,92,255,.08);font-size:28px}.community-empty-landing h2,.channel-empty-landing h2{margin:0 0 6px;font-size:15px}.community-empty-landing p,.channel-empty-landing p{margin:0 auto 16px;max-width:460px;color:var(--hexa-muted);font-size:10px;line-height:1.6}.hexa-inline-warning{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid rgba(255,194,75,.18);background:rgba(255,194,75,.05);border-radius:13px;color:var(--hexa-muted);font-size:9px}.hexa-inline-warning button{border:0;background:transparent;color:var(--hexa-accent-2);font-size:9px;font-weight:800}
+.community-detail-modal,.channel-detail-modal{width:min(920px,95vw);max-height:min(88vh,900px);overflow:auto;border:1px solid var(--hexa-border-strong);border-radius:28px;background:linear-gradient(150deg,var(--hexa-panel),var(--hexa-panel-2));box-shadow:0 35px 90px rgba(0,0,0,.42)}.community-detail-hero,.channel-detail-hero{display:grid;grid-template-columns:120px minmax(0,1fr);gap:20px;padding:22px;border-bottom:1px solid var(--hexa-border);background:radial-gradient(circle at 5% 5%,color-mix(in srgb,var(--hexa-accent) 15%,transparent),transparent 35%)}.community-detail-cover,.channel-avatar-large{width:120px;height:120px;border-radius:30px;display:grid;place-items:center;background:linear-gradient(145deg,var(--hexa-panel-2),var(--hexa-panel-3));border:1px solid var(--hexa-border-strong);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}.channel-avatar-large{font-size:54px}.community-detail-title-row,.channel-detail-title-row{display:flex;justify-content:space-between;gap:10px;align-items:start}.community-detail-copy h2,.channel-detail-copy h2{margin:4px 0 6px;font-size:23px}.community-detail-copy>p,.channel-detail-copy>p{margin:0;color:var(--hexa-muted);font-size:10px;line-height:1.65}.community-stat-row,.channel-stat-row{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}.community-stat-row span,.channel-stat-row span{padding:6px 8px;border-radius:999px;border:1px solid var(--hexa-border);background:rgba(255,255,255,.025);color:var(--hexa-muted);font-size:8px}.community-hero-actions,.channel-hero-actions{display:flex;gap:7px;margin-top:13px}.community-detail-body,.channel-feed{padding:18px 22px}.community-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.community-panel-head>div:first-child{display:grid;gap:3px}.community-panel-head strong{font-size:12px}.community-panel-head span{font-size:8px;color:var(--hexa-muted)}.community-member-search{display:flex;align-items:center;gap:7px;padding:0 9px;min-height:34px;border:1px solid var(--hexa-border);border-radius:10px;background:var(--hexa-panel-3)}.community-member-search input{width:180px;border:0;outline:0;background:transparent;color:var(--hexa-text);font-size:9px}.community-member-list{display:grid;gap:5px}.community-member-row{display:flex;align-items:center;gap:10px;padding:8px 9px;border:1px solid var(--hexa-border);border-radius:13px;background:rgba(255,255,255,.018)}.community-member-copy{min-width:0;flex:1;display:grid;gap:2px}.community-member-copy strong{font-size:10px}.community-member-copy span{font-size:8px;color:var(--hexa-muted)}.community-admin-badge{padding:4px 7px;border-radius:999px;color:#d6ccff;background:rgba(124,92,255,.10);border:1px solid rgba(124,92,255,.16);font-size:7px;font-weight:900}.community-empty-state{text-align:center;padding:22px;color:var(--hexa-muted);font-size:9px;border:1px dashed var(--hexa-border);border-radius:14px}
+.channel-publish-card{margin:18px 22px 0;padding:14px;border:1px solid var(--hexa-border-strong);border-radius:18px;background:var(--hexa-panel)}.channel-publish-heading{display:flex;justify-content:space-between;gap:10px;align-items:center}.channel-publish-heading>div{display:grid;gap:2px}.channel-publish-heading strong{font-size:11px}.channel-publish-heading span{font-size:8px;color:var(--hexa-muted)}.channel-live-badge{padding:4px 7px;border-radius:999px;color:#6de794;background:rgba(48,209,88,.08);border:1px solid rgba(48,209,88,.17);font-size:7px;font-weight:900}.channel-publish-card textarea{width:100%;min-height:90px;margin:10px 0;border:1px solid var(--hexa-border);border-radius:13px;padding:10px;background:var(--hexa-panel-2);color:var(--hexa-text);outline:0;resize:vertical;font-size:10px}.channel-publish-card textarea:focus{border-color:color-mix(in srgb,var(--hexa-accent) 46%,var(--hexa-border))}.channel-publish-footer{display:flex;justify-content:space-between;gap:8px;align-items:center;color:var(--hexa-muted);font-size:8px}.channel-feed{padding-top:18px}.channel-post-list{display:grid;gap:8px}.channel-post{display:grid;grid-template-columns:38px 1fr;gap:10px;padding:12px;border:1px solid var(--hexa-border);border-radius:15px;background:rgba(255,255,255,.018)}.channel-post-meta{display:flex;justify-content:space-between;gap:10px}.channel-post-meta strong{font-size:9px}.channel-post-meta span{font-size:8px;color:var(--hexa-muted)}.channel-post-body p{margin:8px 0;color:var(--hexa-text);font-size:10px;line-height:1.65;white-space:pre-wrap}.channel-post-actions{display:flex;gap:6px}.channel-post-actions button{border:0;background:transparent;color:var(--hexa-accent-2);font-size:8px;font-weight:800;padding:0}.channel-empty-feed{text-align:center;padding:34px;border:1px dashed var(--hexa-border);border-radius:15px}.channel-empty-feed div{font-size:28px}.channel-empty-feed h3{margin:7px 0 4px;font-size:13px}.channel-empty-feed p{margin:0;color:var(--hexa-muted);font-size:9px}.compact-action{min-height:32px;padding:0 10px}
+.skeleton{pointer-events:none;overflow:hidden}.skeleton .community-card-cover,.skeleton .channel-card-top{background:linear-gradient(90deg,var(--hexa-panel-2),var(--hexa-panel-3),var(--hexa-panel-2));background-size:200% 100%;animation:hexaSkeleton 1.4s linear infinite}.skeleton .community-card-content span,.skeleton .channel-card-body span{display:block;height:9px;border-radius:999px;background:var(--hexa-panel-3);margin:8px 0;animation:hexaSkeleton 1.4s linear infinite}.skeleton .community-card-content span:nth-child(2),.skeleton .channel-card-body span:nth-child(2){width:72%}.skeleton .community-card-content span:nth-child(3),.skeleton .channel-card-body span:nth-child(3){width:46%}@keyframes hexaSkeleton{from{background-position:200% 0}to{background-position:-200% 0}}
+@media(max-width:980px){.community-grid,.channel-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.community-orbit,.channel-spotlight-icon{width:115px;height:115px;flex-basis:115px}.community-orbit div{font-size:42px}.channel-spotlight-icon{font-size:48px}}
+@media(max-width:720px){.community-toolbar,.channel-toolbar{align-items:stretch;flex-direction:column}.community-search{max-width:none}.community-grid,.channel-grid{grid-template-columns:1fr}.community-spotlight,.channel-spotlight{padding:18px;min-height:0}.community-orbit,.channel-spotlight-icon{display:none}.community-detail-hero,.channel-detail-hero{grid-template-columns:1fr}.community-detail-cover,.channel-avatar-large{width:88px;height:88px}.community-detail-body,.channel-feed{padding:14px}.channel-publish-card{margin:14px}.community-panel-head{align-items:stretch;flex-direction:column}.community-member-search input{width:auto}.channel-detail-copy h2{font-size:19px}}
+@media(max-width:480px){.community-filter-tabs,.channel-filter-tabs{width:100%;justify-content:stretch}.community-filter-tabs button,.channel-filter-tabs button{flex:1;padding:0 8px}.community-hero-actions,.channel-hero-actions{flex-wrap:wrap}.community-hero-actions button,.channel-hero-actions button{flex:1}.voice-waveform{min-height:64px}.voice-recorder-actions{gap:6px}.voice-recorder-actions button{padding:0 10px}.community-detail-modal,.channel-detail-modal{width:100%;border-radius:23px 23px 14px 14px;max-height:92vh}}
+`;
+
+
+const HEXA_CHANNEL_COMMUNITY_PLUS_CSS = `
+.workspace-toolbar,.entity-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px}.workspace-search{display:flex;align-items:center;gap:8px;min-height:40px;flex:1;max-width:620px;padding:0 11px;border:1px solid var(--hexa-border);border-radius:13px;background:var(--hexa-panel-2)}.workspace-search input{width:100%;border:0;outline:0;background:transparent;color:var(--hexa-text);font-size:10px}.workspace-search span{color:var(--hexa-muted)}.group-entity-card{display:flex;align-items:center;gap:11px}.group-entity-card .entity-card-copy{display:grid;gap:3px;flex:1;min-width:0;text-align:left}.group-entity-card .entity-card-copy span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.group-entity-card>b{font-size:9px;color:var(--hexa-accent-2)}
+.workspace-create-modal{max-width:620px}.workspace-member-picker-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;max-height:250px;overflow:auto}.community-card-chip-row,.channel-card-chip-row{display:flex;gap:6px;align-items:center}.community-detail-modal-expanded,.channel-detail-modal-expanded{width:min(1040px,96vw)}.community-detail-tabs{display:flex;gap:6px;padding:10px 22px;border-bottom:1px solid var(--hexa-border)}.community-detail-tabs span{padding:7px 10px;border:1px solid var(--hexa-border);border-radius:999px;background:var(--hexa-panel-2);font-size:8px;color:var(--hexa-muted)}.community-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px 22px 22px}.community-section-card{padding:13px;border:1px solid var(--hexa-border);border-radius:17px;background:rgba(255,255,255,.018)}.community-members-card{grid-column:1/-1}.community-group-list,.community-announcement-list{display:grid;gap:6px}.community-group-row{display:flex;align-items:center;gap:9px;padding:9px;border:1px solid var(--hexa-border);border-radius:12px;background:var(--hexa-panel-2)}.community-group-row>div:nth-child(2){display:grid;gap:2px;min-width:0;flex:1}.community-group-row>div:nth-child(2) strong{font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.community-group-row>div:nth-child(2) span{font-size:8px;color:var(--hexa-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.community-group-actions{display:flex;gap:5px;align-items:center}.community-group-actions button,.community-admin-toggle{border:0;background:transparent;color:var(--hexa-accent-2);font-size:8px;font-weight:800}.community-group-controls{display:flex;gap:7px;margin-top:9px}.community-group-controls select,.channel-management-controls select{flex:1;min-height:32px;border:1px solid var(--hexa-border);border-radius:10px;background:var(--hexa-panel-3);color:var(--hexa-text);font-size:9px;padding:0 8px}.workspace-invite-box{display:flex;align-items:center;gap:7px;margin-top:9px;padding:8px;border:1px solid var(--hexa-border);border-radius:11px;background:var(--hexa-panel-2)}.workspace-invite-box span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;font-size:8px;color:var(--hexa-muted)}.workspace-invite-box button{border:0;background:transparent;color:var(--hexa-accent-2);font-size:8px;font-weight:800}.community-announcement-composer{padding:9px;border:1px solid var(--hexa-border);border-radius:12px;background:var(--hexa-panel-2);margin-bottom:9px}.community-announcement-composer textarea{width:100%;min-height:74px;resize:vertical;border:0;outline:0;background:transparent;color:var(--hexa-text);font-size:9px}.community-announcement-composer>div{display:flex;align-items:center;justify-content:space-between;color:var(--hexa-muted);font-size:8px}.community-announcement-list article{display:flex;gap:9px;padding:9px;border:1px solid var(--hexa-border);border-radius:12px;background:var(--hexa-panel-2)}.announcement-icon{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;background:rgba(124,92,255,.10);flex:0 0 auto}.community-announcement-list article>div:last-child{display:grid;gap:4px}.community-announcement-list article strong{font-size:9px;line-height:1.5}.community-announcement-list article span{font-size:7px;color:var(--hexa-muted)}.channel-management-panel{margin:0 22px 12px;padding:12px;border:1px solid var(--hexa-border);border-radius:16px;background:var(--hexa-panel)}.channel-management-panel>div:first-child{display:grid;gap:3px}.channel-management-panel>div:first-child strong{font-size:10px}.channel-management-panel>div:first-child span{font-size:8px;color:var(--hexa-muted)}.channel-management-controls{display:flex;align-items:center;gap:7px;margin-top:10px}.channel-management-controls label{display:grid;gap:4px;min-width:140px;font-size:7px;color:var(--hexa-muted);text-transform:uppercase;letter-spacing:.06em}.verification-status{display:grid;place-items:center;min-height:32px;padding:0 8px;border:1px solid var(--hexa-border);border-radius:10px;background:var(--hexa-panel-2);color:var(--hexa-text);font-size:8px;text-transform:none;letter-spacing:0}.channel-admin-list{display:grid;gap:5px;margin-top:10px}.channel-admin-row{display:flex;align-items:center;gap:9px;padding:7px 9px;border:1px solid var(--hexa-border);border-radius:11px;background:var(--hexa-panel-2);font-size:8px}.channel-admin-row span:first-child{flex:1}.channel-admin-row button{border:0;background:transparent;color:var(--hexa-accent-2);font-size:8px;font-weight:800}.channel-compose-tabs{display:flex;gap:5px;margin:10px 0 7px}.channel-compose-tabs button{border:1px solid var(--hexa-border);border-radius:999px;padding:6px 9px;background:var(--hexa-panel-2);color:var(--hexa-muted);font-size:8px;font-weight:800}.channel-compose-tabs button.active{background:rgba(124,92,255,.12);color:var(--hexa-accent-2);border-color:rgba(124,92,255,.25)}.channel-attachment-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap;color:var(--hexa-muted);font-size:8px}.channel-attachment-row button{border:1px solid var(--hexa-border);border-radius:9px;background:var(--hexa-panel-2);color:var(--hexa-text);min-height:28px;padding:0 9px;font-size:8px}.channel-poll-builder{display:grid;gap:7px}.channel-poll-builder>input,.channel-poll-option input{min-height:36px;padding:0 9px;border:1px solid var(--hexa-border);border-radius:10px;background:var(--hexa-panel-2);color:var(--hexa-text);outline:0;font-size:9px}.channel-poll-option{display:flex;gap:6px}.channel-poll-option input{flex:1}.channel-poll-option button{width:32px;border:1px solid var(--hexa-border);border-radius:10px;background:var(--hexa-panel-2);color:var(--hexa-muted)}.channel-feed-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}.channel-post-search{min-width:190px;max-width:280px}.channel-post-search{min-height:32px}.channel-post-search input{min-width:0}.channel-post-search button{border:0;background:transparent;color:var(--hexa-muted)}.channel-post-rich{position:relative}.channel-post-media{display:block;width:min(100%,520px);max-height:360px;object-fit:cover;border-radius:13px;border:1px solid var(--hexa-border);margin-top:9px}.channel-file-card,.channel-link-preview{display:flex;flex-direction:column;gap:3px;padding:10px;border:1px solid var(--hexa-border);border-radius:12px;background:var(--hexa-panel-2);color:var(--hexa-text);text-decoration:none;margin-top:8px}.channel-link-preview span{font-size:7px;color:var(--hexa-muted);font-weight:900}.channel-link-preview strong{font-size:9px;word-break:break-all}.channel-file-card{font-size:9px}.channel-poll-card{display:grid;gap:6px;margin-top:9px;padding:9px;border:1px solid var(--hexa-border);border-radius:13px;background:var(--hexa-panel-2)}.channel-poll-question{font-size:9px;font-weight:800;margin-bottom:2px}.channel-poll-card>button{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 9px;border:1px solid var(--hexa-border);border-radius:10px;background:transparent;color:var(--hexa-text);text-align:left;font-size:8px}.channel-poll-card>button.voted{border-color:rgba(124,92,255,.3);background:rgba(124,92,255,.10)}.channel-poll-card>button b{font-size:7px;color:var(--hexa-accent-2)}.channel-post-reactions{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}.channel-post-reactions button{border:1px solid var(--hexa-border);border-radius:999px;background:var(--hexa-panel-2);color:var(--hexa-muted);padding:5px 8px;font-size:8px}.channel-post-reactions button.active{color:var(--hexa-accent-2);border-color:rgba(124,92,255,.3);background:rgba(124,92,255,.10)}.channel-post-admin-actions{display:flex;gap:7px;margin-top:7px}.channel-post-admin-actions button{border:0;background:transparent;color:var(--hexa-accent-2);font-size:7px;font-weight:800}.channel-verified-chip,.verified-badge{display:inline-grid;place-items:center;border-radius:50%;background:#2787ff;color:#fff;font-weight:900}.channel-verified-chip{width:18px;height:18px;font-size:9px}.verified-badge{width:20px;height:20px;font-size:10px;margin-left:7px;vertical-align:middle}.channel-card-title-row{display:flex;align-items:center;gap:6px}
+@media(max-width:800px){.community-detail-grid{grid-template-columns:1fr}.community-members-card{grid-column:auto}.channel-management-controls{flex-wrap:wrap}.channel-management-controls label{min-width:calc(50% - 4px);flex:1}.channel-feed-toolbar{align-items:stretch;flex-direction:column}.channel-post-search{min-width:0;max-width:none}.workspace-member-picker-grid{grid-template-columns:1fr}}
+@media(max-width:520px){.community-group-controls{flex-direction:column}.workspace-toolbar,.entity-toolbar{align-items:stretch;flex-direction:column}.group-entity-card{align-items:flex-start}.community-detail-tabs{padding:8px 13px;overflow:auto}.community-detail-grid{padding:12px}.channel-management-panel,.channel-publish-card{margin-left:12px;margin-right:12px}.community-detail-hero,.channel-detail-hero{padding:16px}.channel-management-controls label{min-width:100%}}
+`;
+
+
+const HEXA_WORKSPACE_INVITE_CSS = `
+.community-invite-page{min-height:100vh;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at 50% 0,rgba(124,92,255,.12),transparent 36%),var(--hexa-bg);color:var(--hexa-text)}.community-invite-card{width:min(500px,94vw);padding:30px;text-align:center;border:1px solid var(--hexa-border-strong);border-radius:28px;background:linear-gradient(150deg,var(--hexa-panel),var(--hexa-panel-2));box-shadow:0 30px 90px rgba(0,0,0,.38)}.community-invite-avatar{width:96px;height:96px;display:grid;place-items:center;margin:0 auto 14px;border-radius:28px;background:var(--hexa-panel-3);border:1px solid var(--hexa-border)}.community-invite-card h1{margin:6px 0 8px;font-size:25px}.community-invite-card h2{font-size:15px}.community-invite-card p{margin:0 auto 18px;max-width:380px;color:var(--hexa-muted);font-size:10px;line-height:1.7}.community-invite-success{margin-top:12px;padding:10px;border:1px solid rgba(48,209,88,.2);border-radius:11px;background:rgba(48,209,88,.07);color:#7deaa1;font-size:9px}
+`;
+
+const APP_STYLES = APP_STYLES_HEAD + APP_STYLES_TAIL + HEXA_PROFILE_EDIT_CSS + HEXA_SETTINGS_POLISH_CSS + HEXA_WHITE_THEME_CSS + HEXA_MOMENTS_CSS + HEXA_KORA_CSS + HEXA_COMPOSER_CSS + HEXA_PINNED_MESSAGES_CSS + HEXA_UI_POLISH_CSS + HEXA_MOBILE_CSS + HEXA_GUEST_PRIVACY_CSS + HEXA_MISSING_UI_CSS + HEXA_CHANNEL_COMMUNITY_CSS + HEXA_CHANNEL_COMMUNITY_PLUS_CSS + HEXA_WORKSPACE_INVITE_CSS;
 
 
