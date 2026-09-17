@@ -32,20 +32,6 @@ const SUPABASE_KEY =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || "0x4AAAAAAE2fwQUazL1ercgF";
-const HEXA_TURNSTILE_WIDGET_KEY = "__HEXA_TURNSTILE_WIDGET_ID__";
-
-function getCurrentTurnstileToken(fallback = "") {
-  try {
-    const widgetId = typeof window !== "undefined" ? window[HEXA_TURNSTILE_WIDGET_KEY] : null;
-    if (widgetId !== null && widgetId !== undefined && window.turnstile?.getResponse) {
-      const liveToken = window.turnstile.getResponse(widgetId);
-      if (liveToken) return liveToken;
-    }
-  } catch {}
-  return fallback || "";
-}
-
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error(
     "HEXA: Missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY."
@@ -904,7 +890,6 @@ function AuthField({
 function AuthScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [guestCaptchaToken, setGuestCaptchaToken] = useState("");
 
   function clearMessages() {
     setError("");
@@ -927,63 +912,6 @@ function AuthScreen() {
     }
   }
 
-  async function handleGoogle() {
-    await handleOAuth("google");
-  }
-
-  async function handleGitHub() {
-    await handleOAuth("github");
-  }
-
-  async function handleContinueAsGuest() {
-    clearMessages();
-    setBusy(true);
-    try {
-      const { data: existingSessionData } = await supabase.auth.getSession();
-      if (existingSessionData?.session) {
-        await ensureHexaProfile(existingSessionData.session.user);
-        return;
-      }
-
-      const resolvedCaptchaToken = TURNSTILE_SITE_KEY
-        ? getCurrentTurnstileToken(guestCaptchaToken)
-        : "";
-
-      if (TURNSTILE_SITE_KEY && !resolvedCaptchaToken) {
-        throw new Error("Please complete the security check before continuing as a guest.");
-      }
-
-      const { data, error } = await supabase.auth.signInAnonymously({
-        options: TURNSTILE_SITE_KEY
-          ? { captchaToken: resolvedCaptchaToken }
-          : undefined,
-      });
-
-      if (error) throw error;
-      if (!data?.session) throw new Error("Unable to create a temporary HEXAchi profile.");
-
-      try {
-        const widgetId = typeof window !== "undefined"
-          ? window[HEXA_TURNSTILE_WIDGET_KEY]
-          : null;
-        if (
-          widgetId !== null &&
-          widgetId !== undefined &&
-          window.turnstile?.reset
-        ) {
-          window.turnstile.reset(widgetId);
-        }
-      } catch {}
-
-      try { localStorage.removeItem(HEXA_EXPLICIT_SIGNOUT_KEY); } catch {}
-      await ensureHexaProfile(data.user);
-    } catch (err) {
-      setError(getAuthErrorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <div className="hexa-auth-page">
       <div className="hexa-auth-glow glow-one" />
@@ -1000,7 +928,7 @@ function AuthScreen() {
 
         <div className="auth-heading">
           <h1>Welcome to HEXAchi</h1>
-          <p>Sign in or create your account with a trusted identity provider.</p>
+          <p>Sign in or create your account securely with Google or GitHub.</p>
         </div>
 
         {error && (
@@ -1014,7 +942,7 @@ function AuthScreen() {
           <button
             type="button"
             className="google-auth-button"
-            onClick={handleGoogle}
+            onClick={() => handleOAuth("google")}
             disabled={busy}
           >
             <span className="google-icon">G</span>
@@ -1024,7 +952,7 @@ function AuthScreen() {
           <button
             type="button"
             className="github-auth-button"
-            onClick={handleGitHub}
+            onClick={() => handleOAuth("github")}
             disabled={busy}
           >
             <span className="github-icon">◖</span>
@@ -1032,189 +960,18 @@ function AuthScreen() {
           </button>
         </div>
 
-        <div className="auth-divider">
-          <span>or</span>
-        </div>
-
-        <div className="hexa-guest-auth-card">
-          <strong>Try HEXAchi without creating an account first</strong>
-          <p>
-            Start with a secure temporary profile in this browser. Add an
-            identity later from Settings to keep access on another device.
-          </p>
-          <div className="hexa-captcha-wrap">
-            <HexaTurnstile
-              onToken={setGuestCaptchaToken}
-              disabled={busy}
-            />
+        <div className="auth-trust-note">
+          <span>🔐</span>
+          <div>
+            <strong>One-tap account access</strong>
+            <small>HEXAchi uses the identity provider you choose. No HEXAchi password is required on this screen.</small>
           </div>
-          <button
-            type="button"
-            className="hero-secondary guest-auth-button"
-            onClick={handleContinueAsGuest}
-            disabled={
-              busy ||
-              (!!TURNSTILE_SITE_KEY && !guestCaptchaToken)
-            }
-          >
-            {busy ? "Opening HEXAchi…" : "Continue as guest"}
-          </button>
-          <a href="/privacy" className="privacy-link">Privacy Policy</a>
         </div>
 
         <p className="auth-footer">
-          HEXAchi does not require your GPS location or device ID just to start
-          a temporary profile.
+          By continuing, you agree to use HEXAchi responsibly. Read the <a href="/privacy" className="privacy-link">Privacy Policy</a>.
         </p>
       </main>
-    </div>
-  );
-}
-
-function HexaTurnstile({ onToken, onError, disabled, onReady }) {
-  const mountRef = useRef(null);
-  const widgetIdRef = useRef(null);
-  const callbacksRef = useRef({ onToken, onError, onReady });
-
-  useEffect(() => {
-    callbacksRef.current = { onToken, onError, onReady };
-  }, [onToken, onError, onReady]);
-
-  useEffect(() => {
-    if (!TURNSTILE_SITE_KEY || !mountRef.current) return undefined;
-    let cancelled = false;
-
-    const render = () => {
-      if (cancelled || !window.turnstile || !mountRef.current) return;
-      try {
-        if (widgetIdRef.current !== null) {
-          try { window.turnstile.remove(widgetIdRef.current); } catch {}
-          widgetIdRef.current = null;
-        }
-
-        const widgetId = window.turnstile.render(mountRef.current, {
-          sitekey: TURNSTILE_SITE_KEY,
-          action: 'guest_signup',
-          theme: 'auto',
-          size: 'normal',
-          execution: 'execute',
-          callback: (token) => callbacksRef.current.onToken?.(token || ''),
-          'expired-callback': () => callbacksRef.current.onToken?.(''),
-          'error-callback': (code) => {
-            callbacksRef.current.onToken?.('');
-            callbacksRef.current.onError?.(
-              `Turnstile error ${code || 'unknown'}. Please retry the security verification.`
-            );
-          },
-          'timeout-callback': () => {
-            callbacksRef.current.onToken?.('');
-            callbacksRef.current.onError?.('Turnstile verification timed out. Please try again.');
-          },
-        });
-
-        widgetIdRef.current = widgetId;
-        try {
-          window[HEXA_TURNSTILE_WIDGET_KEY] = widgetId;
-          window.__HEXA_TURNSTILE_EXECUTE__ = () => {
-            if (widgetIdRef.current !== null && window.turnstile?.execute) {
-              window.turnstile.execute(widgetIdRef.current);
-              return true;
-            }
-            return false;
-          };
-        } catch {}
-
-        callbacksRef.current.onReady?.(widgetId);
-      } catch (error) {
-        console.warn('HEXA Turnstile render:', error);
-        callbacksRef.current.onToken?.('');
-        callbacksRef.current.onError?.('Cloudflare security verification could not be loaded. Please try again.');
-      }
-    };
-
-    const ensureScript = () => {
-      if (cancelled) return;
-      if (window.turnstile) {
-        render();
-        return;
-      }
-      const existing = document.querySelector('script[data-hexa-turnstile="true"]');
-      if (existing) {
-        existing.addEventListener('load', render, { once: true });
-        return;
-      }
-      const script = document.createElement('script');
-      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-      script.async = true;
-      script.defer = true;
-      script.dataset.hexaTurnstile = 'true';
-      script.onload = render;
-      script.onerror = () => callbacksRef.current.onError?.('Cloudflare Turnstile could not be loaded. Please check your network or browser settings.');
-      document.head.appendChild(script);
-    };
-
-    ensureScript();
-
-    return () => {
-      cancelled = true;
-      try {
-        if (widgetIdRef.current !== null && window.turnstile) {
-          window.turnstile.remove(widgetIdRef.current);
-        }
-      } catch {}
-      widgetIdRef.current = null;
-      try {
-        if (window[HEXA_TURNSTILE_WIDGET_KEY] !== undefined) delete window[HEXA_TURNSTILE_WIDGET_KEY];
-        if (window.__HEXA_TURNSTILE_EXECUTE__) delete window.__HEXA_TURNSTILE_EXECUTE__;
-      } catch {}
-    };
-  }, []);
-
-  if (!TURNSTILE_SITE_KEY) {
-    return (
-      <div className="hexa-captcha-missing">
-        CAPTCHA is not configured yet. Add <code>VITE_TURNSTILE_SITE_KEY</code> in Vercel.
-      </div>
-    );
-  }
-
-  return (
-    <div
-      ref={mountRef}
-      className={`hexa-turnstile${disabled ? ' is-disabled' : ''}`}
-      aria-label="Security verification"
-      aria-busy={disabled ? 'true' : 'false'}
-    />
-  );
-}
-
-function GuestWelcomeScreen({ onStart, busy, captchaToken, onCaptchaToken, onCaptchaError }) {
-  return (
-    <div className="hexa-guest-welcome">
-      <div className="hexa-guest-welcome-glow hexa-guest-welcome-glow-a" />
-      <div className="hexa-guest-welcome-glow hexa-guest-welcome-glow-b" />
-      <div className="hexa-guest-welcome-card">
-        <div className="hexa-guest-welcome-logo">H</div>
-        <div className="hexa-guest-welcome-eyebrow">PRIVATE • SIMPLE • VOICE-FIRST</div>
-        <h1>Welcome to HEXA!</h1>
-        <p className="hexa-guest-welcome-lead">Your temporary profile is ready.</p>
-        <p className="hexa-guest-welcome-copy">Start chatting without creating a password first. Your temporary session stays in this browser until you secure it from Settings.</p>
-        <div className="hexa-captcha-wrap"><HexaTurnstile onToken={onCaptchaToken} onError={onCaptchaError} disabled={busy} /></div>
-        <button type="button" className="hexa-guest-start-button" onClick={onStart} disabled={busy || (!!TURNSTILE_SITE_KEY && !captchaToken)}>
-          <span className="hexa-guest-start-icon">{busy ? "…" : "→"}</span>
-          <span>{busy ? "Opening HEXA…" : "Start Chatting"}</span>
-        </button>
-        <div className="hexa-guest-welcome-note">
-          <span>🔐</span>
-          <div>
-            <strong>Secure your account later</strong>
-            <small>To use this chat on another device, add an email and password in Settings.</small>
-          </div>
-        </div>
-        <div className="hexa-guest-welcome-privacy">
-          HEXA does not need your GPS location or device ID just to start a temporary profile. <a href="/privacy">Privacy Policy</a>
-        </div>
-      </div>
     </div>
   );
 }
@@ -7796,15 +7553,15 @@ function PrivacyPolicyPage() {
       <div className="hexa-policy-card">
         <div className="hexa-brand"><div className="hexa-logo">H</div><div><strong>HEXA</strong><span>Privacy, explained simply.</span></div></div>
         <h1>Privacy Policy</h1>
-        <p>HEXA uses your account information and messages to provide communication features. HEXA can start a temporary guest profile automatically so people can enter the app without a login barrier.</p>
+        <p>HEXAchi uses your account information and messages to provide communication features. New accounts are created through Google or GitHub authentication; HEXAchi does not automatically create anonymous guest accounts when you open the app.</p>
         <h2>Temporary guest profiles</h2>
-        <p>A guest profile is associated with a Supabase Auth user and a browser session. HEXA does not need your GPS location or a device identifier to create this profile. You can add an email and password in Settings to keep access on another device.</p>
+        <p>Older anonymous sessions may still exist for users who previously used the guest flow. HEXAchi does not start new anonymous sessions from the current sign-in screen. Existing guest users can still access supported legacy account-management controls.</p>
         <h2>Messages and media</h2>
         <p>Messages and uploaded media are stored to provide the communication features you use. HEXA does not silently read unrelated files on your device.</p>
         <h2>Retention</h2>
         <p>Abandoned, empty anonymous profiles are eligible for automatic cleanup after the configured retention period. Accounts with sent messages are not removed by the empty-profile cleanup.</p>
         <h2>Your choices</h2>
-        <p>You can upgrade a temporary profile to a permanent account, sign out, and use the Settings area to manage profile information and privacy controls.</p>
+        <p>You can sign out and use the Settings area to manage profile information and privacy controls. New sign-ins are handled through Google or GitHub.</p>
         <div className="hexa-policy-actions"><a className="hero-primary" href="/">Back to HEXA</a></div>
       </div>
     </div>
@@ -7962,10 +7719,6 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
 
   const [authError, setAuthError] = useState("");
-  const [showGuestWelcome, setShowGuestWelcome] = useState(false);
-  const [guestStarting, setGuestStarting] = useState(false);
-  const [captchaToken, setCaptchaToken] = useState("");
-  const [captchaError, setCaptchaError] = useState("");
 
   const mountedRef = useRef(true);
 
@@ -8030,18 +7783,6 @@ export default function App() {
 
         if (error) {
           throw error;
-        }
-
-        if (!currentSession) {
-          let explicitSignout = false;
-          try { explicitSignout = localStorage.getItem(HEXA_EXPLICIT_SIGNOUT_KEY) === "1"; } catch {}
-
-          // Never create a new Supabase guest user during initial page load.
-          // First honor any persisted browser session, then wait for one explicit click.
-          const hasLocalToken = hasPersistedSupabaseSessionInBrowser();
-          if (!explicitSignout && !hasLocalToken) {
-            if (mountedRef.current) setShowGuestWelcome(true);
-          }
         }
 
         if (mountedRef.current) {
@@ -8118,83 +7859,6 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    const uid = session?.user?.id;
-    if (!uid || !session?.user?.is_anonymous) return;
-    let stopped = false;
-    const touch = async () => {
-      if (stopped) return;
-      const stamp = new Date().toISOString();
-      try { await supabase.from("profiles").update({ guest_last_seen_at: stamp, is_anonymous: true, updated_at: stamp }).eq("id", uid); } catch {}
-    };
-    touch();
-    const timer = window.setInterval(touch, 15 * 60 * 1000);
-    const onVisible = () => { if (document.visibilityState === "visible") touch(); };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => { stopped = true; window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
-  }, [session?.user?.id, session?.user?.is_anonymous]);
-
-  async function handleStartGuestChat() {
-    if (guestStarting) return;
-    setGuestStarting(true);
-    setAuthError("");
-    try {
-      // Double-check the browser session immediately before creating anything.
-      const { data: existingSessionData } = await supabase.auth.getSession();
-      if (existingSessionData?.session) {
-        if (mountedRef.current) {
-          setSession(existingSessionData.session);
-          setShowGuestWelcome(false);
-        }
-        return;
-      }
-
-      let resolvedCaptchaToken = TURNSTILE_SITE_KEY ? getCurrentTurnstileToken(captchaToken) : "";
-      if (TURNSTILE_SITE_KEY && !resolvedCaptchaToken) {
-        try { if (window.__HEXA_TURNSTILE_EXECUTE__) window.__HEXA_TURNSTILE_EXECUTE__(); } catch {}
-        const started = Date.now();
-        while (!resolvedCaptchaToken && Date.now() - started < 15000) {
-          await new Promise((r) => setTimeout(r, 250));
-          resolvedCaptchaToken = getCurrentTurnstileToken(captchaToken);
-          if (!resolvedCaptchaToken) resolvedCaptchaToken = captchaToken || "";
-        }
-        if (!resolvedCaptchaToken) throw new Error("Cloudflare security verification could not be completed. Please retry.");
-      }
-
-      const guest = await supabase.auth.signInAnonymously({
-        options: TURNSTILE_SITE_KEY ? { captchaToken: resolvedCaptchaToken } : undefined,
-      });
-      if (guest.error) {
-        const message = guest.error.message || "";
-        if (/anonymous/i.test(message) && /disabled|not enabled|not allowed/i.test(message)) {
-          throw new Error("HEXA anonymous sign-in is not enabled in Supabase. In Supabase Dashboard open Authentication → Sign In / Providers → Anonymous Sign-Ins and enable it. Then save the settings and try again.");
-        }
-        if (/captcha|turnstile/i.test(message)) {
-          throw new Error(`HEXA security verification was rejected by Supabase: ${message}`);
-        }
-        throw guest.error;
-      }
-      if (!guest.data?.session) throw new Error("HEXA could not open the temporary profile.");
-      try {
-        const widgetId = typeof window !== "undefined" ? window[HEXA_TURNSTILE_WIDGET_KEY] : null;
-        if (widgetId !== null && widgetId !== undefined && window.turnstile?.reset) window.turnstile.reset(widgetId);
-      } catch {}
-
-      try { localStorage.removeItem(HEXA_EXPLICIT_SIGNOUT_KEY); } catch {}
-      await ensureHexaProfile(guest.data.user);
-
-      if (mountedRef.current) {
-        setSession(guest.data.session);
-        setShowGuestWelcome(false);
-      }
-    } catch (error) {
-      console.error("HEXA guest start:", error);
-      if (mountedRef.current) setAuthError(getAuthErrorMessage(error) || "Unable to start HEXA safely. Please try again.");
-    } finally {
-      if (mountedRef.current) setGuestStarting(false);
-    }
-  }
-
   async function handleSignOut() {
     try {
       try { localStorage.setItem(HEXA_EXPLICIT_SIGNOUT_KEY, "1"); } catch {}
@@ -8251,35 +7915,6 @@ export default function App() {
           <span>Connecting your account...</span>
         </div>
       </>
-    );
-  }
-
-  if (showGuestWelcome && !session && !authError) {
-    return (
-      <HexaLanguageProvider>
-        <style>{APP_STYLES + `
-.hexa-guest-welcome{position:relative;min-height:100dvh;overflow:hidden;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 20% 15%,rgba(124,92,255,.18),transparent 34%),radial-gradient(circle at 80% 85%,rgba(0,210,190,.13),transparent 30%),var(--hexa-bg,#080a12);color:var(--hexa-text,#fff)}
-.hexa-guest-welcome-card{position:relative;z-index:2;width:min(560px,100%);padding:42px 38px;border:1px solid var(--hexa-border-strong,rgba(255,255,255,.12));border-radius:34px;background:color-mix(in srgb,var(--hexa-panel,#121622) 92%,transparent);box-shadow:0 35px 100px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.05);backdrop-filter:blur(26px);text-align:center}
-.hexa-guest-welcome-logo{width:76px;height:76px;margin:0 auto 20px;border-radius:24px;display:grid;place-items:center;font-size:34px;font-weight:950;color:#fff;background:linear-gradient(135deg,#7657ff,#27d6c5);box-shadow:0 18px 45px rgba(118,87,255,.28)}
-.hexa-guest-welcome-eyebrow{font-size:10px;letter-spacing:.16em;font-weight:900;color:var(--hexa-accent-2,#bcaeff)}
-.hexa-guest-welcome-card h1{margin:9px 0 4px;font-size:clamp(32px,6vw,46px);letter-spacing:-.04em}
-.hexa-guest-welcome-lead{margin:0;font-size:18px;font-weight:850}
-.hexa-guest-welcome-copy{max-width:430px;margin:12px auto 22px;color:var(--hexa-muted,#aeb7c8);font-size:13px;line-height:1.7}
-.hexa-guest-start-button{width:100%;min-height:60px;border:0;border-radius:18px;padding:0 20px;display:flex;align-items:center;justify-content:center;gap:12px;background:linear-gradient(135deg,#7657ff,#5b7cff);color:#fff;font-size:16px;font-weight:900;cursor:pointer;box-shadow:0 18px 38px rgba(91,124,255,.26);transition:transform .18s ease,box-shadow .18s ease}
-.hexa-guest-start-button:hover{transform:translateY(-2px);box-shadow:0 22px 46px rgba(91,124,255,.34)}.hexa-guest-start-button:disabled{opacity:.65;cursor:wait;transform:none}
-.hexa-guest-start-icon{width:34px;height:34px;border-radius:11px;background:rgba(255,255,255,.16);display:grid;place-items:center;font-size:19px}
-.hexa-guest-welcome-note{display:flex;gap:11px;text-align:left;margin-top:16px;padding:13px;border:1px solid var(--hexa-border,#252b3a);border-radius:16px;background:rgba(255,255,255,.03)}
-.hexa-guest-welcome-note>span{font-size:20px}.hexa-guest-welcome-note div{display:grid;gap:3px}.hexa-guest-welcome-note strong{font-size:11px}.hexa-guest-welcome-note small{font-size:10px;line-height:1.5;color:var(--hexa-muted,#aeb7c8)}
-.hexa-guest-welcome-privacy{margin-top:15px;font-size:9px;line-height:1.6;color:var(--hexa-muted,#aeb7c8)}.hexa-guest-welcome-privacy a{color:var(--hexa-accent-2,#bcaeff);text-decoration:underline}
-.hexa-guest-welcome-glow{position:absolute;border-radius:50%;filter:blur(45px);pointer-events:none}.hexa-guest-welcome-glow-a{width:260px;height:260px;left:-90px;top:-70px;background:rgba(118,87,255,.18)}.hexa-guest-welcome-glow-b{width:240px;height:240px;right:-80px;bottom:-70px;background:rgba(39,214,197,.12)}
-@media(max-width:700px){.hexa-guest-welcome{padding:14px}.hexa-guest-welcome-card{padding:30px 20px;border-radius:27px}.hexa-guest-welcome-logo{width:64px;height:64px;border-radius:20px;font-size:28px}.hexa-guest-welcome-card h1{font-size:34px}.hexa-guest-welcome-copy{font-size:12px}.hexa-guest-start-button{min-height:58px}}
-`}</style>
-        <GuestWelcomeScreen onStart={() => {
-          try { if (window.__HEXA_TURNSTILE_EXECUTE__) window.__HEXA_TURNSTILE_EXECUTE__(); } catch {}
-          handleStartGuestChat();
-        }} busy={guestStarting} captchaToken={captchaToken} onCaptchaToken={(token) => { setCaptchaError(""); setCaptchaToken(token); }} onCaptchaError={(message) => { setCaptchaError(message); setCaptchaToken(""); }} />
-        {captchaError ? <div style={{marginTop:10,color:"#b42318",fontSize:12,fontWeight:700,textAlign:"center"}}>{captchaError} <button type="button" onClick={() => window.turnstile?.reset?.(window[HEXA_TURNSTILE_WIDGET_KEY])} style={{marginLeft:6,textDecoration:"underline",background:"none",border:0,cursor:"pointer",fontWeight:800}}>Retry</button></div> : null}
-      </HexaLanguageProvider>
     );
   }
 
@@ -10862,7 +10497,7 @@ const HEXA_MOBILE_CSS = `
 
 const HEXA_GUEST_PRIVACY_CSS = `
 .hexa-guest-banner{position:relative;z-index:20;display:flex;align-items:center;gap:12px;margin:10px 14px 0;padding:11px 14px;border:1px solid color-mix(in srgb,var(--hexa-accent,#6d5dfc) 30%,var(--hexa-border,#ddd));border-radius:16px;background:color-mix(in srgb,var(--hexa-card,#fff) 92%,var(--hexa-accent,#6d5dfc));box-shadow:0 10px 30px rgba(0,0,0,.08)}
-.hexa-guest-banner-icon{font-size:21px}.hexa-guest-banner-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:2px}.hexa-guest-banner-copy strong{font-size:13px}.hexa-guest-banner-copy span{font-size:11px;line-height:1.45;opacity:.78}.hexa-guest-banner-copy a,.privacy-link{font-size:11px;color:var(--hexa-accent,#5b4bdb);text-decoration:underline}.hexa-guest-secure{border:0;border-radius:10px;padding:9px 12px;font-weight:800;background:var(--hexa-accent,#6d5dfc);color:#fff;cursor:pointer;white-space:nowrap}.hexa-guest-dismiss{border:0;background:transparent;font-size:20px;opacity:.55;cursor:pointer}.hexa-guest-auth-card{margin-top:16px;padding:14px;border:1px solid var(--hexa-border,#ddd);border-radius:15px;background:color-mix(in srgb,var(--hexa-card,#fff) 92%,var(--hexa-accent,#6d5dfc));display:flex;flex-direction:column;gap:8px}.hexa-guest-auth-card strong{font-size:13px}.hexa-guest-auth-card p{margin:0;font-size:11px;line-height:1.5;opacity:.78}.guest-auth-button{align-self:flex-start}.guest-upgrade-card{display:flex;flex-direction:column;gap:12px;margin-bottom:14px}.guest-upgrade-card p{margin:5px 0 0;opacity:.72}.guest-upgrade-form{display:flex;gap:8px;align-items:center}.guest-upgrade-form .modal-input{flex:1}.hexa-policy-page{min-height:100dvh;padding:28px;background:var(--hexa-bg,#f6f7fb);display:grid;place-items:center}.hexa-policy-card{width:min(760px,100%);padding:28px;border-radius:24px;background:var(--hexa-card,#fff);border:1px solid var(--hexa-border,#ddd);box-shadow:0 20px 60px rgba(0,0,0,.08)}.hexa-policy-card h1{font-size:34px;margin:24px 0 12px}.hexa-policy-card h2{font-size:18px;margin:24px 0 8px}.hexa-policy-card p{line-height:1.7;opacity:.82}.hexa-policy-actions{margin-top:24px}.hexa-policy-actions a{text-decoration:none;display:inline-flex}
+.hexa-guest-banner-icon{font-size:21px}.hexa-guest-banner-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:2px}.hexa-guest-banner-copy strong{font-size:13px}.hexa-guest-banner-copy span{font-size:11px;line-height:1.45;opacity:.78}.hexa-guest-banner-copy a,.privacy-link{font-size:11px;color:var(--hexa-accent,#5b4bdb);text-decoration:underline}.hexa-guest-secure{border:0;border-radius:10px;padding:9px 12px;font-weight:800;background:var(--hexa-accent,#6d5dfc);color:#fff;cursor:pointer;white-space:nowrap}.hexa-guest-dismiss{border:0;background:transparent;font-size:20px;opacity:.55;cursor:pointer}.guest-upgrade-card{display:flex;flex-direction:column;gap:12px;margin-bottom:14px}.guest-upgrade-card p{margin:5px 0 0;opacity:.72}.guest-upgrade-form{display:flex;gap:8px;align-items:center}.guest-upgrade-form .modal-input{flex:1}.hexa-policy-page{min-height:100dvh;padding:28px;background:var(--hexa-bg,#f6f7fb);display:grid;place-items:center}.hexa-policy-card{width:min(760px,100%);padding:28px;border-radius:24px;background:var(--hexa-card,#fff);border:1px solid var(--hexa-border,#ddd);box-shadow:0 20px 60px rgba(0,0,0,.08)}.hexa-policy-card h1{font-size:34px;margin:24px 0 12px}.hexa-policy-card h2{font-size:18px;margin:24px 0 8px}.hexa-policy-card p{line-height:1.7;opacity:.82}.hexa-policy-actions{margin-top:24px}.hexa-policy-actions a{text-decoration:none;display:inline-flex}
 @media(max-width:700px){.hexa-guest-banner{margin:8px 8px 0;align-items:flex-start;flex-wrap:wrap}.hexa-guest-secure{width:100%}.hexa-guest-dismiss{position:absolute;top:5px;right:6px}.guest-upgrade-form{flex-direction:column;align-items:stretch}.hexa-policy-page{padding:12px}.hexa-policy-card{padding:20px}.hexa-policy-card h1{font-size:28px}}
 `;
 
