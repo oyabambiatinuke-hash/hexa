@@ -97,8 +97,6 @@ const HEXA_CONFIG_ERROR =
   !HEXA_RUNTIME_CONFIG.supabaseUrl || !HEXA_RUNTIME_CONFIG.supabaseKey
     ? "HEXA is missing its Supabase environment variables. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your deployment settings."
     : "";
-const HEXA_CALL_RATE_KOBO_PER_SECOND = 50;
-
 
 /* ============================================================
    HEXA EMOJI ENGINE
@@ -7347,7 +7345,7 @@ function CallsPage({ profile }) {
     <section className="workspace-page">
       <div className="page-heading">
         <div className="page-heading-icon">☎</div>
-        <div><h1>Calls</h1><p>Private HEXA-to-HEXA voice and video calls. External calling can be billed server-side at ₦0.50/second.</p></div>
+        <div><h1>Calls</h1><p>Private HEXA-to-HEXA voice and video calls.</p></div>
       </div>
 
       <div className="settings-card">
@@ -7370,7 +7368,7 @@ function CallsPage({ profile }) {
 
       <div className="section-heading" style={{ marginTop: 22 }}><div><h2>Call history</h2><p>Recent call activity for this HEXA account.</p></div><button className="hero-secondary" onClick={loadCalls}>Refresh</button></div>
       <div className="entity-grid">
-        {history.map((c) => <div className="entity-card" key={c.id}><strong>{c.type} · {c.status}</strong><span>{new Date(c.created_at).toLocaleString()}</span><small>{c.billed_seconds || 0}s · ₦{(Number(c.amount_kobo || 0) / 100).toFixed(2)}</small></div>)}
+        {history.map((c) => <div className="entity-card" key={c.id}><strong>{c.type} · {c.status}</strong><span>{new Date(c.created_at).toLocaleString()}</span><small>{c.billed_seconds || 0}s duration</small></div>)}
         {!history.length && <div className="entity-card"><strong>No calls yet</strong><span>Your HEXA voice/video call history will appear here.</span></div>}
       </div>
     </section>
@@ -7650,190 +7648,6 @@ function IncomingCallWatcher({ profile }) {
     </div>
   </div>;
 }
-function normalizeHexaPhone(value = "") {
-  return String(value || "").replace(/[^0-9+]/g, "").trim();
-}
-
-function WalletPage({ profile }) {
-  const [balance, setBalance] = useState(null);
-  const [transactions, setTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [amount, setAmount] = useState(5000);
-  const [username, setUsername] = useState(profile?.username ? `@${profile.username}` : "");
-  const [phone, setPhone] = useState(profile?.phone_number || "");
-  const [password, setPassword] = useState("");
-  const [showBuyCredits, setShowBuyCredits] = useState(false);
-  const [funding, setFunding] = useState(false);
-
-  async function loadWallet() {
-    if (!profile?.id) return;
-    setLoading(true);
-    setError("");
-    try {
-      const [walletResult, txResult] = await Promise.all([
-        supabase.from("wallets").select("balance_kobo,currency").eq("user_id", profile.id).maybeSingle(),
-        supabase.from("wallet_transactions").select("id,type,amount_kobo,status,description,created_at").eq("user_id", profile.id).order("created_at", { ascending: false }).limit(50),
-      ]);
-      if (walletResult.error) throw walletResult.error;
-      if (txResult.error) throw txResult.error;
-      setBalance(walletResult.data?.balance_kobo ?? 0);
-      setTransactions(txResult.data || []);
-    } catch (e) {
-      setError(e?.message || "Wallet data could not be loaded. Create the HEXA wallet tables/RLS before enabling payments.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadWallet();
-    setUsername(profile?.username ? `@${profile.username}` : "");
-    setPhone(profile?.phone_number || "");
-  }, [profile?.id, profile?.username, profile?.phone_number]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const reference = params.get("reference") || params.get("trxref");
-    const walletResult = params.get("wallet");
-    if (reference && walletResult === "success") {
-      (async () => {
-        setFunding(true);
-        const { data, error: verifyError } = await supabase.functions.invoke(import.meta.env.VITE_HEXA_PAYMENT_FUNCTION || "hexa-payment", {
-          body: { action: "verify", reference },
-        });
-        if (verifyError || data?.error) {
-          setError(verifyError?.message || data?.error || "Payment verification failed.");
-        } else {
-          setError("");
-          await loadWallet();
-        }
-        const clean = new URL(window.location.href);
-        clean.searchParams.delete("wallet");
-        clean.searchParams.delete("reference");
-        clean.searchParams.delete("trxref");
-        window.history.replaceState({}, "", clean.toString());
-        setFunding(false);
-      })();
-    }
-  }, []);
-
-  async function startFunding() {
-    const naira = Number(amount);
-    if (!Number.isFinite(naira) || naira < 100) {
-      alert("Enter a valid HEXA Credits amount of at least ₦100.");
-      return;
-    }
-    if (!profile?.email) {
-      setError("Your HEXA profile does not have an email address for secure payment checkout.");
-      return;
-    }
-
-    const cleanUsername = String(username || "").trim().replace(/^@/, "").toLowerCase();
-    const cleanPhone = normalizeHexaPhone(phone);
-    if (!cleanUsername || !cleanPhone || !password) {
-      setError("Enter your HEXA username, phone number and password before buying credits.");
-      return;
-    }
-    if (cleanUsername !== String(profile.username || "").toLowerCase()) {
-      setError("The HEXA username does not match the signed-in account.");
-      return;
-    }
-    if (cleanPhone.length < 7) {
-      setError("Enter a valid phone number.");
-      return;
-    }
-
-    setFunding(true);
-    setError("");
-
-    // Re-authenticate with Supabase Auth. The password is sent only to Supabase Auth;
-    // it is never stored in HEXA Wallet tables or sent to the payment provider.
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: profile.email,
-      password,
-    });
-    if (authError) {
-      setError("Security check failed: your HEXA password is incorrect.");
-      setFunding(false);
-      return;
-    }
-
-    const { data: initData, error: invokeError } = await supabase.functions.invoke(import.meta.env.VITE_HEXA_PAYMENT_FUNCTION || "hexa-payment", {
-      body: {
-        action: "initialize_credits",
-        amount_naira: naira,
-        hexa_username: cleanUsername,
-        phone_number: cleanPhone,
-      },
-    });
-
-    if (invokeError || initData?.error) {
-      setError(invokeError?.message || initData?.error || "Unable to start HEXA Credits payment.");
-      setFunding(false);
-      return;
-    }
-    setPassword("");
-    if (initData?.authorization_url) {
-      window.location.assign(initData.authorization_url);
-      return;
-    }
-    if (initData?.ussd_code || initData?.ussd || initData?.instructions) {
-      const code = initData.ussd_code || initData.ussd || "";
-      alert(["HEXA PAYMENT", "", code ? `USSD: ${code}` : "", initData.instructions || "Follow the payment instructions on your phone.", "", "After payment, HEXA will verify the transaction on the server."].filter(Boolean).join("\n"));
-      setFunding(false);
-      return;
-    }
-    setError("The payment service did not return a usable payment instruction.");
-    setFunding(false);
-  }
-
-  const displayNaira = Number(balance || 0) / 100;
-  const displayCredits = displayNaira.toFixed(2);
-
-  return <section className="workspace-page">
-    <div className="page-heading">
-      <div className="page-heading-icon">₦</div>
-      <div><h1>HEXA Wallet</h1><p>Buy HEXA Credits, pay for HEXA services and view your transaction history.</p></div>
-    </div>
-
-    <div className="wallet-grid">
-      <div className="wallet-balance-card">
-        <span>Available HEXA Credits</span>
-        <strong>{loading ? "Loading…" : displayCredits}</strong>
-        <small>1 HEXA Credit = ₦1.00 · External call rate: 50 kobo/second</small>
-      </div>
-      <div className="settings-card wallet-fund-card">
-        <div><strong>Buy HEXA Credits</strong><p>Secure account verification + server-side payment verification.</p></div>
-        <button className="hero-primary" onClick={() => setShowBuyCredits(true)} disabled={funding}>Buy Credits</button>
-      </div>
-    </div>
-
-    {showBuyCredits && <div className="hexa-modal-backdrop">
-      <div className="entity-modal wallet-credit-modal">
-        <div className="section-heading">
-          <div><h2>Buy HEXA Credits</h2><p>Simple phone-style payment. Verify your HEXA account, then complete payment securely.</p></div>
-          <button className="hero-secondary" onClick={() => { setShowBuyCredits(false); setPassword(""); setError(""); }}>Close</button>
-        </div>
-        <label className="wallet-security-field"><span>HEXA Username</span><input className="modal-input" value={username} onChange={e => setUsername(e.target.value)} placeholder="@yourusername" autoComplete="username" /></label>
-        <label className="wallet-security-field"><span>Phone Number</span><input className="modal-input" value={phone} onChange={e => setPhone(e.target.value)} placeholder="080XXXXXXXX" inputMode="tel" autoComplete="tel" /></label>
-        <label className="wallet-security-field"><span>HEXA Password</span><input className="modal-input" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your HEXA password" autoComplete="current-password" /></label>
-        <label className="wallet-security-field"><span>Amount (₦)</span><input className="modal-input" type="number" min="100" step="100" value={amount} onChange={e => setAmount(e.target.value)} /></label>
-        <div className="wallet-security-note">🔐 Your password is used only for the Supabase authentication check. HEXA does not store it and never sends it to the payment provider. Payment confirmation is verified server-side.</div>
-        {error && <div className="auth-alert auth-error"><span>!</span>{error}</div>}
-        <button className="hero-primary wallet-buy-button" onClick={startFunding} disabled={funding}>{funding ? "Starting secure payment…" : `Buy ${Number(amount || 0).toLocaleString("en-NG")} HEXA Credits`}</button>
-      </div>
-    </div>}
-
-    {error && !showBuyCredits && <div className="auth-alert auth-error" style={{marginTop:14}}><span>!</span>{error}</div>}
-    <div className="section-heading" style={{marginTop:22}}><div><h2>Transactions</h2><p>Wallet activity, HEXA Credit purchases and call charges.</p></div><button className="hero-secondary" onClick={loadWallet}>Refresh</button></div>
-    <div className="entity-grid">
-      {!loading && !transactions.length && <div className="entity-card"><strong>No transactions yet</strong><span>Your verified HEXA Credits and wallet activity will appear here.</span></div>}
-      {transactions.map(tx => <div className="entity-card" key={tx.id}><strong>{tx.type === "credit_purchase" ? "HEXA Credits Purchase" : (tx.type || "Transaction")}</strong><span>{tx.description || "HEXA Wallet transaction"}</span><small>{tx.status || "pending"} · ₦{(Number(tx.amount_kobo || 0) / 100).toFixed(2)} · {new Date(tx.created_at).toLocaleString()}</small></div>)}
-    </div>
-  </section>;
-}
-
 function UniversalSearch({ search, profile, onMessage }) {
   const [results,setResults]=useState([]),[loading,setLoading]=useState(false),[error,setError]=useState("");
   useEffect(()=>{let cancelled=false;const run=async()=>{const term=String(search||"").trim();if(term.length<2){setResults([]);setError("");return;}setLoading(true);setError("");const pattern=`%${term}%`;try{
@@ -7894,11 +7708,11 @@ function ProfileEditModal({ profile, onClose, onSaved }) {
     <form onSubmit={save}>
       <button type="button" className="profile-edit-avatar-picker" onClick={()=>fileRef.current?.click()}><Avatar src={avatarPreview} name={fullName||username||"HEXA User"} size={96}/><span>📷 Change photo</span></button>
       <input ref={fileRef} hidden type="file" accept="image/*" onChange={pick}/>
-      <label className="wallet-security-field"><span>Full name</span><input className="modal-input" value={fullName} onChange={e=>setFullName(e.target.value)} maxLength={80} required/></label>
-      <label className="wallet-security-field"><span>Username</span><input className="modal-input" value={username} onChange={e=>setUsername(e.target.value)} maxLength={30} autoCapitalize="none" required/></label>
-      <label className="wallet-security-field"><span>Email</span><input className="modal-input" value={email} readOnly/></label>
-      <label className="wallet-security-field"><span>Phone</span><input className="modal-input" value={phone} onChange={e=>setPhone(e.target.value)} maxLength={30} inputMode="tel"/></label>
-      <label className="wallet-security-field"><span>About</span><textarea className="modal-input modal-textarea" value={about} onChange={e=>setAbout(e.target.value)} maxLength={160} placeholder="Tell people a little about yourself"/></label>
+      <label className="profile-security-field"><span>Full name</span><input className="modal-input" value={fullName} onChange={e=>setFullName(e.target.value)} maxLength={80} required/></label>
+      <label className="profile-security-field"><span>Username</span><input className="modal-input" value={username} onChange={e=>setUsername(e.target.value)} maxLength={30} autoCapitalize="none" required/></label>
+      <label className="profile-security-field"><span>Email</span><input className="modal-input" value={email} readOnly/></label>
+      <label className="profile-security-field"><span>Phone</span><input className="modal-input" value={phone} onChange={e=>setPhone(e.target.value)} maxLength={30} inputMode="tel"/></label>
+      <label className="profile-security-field"><span>About</span><textarea className="modal-input modal-textarea" value={about} onChange={e=>setAbout(e.target.value)} maxLength={160} placeholder="Tell people a little about yourself"/></label>
       {error&&<div className="auth-alert auth-error"><span>!</span>{error}</div>}
       <div className="hexa-confirm-actions"><button type="button" className="hexa-dialog-secondary" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="hexa-dialog-primary" disabled={saving}>{saving?"Saving…":"Save changes"}</button></div>
     </form>
@@ -10417,9 +10231,8 @@ const APP_STYLES_TAIL = `
 @keyframes hexaReactionFloat{0%{opacity:0;transform:translate3d(0,8px,0) scale(.55) rotate(0deg)}18%{opacity:1}72%{opacity:1}100%{opacity:0;transform:translate3d(var(--burst-x),var(--burst-y),0) scale(1.05) rotate(var(--burst-rotate))}}
 .message-media{display:block;max-width:280px;max-height:340px;border-radius:12px;object-fit:contain}.gif-panel{position:absolute;left:14px;right:14px;bottom:76px;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:16px;padding:10px;z-index:30;box-shadow:var(--hexa-shadow)}.gif-search{display:flex;gap:7px}.gif-search input{flex:1}.gif-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;max-height:240px;overflow:auto;margin-top:8px}.gif-grid button{padding:0;border:0;background:none}.gif-grid img{width:100%;height:70px;object-fit:cover;border-radius:7px}.muted{color:var(--hexa-muted)}
 
-/* HEXA wallet UI */
-.wallet-credit-modal{width:min(560px,calc(100vw - 28px))}.wallet-security-field{display:grid;gap:4px;margin-top:10px}.wallet-security-field>span{font-size:11px;color:var(--hexa-muted)}.wallet-security-note{margin:12px 0;padding:12px;border:1px solid var(--hexa-border);background:rgba(124,92,255,.07);border-radius:12px;color:var(--hexa-muted);font-size:11px;line-height:1.5}.wallet-buy-button{width:100%;margin-top:8px}.hexa-modal-backdrop{position:fixed;inset:0;z-index:900;background:rgba(0,0,0,.72);display:grid;place-items:center;padding:14px}
-.wallet-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}.wallet-balance-card{padding:24px;border:1px solid var(--hexa-border);background:linear-gradient(135deg,var(--hexa-panel),var(--hexa-panel-2));border-radius:20px;display:grid;gap:8px}.wallet-balance-card span{color:var(--hexa-muted);font-size:11px}.wallet-balance-card strong{font-size:32px;letter-spacing:-.03em}.wallet-balance-card small{color:var(--hexa-muted);font-size:10px}.wallet-fund-card{align-items:center}.wallet-fund-card .modal-input{margin:0}.wallet-fund-card .hero-primary{white-space:nowrap}
+/* Profile security fields */
+.profile-security-field{display:grid;gap:4px;margin-top:10px}.profile-security-field>span{font-size:11px;color:var(--hexa-muted)}.hexa-modal-backdrop{position:fixed;inset:0;z-index:900;background:rgba(0,0,0,.72);display:grid;place-items:center;padding:14px}
 
 /* HEXA master feature UI */
 .hexa-audio-message{display:flex;align-items:center;gap:7px}.hexa-audio-message audio{max-width:210px;height:34px}.hexa-audio-message select{background:var(--hexa-panel-2);color:var(--hexa-text);border:1px solid var(--hexa-border);border-radius:8px;padding:4px}.message-context-menu{position:fixed;z-index:1000;min-width:190px;background:var(--hexa-panel);border:1px solid var(--hexa-border-strong);border-radius:14px;padding:6px;box-shadow:var(--hexa-shadow);display:grid;gap:2px}.message-context-menu button{border:0;background:none;color:var(--hexa-text);padding:10px;text-align:left;border-radius:9px}.message-context-menu button:hover{background:rgba(255,255,255,.06)}.message-context-menu .danger-text{color:var(--hexa-danger)}
