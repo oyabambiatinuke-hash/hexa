@@ -543,11 +543,11 @@ function getAppUrl() {
 }
 
 function getAuthRedirectUrl() {
-  if (typeof window !== "undefined") {
-    return `${window.location.origin}/auth/callback`;
+  if (typeof window === "undefined") {
+    return "/";
   }
 
-  return `${getAppUrl()}/auth/callback`;
+  return `${window.location.origin}/`;
 }
 
 function getAuthErrorMessage(error) {
@@ -882,6 +882,24 @@ function AuthField({
 }
 
 /* ============================================================
+   AUTH REDIRECT
+   ============================================================ */
+
+function getAuthRedirectUrl() {
+  if (typeof window === "undefined") {
+    return "/";
+  }
+
+  /*
+   * Return directly to the HEXAchi SPA.
+   *
+   * Supabase will restore/detect the authenticated session
+   * in the browser and the main app can then render.
+   */
+  return `${window.location.origin}/`;
+}
+
+/* ============================================================
    AUTH SCREEN
    ============================================================ */
 
@@ -896,15 +914,29 @@ function AuthScreen() {
   async function handleOAuth(provider) {
     clearMessages();
     setBusy(true);
+
     try {
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: getAuthRedirectUrl(),
-        },
-      });
-      if (oauthError) throw oauthError;
+      const redirectTo = getAuthRedirectUrl();
+
+      const { error: oauthError } =
+        await supabase.auth.signInWithOAuth({
+          provider,
+          options: {
+            redirectTo,
+          },
+        });
+
+      if (oauthError) {
+        throw oauthError;
+      }
+
+      /*
+       * signInWithOAuth normally redirects the browser.
+       * Do not reset busy state here because navigation is expected.
+       */
     } catch (err) {
+      console.error("HEXAchi OAuth error:", err);
+
       setError(getAuthErrorMessage(err));
       setBusy(false);
     }
@@ -918,6 +950,7 @@ function AuthScreen() {
       <main className="hexa-auth-card social-auth-card">
         <div className="hexa-brand">
           <div className="hexa-logo">H</div>
+
           <div>
             <strong>HEXAchi</strong>
             <span>Communication, connected.</span>
@@ -926,7 +959,11 @@ function AuthScreen() {
 
         <div className="auth-heading">
           <h1>Welcome to HEXAchi</h1>
-          <p>Sign in or create your account securely with Google or GitHub.</p>
+
+          <p>
+            Sign in or create your account securely with Google
+            or GitHub.
+          </p>
         </div>
 
         {error && (
@@ -944,7 +981,10 @@ function AuthScreen() {
             disabled={busy}
           >
             <span className="google-icon">G</span>
-            {busy ? "Opening Google…" : "Continue with Google"}
+
+            {busy
+              ? "Opening Google…"
+              : "Continue with Google"}
           </button>
 
           <button
@@ -954,132 +994,41 @@ function AuthScreen() {
             disabled={busy}
           >
             <span className="github-icon">◖</span>
-            {busy ? "Opening GitHub…" : "Continue with GitHub"}
+
+            {busy
+              ? "Opening GitHub…"
+              : "Continue with GitHub"}
           </button>
         </div>
 
         <div className="auth-trust-note">
           <span>🔐</span>
+
           <div>
             <strong>One-tap account access</strong>
-            <small>HEXAchi uses the identity provider you choose. No HEXAchi password is required on this screen.</small>
+
+            <small>
+              HEXAchi uses the identity provider you choose.
+              No HEXAchi password is required on this screen.
+            </small>
           </div>
         </div>
 
         <p className="auth-footer">
-          By continuing, you agree to use HEXAchi responsibly. Read the <a href="/privacy" className="privacy-link">Privacy Policy</a>.
+          By continuing, you agree to use HEXAchi responsibly.
+          Read the{" "}
+          <a
+            href="/privacy"
+            className="privacy-link"
+          >
+            Privacy Policy
+          </a>
+          .
         </p>
       </main>
     </div>
   );
 }
-
-/* ============================================================
-   SIDEBAR
-   ============================================================ */
-
-function Sidebar({
-  activePage,
-  setActivePage,
-  profile,
-  onSignOut,
-}) {
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const { language, t } = useHexaLanguage();
-
-  function navigate(id) {
-    setActivePage(id);
-    setMobileOpen(false);
-  }
-
-  return (
-    <>
-      <button
-        className="mobile-menu-button"
-        onClick={() => setMobileOpen(true)}
-      >
-        ☰
-      </button>
-
-      {mobileOpen && (
-        <div
-          className="sidebar-overlay"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
-
-      <aside
-        className={`hexa-sidebar ${
-          mobileOpen ? "mobile-open" : ""
-        }`}
-      >
-        <div className="sidebar-brand">
-          <div className="small-logo">H</div>
-
-          <div>
-            <strong>HEXA</strong>
-            <span>NEXUS</span>
-          </div>
-
-          <button
-            className="mobile-close"
-            onClick={() => setMobileOpen(false)}
-          >
-            ×
-          </button>
-        </div>
-
-        <nav className="sidebar-nav">
-          <div className="sidebar-section-label">{t("workspace")}</div>
-
-          {NAV_ITEMS.map((item) => (
-            <button
-              key={item.id}
-              className={
-                activePage === item.id
-                  ? "sidebar-item active"
-                  : "sidebar-item"
-              }
-              onClick={() => navigate(item.id)}
-            >
-              <span className="sidebar-icon">{item.icon}</span>
-              <span>{hexLang(language, item.id === "chat" ? "chat" : item.id === "groups" ? "groups" : item.id === "communities" ? "communities" : item.id === "calls" ? "calls" : item.id === "moments" ? "moments" : item.id === "channels" ? "channels" : item.id === "kora" ? "kora" : item.id === "settings" ? "settings" : item.label)}</span>
-            </button>
-          ))}
-        </nav>
-
-        <div className="sidebar-bottom">
-          <div className="sidebar-user">
-            <Avatar
-              src={profile?.avatar_url}
-              name={
-                profile?.full_name ||
-                profile?.username ||
-                "HEXA User"
-              }
-              size={38}
-              online
-            />
-
-            <div className="sidebar-user-info">
-              <strong>
-                {profile?.full_name ||
-                  profile?.username ||
-                  "HEXA User"}
-              </strong>
-
-              <span>
-                @{profile?.username || "hexauser"}
-              </span>
-            </div>
-
-          </div>
-        </div>
-      </aside>
-    </>
-  );
-}
-
 /* ============================================================
    TOPBAR
    ============================================================ */
@@ -6857,7 +6806,9 @@ function StatusPage({ profile }) {
     try {
       let mediaUrl = "", mediaType = "";
       if (file?.file) { mediaUrl = await uploadStatusMedia(file.file); mediaType = file.kind; }
-      const { data, error } = await supabase.from("statuses").insert({ user_id: profile.id, text: cleanText, description: cleanDescription, media_url: mediaUrl || null, media_type: mediaType || null, expires_at: new Date(Date.now() + 86400000).toISOString(), privacy: "contacts", allow_replies: true, metadata: {} }).select("*").single();
+      const { data, error } = await supabase.from("statuses").insert({ user_id: profile.id, text: cleanText, description: cleanDescription, expires_at: new Date(
+  Date.now() + 30 * 24 * 60 * 60 * 1000
+).toISOString(),media_url: mediaUrl || null, media_type: mediaType || null,  privacy: "contacts", allow_replies: true, metadata: {} }).select("*").single();
       if (error) throw error;
       setText(""); setDescription(""); setFile(null); setShow(false); await load();
       if (data?.id) setViewer(data);
@@ -6896,7 +6847,9 @@ function StatusPage({ profile }) {
         description: status.description || "",
         media_url: status.media_url || null,
         media_type: status.media_type || null,
-        expires_at: new Date(Date.now() + 86400000).toISOString(),
+        expires_at: new Date(
+  Date.now() + 30 * 24 * 60 * 60 * 1000
+).toISOString(),
         privacy: "contacts",
         allow_replies: true,
         metadata: { ...(status.metadata || {}), repost_of: status.id, reposted_from_user_id: status.user_id }
