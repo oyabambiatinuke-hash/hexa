@@ -6898,7 +6898,7 @@ function StatusPage({ profile }) {
   const commentCount = viewer ? counts[`${viewer.id}:comments`] || comments.length : 0;
 
   return <section className="workspace-page status-workspace">
-    <div className="page-heading"><div className="page-heading-icon">◌</div><div><h1>Moments</h1><p>Facebook-style Stories that expire after 24 hours. Like, react, comment, share and repost.</p></div><button className="hero-primary heading-action" onClick={() => setShow(true)}>＋ Create Moment</button></div>
+    <div className="page-heading"><div className="page-heading-icon">◌</div><div><h1>Moments</h1><p>Good, Great and Amazing Moments that last for 30 days. Like, react, comment, share and repost.</p></div><button className="hero-primary heading-action" onClick={() => setShow(true)}>＋ Create Moment</button></div>
     <div className="moments-highlights-section">
       <div className="moments-highlights-heading">
         <div><strong>Highlights</strong><span>Keep your favourite Moments beyond 24 hours</span></div>
