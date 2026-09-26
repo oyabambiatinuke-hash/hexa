@@ -6901,7 +6901,7 @@ function StatusPage({ profile }) {
     <div className="page-heading"><div className="page-heading-icon">◌</div><div><h1>Moments</h1><p>Good, Great and Amazing Moments that last for 30 days. Like, react, comment, share and repost.</p></div><button className="hero-primary heading-action" onClick={() => setShow(true)}>＋ Create Moment</button></div>
     <div className="moments-highlights-section">
       <div className="moments-highlights-heading">
-        <div><strong>Highlights</strong><span>Keep your favourite Moments beyond 24 hours</span></div>
+        <div><strong>Highlights</strong><span>Keep your favourite Moments beyond 30 days</span></div>
         <button type="button" onClick={() => setStatusError("Open a Moment and choose ☆ Highlight to create or add it to a Highlight.")}>How it works</button>
       </div>
       <div className="moments-highlights-row">
@@ -6917,7 +6917,7 @@ function StatusPage({ profile }) {
             <button type="button" className="moment-highlight-more" onClick={() => renameHighlight(h)} aria-label={`Rename ${h.name}`}>⋯</button>
           </div>
         ))}
-        {!highlights.length && <div className="moments-highlights-empty"><span>☆</span><div><strong>Your first Highlight</strong><small>Save a Moment here so it stays on your profile after 24 hours.</small></div></div>}
+        {!highlights.length && <div className="moments-highlights-empty"><span>☆</span><div><strong>Your first Highlight</strong><small>Save a Moment here so it stays on your profile after 30 days.</small></div></div>}
       </div>
     </div>
     {statusError && <div className="settings-card status-error"><strong>Status</strong><p>{statusError}</p><button onClick={() => setStatusError("")}>Dismiss</button></div>}
