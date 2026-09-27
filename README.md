@@ -1,16 +1,16 @@
-# React + Vite
+# HEXA
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+HEXA offers optional guest access and email/password accounts. Account creation and sign-in use Supabase Auth; usernames are unique case-insensitively in the profiles database. Bot challenges are currently disabled.
 
-Currently, two official plugins are available:
+## Account signup setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. Copy `.env.example` to `.env.local` and enter your Supabase project URL and publishable key. Never expose a Supabase service-role key in a `VITE_` variable.
+2. In Supabase Auth, enable email/password signup and disable CAPTCHA protection for now; configure SMTP if email confirmation is enabled.
+3. Apply `supabase/migrations/20260927000000_unique_profile_usernames.sql` to the Supabase database. The migration will fail if existing usernames collide after lowercase/whitespace normalization; resolve those duplicates first.
+4. Add the public Supabase environment variables to the deployment provider and redeploy.
 
-## React Compiler
+Email uniqueness is enforced by Supabase Auth. The database unique index enforces unique usernames even under simultaneous signups. Visitors can still choose **Continue as guest**; guest profiles are local to their browser and are not synced.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Development
 
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+Install dependencies with `npm install`, then run `npm run dev`. Create a production build with `npm run build`.

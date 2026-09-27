@@ -1,5 +1,6 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
+import RegistrationAuth from "./components/Auth";
 import "./App.css";
 
 /* HEXA SOURCE FIX: UniversalSearch is defined at top level before AuthenticatedHEXA. */
@@ -10,11 +11,10 @@ import "./App.css";
   Authentication + Workspace
   ============================================================
 
-  REQUIRED VITE VARIABLES:
+  OPTIONAL VITE VARIABLES (needed only for cloud-backed features):
 
   VITE_SUPABASE_URL
   VITE_SUPABASE_PUBLISHABLE_KEY
-
   Optional legacy fallback:
 
   VITE_SUPABASE_ANON_KEY
@@ -31,12 +31,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-  console.error(
-    "HEXA: Missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY."
-  );
-}
+const SUPABASE_CONFIGURED = Boolean(SUPABASE_URL && SUPABASE_KEY);
 
 export const supabase = createClient(
   SUPABASE_URL || "https://placeholder.supabase.co",
@@ -60,7 +55,6 @@ const LEGACY_OFFLINE_QUEUE_KEYS = ["hexa-message-queue-v2", "hexa-message-queue-
 const DRAFTS_KEY = "hexa-chat-drafts-v4";
 const HEXA_MAX_MESSAGE_LENGTH = 10000;
 const HEXA_MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
-const HEXA_EXPLICIT_SIGNOUT_KEY = "hexa-explicit-signout-v1";
 const HEXA_GUEST_NOTICE_KEY = "hexa-guest-notice-seen-v1";
 
 function hasPersistedSupabaseSessionInBrowser() {
@@ -82,21 +76,44 @@ function hasPersistedSupabaseSessionInBrowser() {
   return false;
 }
 
-const HEXA_RUNTIME_CONFIG = {
-  supabaseUrl: SUPABASE_URL || "",
-  supabaseKey: SUPABASE_KEY || "",
-  giphyConfigured: Boolean(import.meta.env.VITE_GIPHY_API_KEY),
-  turnConfigured: Boolean(
-    import.meta.env.VITE_TURN_URL &&
-    import.meta.env.VITE_TURN_USERNAME &&
-    import.meta.env.VITE_TURN_CREDENTIAL
-  ),
-};
+const HEXA_LOCAL_GUEST_ID_KEY = "hexa-local-guest-id-v1";
 
-const HEXA_CONFIG_ERROR =
-  !HEXA_RUNTIME_CONFIG.supabaseUrl || !HEXA_RUNTIME_CONFIG.supabaseKey
-    ? "HEXA is missing its Supabase environment variables. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your deployment settings."
-    : "";
+function createLocalGuestSession(reset = false) {
+  let id = "";
+  try {
+    if (reset) localStorage.removeItem(HEXA_LOCAL_GUEST_ID_KEY);
+    id = localStorage.getItem(HEXA_LOCAL_GUEST_ID_KEY) || "";
+    if (!id) {
+      id = globalThis.crypto?.randomUUID?.() || `guest-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      localStorage.setItem(HEXA_LOCAL_GUEST_ID_KEY, id);
+    }
+  } catch {
+    id = `guest-${Date.now()}`;
+  }
+
+  const user = {
+    id,
+    email: null,
+    is_anonymous: true,
+    created_at: new Date().toISOString(),
+    user_metadata: { display_name: "Guest" },
+  };
+  return { localGuest: true, user };
+}
+
+function createLocalGuestProfile(user) {
+  const username = `guest_${String(user?.id || "hexa").replace(/[^a-z0-9]/gi, "").slice(-12).toLowerCase()}`;
+  return {
+    id: user?.id || `guest-${Date.now()}`,
+    username,
+    full_name: "Guest",
+    email: null,
+    avatar_url: null,
+    about: "",
+    is_anonymous: true,
+    local_guest: true,
+  };
+}
 
 /* ============================================================
    HEXA EMOJI ENGINE
@@ -294,7 +311,7 @@ const HEXA_THEMES = {
     id: "ocean",
     name: "Ocean",
     icon: "🌊",
-    description: "Clean blue HEXA.",
+    description: "Clean blue HEXACHI.",
     vars: {
       "--hexa-bg": "#06111d",
       "--hexa-panel": "#0a1928",
@@ -320,7 +337,7 @@ const HEXA_THEMES = {
     id: "emerald",
     name: "Emerald",
     icon: "💚",
-    description: "A fresh green HEXA theme.",
+    description: "A fresh green HEXACHI theme.",
     vars: {
       "--hexa-bg": "#07120d",
       "--hexa-panel": "#0c1b13",
@@ -346,7 +363,7 @@ const HEXA_THEMES = {
     id: "rose",
     name: "Rose",
     icon: "🌹",
-    description: "Elegant pink and violet HEXA.",
+    description: "Elegant pink and violet HEXACHI.",
     vars: {
       "--hexa-bg": "#13090f",
       "--hexa-panel": "#1c0e17",
@@ -370,7 +387,7 @@ const HEXA_THEMES = {
 
   white: {
     id: "white",
-    name: "HEXA White",
+    name: "HEXACHI White",
     icon: "☀️",
     description: "Pure white HEXA with black text and controls.",
     vars: {
@@ -398,7 +415,7 @@ const HEXA_THEMES = {
     id: "black",
     name: "True Black",
     icon: "🖤",
-    description: "OLED-style HEXA.",
+    description: "OLED-style HEXACHI.",
     vars: {
       "--hexa-bg": "#000000",
       "--hexa-panel": "#050505",
@@ -421,7 +438,7 @@ const HEXA_THEMES = {
   }
 };
 
-function getSavedHexaTheme() {
+function getSavedHexachiTheme() {
   try {
     const saved = localStorage.getItem(HEXA_THEME_KEY);
 
@@ -736,6 +753,7 @@ async function ensureHexaProfile(user) {
     metadata.name ||
     metadata.display_name ||
     "";
+  const requestedUsername = String(metadata.username || "").trim().toLowerCase();
 
   const avatarUrl =
     metadata.avatar_url ||
@@ -754,8 +772,10 @@ async function ensureHexaProfile(user) {
     }
 
     if (existing) {
+      const profileUsername = requestedUsername || existing.username || makeUsername(user.email, fullName);
       const patch = {
         email: user.email || existing.email || null,
+        username: profileUsername,
         is_anonymous: Boolean(user.is_anonymous),
         guest_created_at: existing.guest_created_at || user.created_at || new Date().toISOString(),
         guest_last_seen_at: Boolean(user.is_anonymous) ? new Date().toISOString() : existing.guest_last_seen_at || null,
@@ -769,16 +789,13 @@ async function ensureHexaProfile(user) {
       }
     }
 
-    let username = makeUsername(user.email, fullName);
+    let username = requestedUsername || makeUsername(user.email, fullName);
 
-    const { data: sameUsername } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("username", username)
-      .maybeSingle();
+    const { data: usernameAvailable, error: usernameCheckError } = await supabase
+      .rpc("hexa_username_available", { p_username: username });
 
-    if (sameUsername) {
-      username = `${username}${Math.floor(Math.random() * 9999)}`;
+    if (!usernameCheckError && !usernameAvailable) {
+      username = `${username.slice(0, 19)}_${Math.floor(Math.random() * 10000).toString().padStart(4, "0")}`;
     }
 
     const payload = {
@@ -806,6 +823,16 @@ async function ensureHexaProfile(user) {
       */
 
       console.warn("HEXA profile creation:", insertError.message);
+
+      if (insertError.code === "23505") {
+        const fallbackUsername = `${username.slice(0, 19)}_${Math.floor(Math.random() * 10000).toString().padStart(4, "0")}`;
+        const { data: fallbackProfile, error: fallbackError } = await supabase
+          .from("profiles")
+          .insert({ ...payload, username: fallbackUsername })
+          .select("*")
+          .single();
+        if (!fallbackError && fallbackProfile) return fallbackProfile;
+      }
 
       const { data: retry } = await supabase
         .from("profiles")
@@ -879,24 +906,6 @@ function AuthField({
       />
     </label>
   );
-}
-
-/* ============================================================
-   AUTH REDIRECT
-   ============================================================ */
-
-function getAuthRedirectUrl() {
-  if (typeof window === "undefined") {
-    return "/";
-  }
-
-  /*
-   * Return directly to the HEXAchi SPA.
-   *
-   * Supabase will restore/detect the authenticated session
-   * in the browser and the main app can then render.
-   */
-  return `${window.location.origin}/`;
 }
 
 /* ============================================================
@@ -1034,10 +1043,10 @@ function AuthScreen() {
    ============================================================ */
 
 function Topbar({ profile, search, setSearch, activePage, onNotifications, notificationCount, onSettings }) {
-  const { language } = useHexaLanguage();
+  const { language } = useHexachiLanguage();
   return (
-    <header className="hexa-topbar">
-      <div className="mobile-page-title"><strong>HEXA</strong></div>
+    <header className="hexachi-topbar">
+      <div className="mobile-page-title"><strong>HEXACHI</strong></div>
       <div className="topbar-search">
         <span>⌕</span>
         <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={hexLang(language,"search") + "…"} />
@@ -1048,7 +1057,7 @@ function Topbar({ profile, search, setSearch, activePage, onNotifications, notif
           ♢{notificationCount > 0 && <b>{notificationCount > 99 ? "99+" : notificationCount}</b>}
         </button>
         <button title={hexLang(language,"settings")} onClick={onSettings}>⚙</button>
-        <Avatar src={profile?.avatar_url} name={profile?.full_name || profile?.username || "HEXA"} size={38} online />
+        <Avatar src={profile?.avatar_url} name={profile?.full_name || profile?.username || "HEXACHI"} size={38} online />
       </div>
     </header>
   );
@@ -1071,7 +1080,7 @@ function NexusHome({
     <section className="workspace-page">
       <div className="hero-panel">
         <div>
-          <div className="eyebrow">HEXA NEXUS</div>
+          <div className="eyebrow">HEXACHI NEXUS</div>
 
           <h1>
             Welcome back,{" "}
@@ -1109,13 +1118,13 @@ function NexusHome({
 
       <div className="section-heading">
         <div>
-          <h2>Your HEXA</h2>
+          <h2>Your HEXACHI</h2>
           <p>Everything important at a glance.</p>
         </div>
       </div>
 
       <div className="feature-grid">
-        {HEXA_FEATURES.slice(0, 12).map(([title, ...items]) => (
+        {HEXACHI_FEATURES.slice(0, 12).map(([title, ...items]) => (
           <button key={title} className="feature-card" onClick={() => setActivePage(title === "Messaging" ? "chat" : title === "Groups" ? "groups" : title === "Status" ? "moments" : title === "Calls" ? "calls" : title === "Channels" ? "channels" : title === "Communities" ? "communities" : title === "AI" ? "kora" : "settings")}>
             <span>{({Messaging:"💬",Groups:"👥",Calls:"☎",Status:"◌",Channels:"▣",Communities:"◉",Search:"⌕",Profiles:"👤", "Privacy & Security":"🔐", "Media & Files":"📁",Organization:"⭐",Notifications:"🔔"})[title] || "✦"}</span>
             <strong>{title}</strong>
@@ -1134,7 +1143,7 @@ function NexusHome({
 
 function koraActionEvent(action) {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent("hexa-kora-action", { detail: action }));
+  window.dispatchEvent(new CustomEvent("hexachi-kora-action", { detail: action }));
 }
 
 function parseKoraCallTarget(text) {
@@ -1194,18 +1203,18 @@ async function executeKoraFrontendAction({ profile, text }) {
       .neq("id", profile.id)
       .or(`full_name.ilike.${pattern},username.ilike.${pattern}`)
       .limit(8);
-    if (error) return { handled: true, reply: `I couldn't search your HEXA contacts: ${error.message}` };
+    if (error) return { handled: true, reply: `I couldn't search your HEXACHI contacts: ${error.message}` };
 
     if (!people?.length) {
-      return { handled: true, reply: `I couldn't find a HEXA contact matching “${targetText}”.` };
+      return { handled: true, reply: `I couldn't find a HEXACHI contact matching “${targetText}”.` };
     }
     if (people.length > 1) {
-      const names = people.slice(0, 5).map(p => p.full_name || p.username || "HEXA user").join(", ");
+      const names = people.slice(0, 5).map(p => p.full_name || p.username || "HEXACHI user").join(", ");
       return { handled: true, reply: `I found more than one match: ${names}. Tell me which one you mean.` };
     }
 
     const peer = people[0];
-    const { data: conversation, error: convError } = await supabase.rpc("hexa_get_or_create_direct", {
+    const { data: conversation, error: convError } = await supabase.rpc("hexachi_get_or_create_direct", {
       p_other_user_id: peer.id,
     });
     if (convError || !conversation?.id) {
@@ -1221,7 +1230,7 @@ async function executeKoraFrontendAction({ profile, text }) {
     const window = getLocalDateWindow(day, time);
     const results = [];
 
-    // HEXA-hosted images and videos from messages.
+    // HEXACHI-hosted images and videos from messages.
     try {
       const { data: messages } = await supabase
         .from("messages")
@@ -1237,25 +1246,25 @@ async function executeKoraFrontendAction({ profile, text }) {
         for (const a of attachments || []) {
           if (/image|video/i.test(String(a.mime_type || a.file_type || ""))) {
             const source = (messages || []).find(m => String(m.id) === String(a.message_id));
-            results.push({ id: `message-${a.id}`, url: a.file_url || a.url, kind: /video/i.test(String(a.mime_type || a.file_type || "")) ? "video" : "image", created_at: source?.created_at || a.created_at, source: "HEXA chat" });
+            results.push({ id: `message-${a.id}`, url: a.file_url || a.url, kind: /video/i.test(String(a.mime_type || a.file_type || "")) ? "video" : "image", created_at: source?.created_at || a.created_at, source: "HEXACHI chat" });
           }
         }
       }
     } catch {}
 
-    // HEXA Moments images/videos.
+    // HEXACHI Moments images/videos.
     try {
       const { data: statuses } = await supabase.from("statuses").select("id,media_url,media_type,created_at,text,description").eq("user_id", profile.id).gte("created_at", window.start).lt("created_at", window.end).order("created_at", { ascending: false }).limit(50);
       for (const status of statuses || []) {
-        if (status.media_url && /image|video/i.test(String(status.media_type || ""))) results.push({ id: `status-${status.id}`, url: status.media_url, kind: String(status.media_type).toLowerCase().includes("video") ? "video" : "image", created_at: status.created_at, source: "HEXA Moments" });
+        if (status.media_url && /image|video/i.test(String(status.media_type || ""))) results.push({ id: `status-${status.id}`, url: status.media_url, kind: String(status.media_type).toLowerCase().includes("video") ? "video" : "image", created_at: status.created_at, source: "HEXACHI Moments" });
       }
     } catch {}
 
     koraActionEvent({ type: "show-media-results", results, request: command });
     if (!results.length) {
-      return { handled: true, reply: "I couldn't find a matching photo or video in your HEXA messages or Moments. I don't have access to your device's private photo library unless you explicitly connect a supported photo service." };
+      return { handled: true, reply: "I couldn't find a matching photo or video in your HEXACHI messages or Moments. I don't have access to your device's private photo library unless you explicitly connect a supported photo service." };
     }
-    return { handled: true, reply: `I found ${results.length} matching media item${results.length === 1 ? "" : "s"} in HEXA.` };
+    return { handled: true, reply: `I found ${results.length} matching media item${results.length === 1 ? "" : "s"} in HEXACHI.` };
   }
 
   if (/\b(open|go to|take me to)\b.*\b(settings|profile|calls|moments|channels|groups|communities|kora|chat)\b/i.test(command)) {
@@ -1293,18 +1302,18 @@ async function askKora({ profile, messages = [], prompt = "" } = {}) {
 
 function koraReply(input) {
   const q = String(input || "").toLowerCase();
-  if (q.includes("hello") || q.includes("hi")) return "Hello. I’m Kora, your HEXA assistant. What would you like to do?";
-  if (q.includes("status")) return "You can create a HEXA Moments with text, photos or videos from the Moments workspace.";
+  if (q.includes("hello") || q.includes("hi")) return "Hello. I’m Kora, your HEXACHI assistant. What would you like to do?";
+  if (q.includes("status")) return "You can create a HEXACHI Moments with text, photos or videos from the Moments workspace.";
   if (q.includes("call")) return "Open a direct chat and use the phone or video button to start a WebRTC call.";
-  if (q.includes("group")) return "Open Groups, create a group, and select the HEXA users you want to add.";
-  return "I’m Kora. I can help you navigate HEXA, plan messages, explain features, and work with the tools connected to your workspace.";
+  if (q.includes("group")) return "Open Groups, create a group, and select the HEXACHI users you want to add.";
+  return "I’m Kora. I can help you navigate HEXACHI, plan messages, explain features, and work with the tools connected to your workspace.";
 }
 
 function FeatureAudio({ url, voice = false }) {
   const ref = useRef(null);
   const [speed, setSpeed] = useState(1);
   useEffect(() => { if (ref.current) ref.current.playbackRate = speed; }, [speed]);
-  return <div className="hexa-audio-message"><span>{voice ? "🎤" : "🔊"}</span><audio ref={ref} src={url} controls/><select value={speed} onChange={e=>setSpeed(Number(e.target.value))}><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></div>;
+  return <div className="hexachi-audio-message"><span>{voice ? "🎤" : "🔊"}</span><audio ref={ref} src={url} controls/><select value={speed} onChange={e=>setSpeed(Number(e.target.value))}><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></div>;
 }
 function formatChatTime(value) {
   if (!value) return "";
@@ -1359,8 +1368,8 @@ function formatChatTime(value) {
   );
 }
 /* ============================================================
-   HEXA CHAT
-   HEXA-style master/detail messaging experience
+   HEXACHI CHAT
+   HEXACHI-style master/detail messaging experience
    ============================================================ */
 
 function ChatPage({
@@ -1416,7 +1425,7 @@ function ChatPage({
   const [emojiRecent, setEmojiRecent] = useState(emojiPrefs.recent || []);
   const [emojiFavorites, setEmojiFavorites] = useState(emojiPrefs.favorites || []);
 
-  const insertHexaEmoji = (emoji) => {
+  const insertHexachiEmoji = (emoji) => {
     const value = emojiTone && !emoji.includes(emojiTone)
       ? (hexSkinVariants(emoji).find(v => v.endsWith(emojiTone)) || emoji)
       : emoji;
@@ -7777,7 +7786,7 @@ function SettingsPage({ profile, session, onSignOut, onProfileUpdated }) {
       <div className="settings-grid">
         <div className="settings-card"><div><strong>{hexLang(lang,"chat")} appearance</strong><p>Your selected theme applies to conversations, bubbles, menus and panels.</p></div><span className="settings-status">{activeTheme.name}</span></div>
         <div className="settings-card"><div><strong>Language status</strong><p>Saved locally and applied to the HEXA interface. Your browser language attribute is also updated.</p></div><span className="settings-status">{HEXA_LANGUAGE_MAP[savedLanguage]?.name || savedLanguage}</span></div>
-        <div className="settings-card"><div><strong>Account</strong><p>Manage your HEXA session.</p></div><button className="settings-danger-button" onClick={onSignOut}>Sign out</button></div>
+        <div className="settings-card"><div><strong>Local profile</strong><p>Your guest profile is saved in this browser. No account is required.</p></div><button className="settings-danger-button" onClick={onSignOut}>Start new profile</button></div>
       </div>
       {showProfileEditor && <ProfileEditModal profile={profile} onClose={()=>setShowProfileEditor(false)} onSaved={onProfileUpdated}/>}
     </section>
@@ -8054,12 +8063,12 @@ function GuestAccountUpgrade({ session, profile }) {
 
 function AuthenticatedHEXA({ session, onSignOut }) {
 
-  const [profile,setProfile]=useState(null),[profileLoading,setProfileLoading]=useState(true),[activePage,setActivePage]=useState("chat"),[search,setSearch]=useState(""),[notifications,setNotifications]=useState([]),[showNotifications,setShowNotifications]=useState(false),[chatTarget,setChatTarget]=useState(null),[callTarget,setCallTarget]=useState(null);
+  const [profile,setProfile]=useState(() => session?.localGuest ? createLocalGuestProfile(session.user) : null),[profileLoading,setProfileLoading]=useState(!session?.localGuest),[activePage,setActivePage]=useState("chat"),[search,setSearch]=useState(""),[notifications,setNotifications]=useState([]),[showNotifications,setShowNotifications]=useState(false),[chatTarget,setChatTarget]=useState(null),[callTarget,setCallTarget]=useState(null);
   const [koraMediaResults, setKoraMediaResults] = useState([]);
-  useEffect(()=>{let cancelled=false;(async()=>{const result=await ensureHexaProfile(session?.user);if(!cancelled){setProfile(result);setProfileLoading(false)}})();return()=>{cancelled=true}},[session?.user?.id]);
+  useEffect(()=>{if(session?.localGuest){setProfile(createLocalGuestProfile(session.user));setProfileLoading(false);return}let cancelled=false;(async()=>{const result=await ensureHexaProfile(session?.user);if(!cancelled){setProfile(result);setProfileLoading(false)}})();return()=>{cancelled=true}},[session?.localGuest,session?.user?.id]);
   const { setLanguage: setGlobalLanguage } = useHexaLanguage();
   useEffect(()=>{ if(profile?.language && profile.language !== getSavedHexaLanguage()) setGlobalLanguage(profile.language); },[profile?.language]);
-  useEffect(()=>{if(!profile?.id)return;const channel=supabase.channel(`hexa-notifications-${profile.id}`).on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},p=>{if(p.new?.sender_id===profile.id)return;setNotifications(x=>[{id:Date.now(),title:"New message",body:p.new?.content||"New message",created_at:new Date().toISOString()},...x].slice(0,50))}).on("postgres_changes",{event:"INSERT",schema:"public",table:"hexa_notifications",filter:`user_id=eq.${profile.id}`},p=>{if(p.new?.user_id!==profile.id)return;setNotifications(x=>[{id:p.new.id||Date.now(),title:p.new.title||"HEXAchi",body:p.new.body||"New update",created_at:p.new.created_at||new Date().toISOString(),entity_type:p.new.entity_type,entity_id:p.new.entity_id},...x].slice(0,50));if(typeof Notification!=="undefined"&&Notification.permission==="granted")new Notification(p.new.title||"HEXAchi",{body:p.new.body||"New update"})}).subscribe();return()=>supabase.removeChannel(channel)},[profile?.id]);
+  useEffect(()=>{if(!profile?.id||session?.localGuest)return;const channel=supabase.channel(`hexa-notifications-${profile.id}`).on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},p=>{if(p.new?.sender_id===profile.id)return;setNotifications(x=>[{id:Date.now(),title:"New message",body:p.new?.content||"New message",created_at:new Date().toISOString()},...x].slice(0,50))}).on("postgres_changes",{event:"INSERT",schema:"public",table:"hexa_notifications",filter:`user_id=eq.${profile.id}`},p=>{if(p.new?.user_id!==profile.id)return;setNotifications(x=>[{id:p.new.id||Date.now(),title:p.new.title||"HEXAchi",body:p.new.body||"New update",created_at:p.new.created_at||new Date().toISOString(),entity_type:p.new.entity_type,entity_id:p.new.entity_id},...x].slice(0,50));if(typeof Notification!=="undefined"&&Notification.permission==="granted")new Notification(p.new.title||"HEXAchi",{body:p.new?.body||"New update"})}).subscribe();return()=>supabase.removeChannel(channel)},[profile?.id,session?.localGuest]);
   useEffect(()=>{
     const handler=(event)=>{
       const action=event?.detail||{};
@@ -8129,6 +8138,11 @@ export default function App() {
     let subscription;
 
     async function initializeAuth() {
+      if (!SUPABASE_CONFIGURED) {
+        setAuthLoading(false);
+        return;
+      }
+
       try {
         /*
           Supabase's PKCE email/OAuth callback may arrive with:
@@ -8261,47 +8275,28 @@ export default function App() {
   }, []);
 
   async function handleSignOut() {
-    try {
-      try { localStorage.setItem(HEXA_EXPLICIT_SIGNOUT_KEY, "1"); } catch {}
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-    } catch (error) {
-      console.error("HEXA sign out:", error);
-      setAuthError(getAuthErrorMessage(error) || "Unable to sign out safely. Please try again.");
+    if (session?.localGuest) {
+      setSession(createLocalGuestSession(true));
       return;
     }
-
-    if (mountedRef.current) {
-      setSession(null);
-      setAuthError("");
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      setAuthError(getAuthErrorMessage(error));
+      return;
     }
+    setSession(null);
+    setAuthError("");
   }
 
   /*
     ============================================================
-    IMPORTANT:
-    Do NOT render the normal app before auth initialization has
-    finished. This prevents the temporary "logged out" screen
-    flashing during email verification/OAuth redirects.
+    The browser starts directly in a persistent local guest profile.
+    No sign-in or Supabase configuration is required to open the app.
     ============================================================
   */
 
   if (typeof window !== "undefined" && window.location.pathname === "/privacy") {
     return <HexaLanguageProvider><style>{APP_STYLES}</style><PrivacyPolicyPage /></HexaLanguageProvider>;
-  }
-
-  if (HEXA_CONFIG_ERROR) {
-    return (
-      <>
-        <style>{APP_STYLES}</style>
-        <div className="hexa-error-screen">
-          <div className="loading-logo">H</div>
-          <h1>HEXA configuration required</h1>
-          <p>{HEXA_CONFIG_ERROR}</p>
-          <small>Vercel: Project → Settings → Environment Variables → add the required VITE_ variables, then redeploy.</small>
-        </div>
-      </>
-    );
   }
 
   if (authLoading) {
@@ -8314,29 +8309,6 @@ export default function App() {
           <div className="loading-spinner" />
           <strong>HEXA</strong>
           <span>Connecting your account...</span>
-        </div>
-      </>
-    );
-  }
-
-  if (authError && !session) {
-    return (
-      <>
-        <style>{APP_STYLES}</style>
-
-        <div className="hexa-error-screen">
-          <div className="loading-logo">H</div>
-
-          <h1>HEXA couldn't start</h1>
-
-          <p>{authError}</p>
-
-          <button
-            className="hero-primary"
-            onClick={() => window.location.reload()}
-          >
-            Try again
-          </button>
         </div>
       </>
     );
@@ -8429,7 +8401,12 @@ export default function App() {
           onSignOut={handleSignOut}
         />
       ) : (
-        <AuthScreen />
+        <RegistrationAuth
+          supabaseClient={supabase}
+          authConfigured={SUPABASE_CONFIGURED}
+          initialError={authError}
+          onGuest={() => setSession(createLocalGuestSession())}
+        />
       )}
     </HexaErrorBoundary>
     </HexaLanguageProvider>

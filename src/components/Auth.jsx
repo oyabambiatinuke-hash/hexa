@@ -1,16 +1,16 @@
 import React, { useState } from "react";
-import { supabase } from "./supabase";
 
 const AUTH_REDIRECT_URL =
   typeof window !== "undefined"
     ? `${window.location.origin}/`
     : "/";
 
-export default function Auth() {
+export default function Auth({ supabaseClient, onGuest, authConfigured = true, initialError = "" }) {
   const [mode, setMode] = useState("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -26,14 +26,15 @@ export default function Auth() {
     setSuccess("");
 
     const cleanEmail = email.trim().toLowerCase();
+    const cleanUsername = username.trim().toLowerCase();
 
     if (!cleanEmail || !password) {
       setError("Email and password are required.");
       return;
     }
 
-    if (password.length < 6) {
-      setError("Password must contain at least 6 characters.");
+    if (password.length < (mode === "signup" ? 8 : 6)) {
+      setError(mode === "signup" ? "Password must contain at least 8 characters." : "Password must contain at least 6 characters.");
       return;
     }
 
@@ -42,12 +43,22 @@ export default function Auth() {
       return;
     }
 
+    if (!authConfigured) {
+      setError("Account services are not configured yet. You can still continue as a guest.");
+      return;
+    }
+
+    if (mode === "signup" && !/^[a-z0-9_]{3,24}$/.test(cleanUsername)) {
+      setError("Username must be 3–24 characters using letters, numbers, or underscores.");
+      return;
+    }
+
     setLoading(true);
 
     try {
       if (mode === "signin") {
         const { data, error } =
-          await supabase.auth.signInWithPassword({
+          await supabaseClient.auth.signInWithPassword({
             email: cleanEmail,
             password,
           });
@@ -73,15 +84,22 @@ export default function Auth() {
        * email and sending it through the SMTP provider configured
        * in Supabase Authentication settings.
        */
-      const { data, error } = await supabase.auth.signUp({
+      const { data: usernameAvailable, error: usernameLookupError } = await supabaseClient
+        .rpc("hexa_username_available", { p_username: cleanUsername });
+      if (usernameLookupError) throw usernameLookupError;
+      if (!usernameAvailable) {
+        setError("That username is already taken. Please choose another.");
+        return;
+      }
+
+      const { data, error } = await supabaseClient.auth.signUp({
         email: cleanEmail,
         password,
         options: {
           emailRedirectTo: AUTH_REDIRECT_URL,
-
           data: {
-            display_name:
-              name.trim() || cleanEmail.split("@")[0],
+            display_name: name.trim() || cleanUsername,
+            username: cleanUsername,
           },
         },
       });
@@ -151,7 +169,7 @@ export default function Auth() {
     setResending(true);
 
     try {
-      const { error } = await supabase.auth.resend({
+      const { error } = await supabaseClient.auth.resend({
         type: "signup",
         email: cleanEmail,
         options: {
@@ -226,30 +244,28 @@ export default function Auth() {
           </p>
         </div>
 
+        {!authConfigured && (
+          <div className="auth-notice">Account signup is not configured yet. Guest access is available.</div>
+        )}
         <div className="auth-divider">
           <span />
-          <b>SECURE EMAIL AUTHENTICATION</b>
+          <b>EMAIL ACCOUNT</b>
           <span />
         </div>
 
         <form onSubmit={handleSubmit}>
 
           {mode === "signup" && (
-            <label className="auth-field">
-              <span>DISPLAY NAME</span>
-
-              <input
-                type="text"
-                placeholder="Your name"
-                value={name}
-                onChange={(e) =>
-                  setName(e.target.value)
-                }
-                autoComplete="name"
-                maxLength={100}
-                disabled={loading}
-              />
-            </label>
+            <>
+              <label className="auth-field">
+                <span>DISPLAY NAME</span>
+                <input type="text" placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" maxLength={100} disabled={loading} />
+              </label>
+              <label className="auth-field">
+                <span>UNIQUE USERNAME</span>
+                <input type="text" placeholder="e.g. alex_01" value={username} onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 24))} autoComplete="username" minLength={3} maxLength={24} required disabled={loading} />
+              </label>
+            </>
           )}
 
           <label className="auth-field">
@@ -288,7 +304,7 @@ export default function Auth() {
                     ? "current-password"
                     : "new-password"
                 }
-                minLength={6}
+                minLength={mode === "signup" ? 8 : 6}
                 required
                 disabled={loading}
               />
@@ -331,6 +347,10 @@ export default function Auth() {
             </div>
           )}
 
+          {!error && initialError && (
+            <div className="auth-message auth-error" role="alert"><span>!</span><div>{initialError}</div></div>
+          )}
+
           {success && (
             <div className="auth-message auth-success">
               <span>✓</span>
@@ -359,10 +379,12 @@ export default function Auth() {
           <button
             className="auth-submit"
             type="submit"
-            disabled={loading || resending}
+            disabled={loading || resending || !authConfigured}
           >
             {loading
               ? "CONNECTING..."
+              : !authConfigured
+                ? "ACCOUNT SERVICE UNAVAILABLE"
               : mode === "signin"
                 ? "SIGN IN"
                 : "CREATE ACCOUNT"}
@@ -394,6 +416,12 @@ export default function Auth() {
               : "Sign in"}
           </button>
         </div>
+
+        {onGuest && (
+          <button type="button" className="auth-guest-button" onClick={onGuest} disabled={loading}>
+            Continue as guest
+          </button>
+        )}
 
         <div className="auth-footer">
           <span>HEXACHI</span>
