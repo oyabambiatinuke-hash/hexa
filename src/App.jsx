@@ -438,7 +438,7 @@ const HEXA_THEMES = {
   }
 };
 
-function getSavedHexachiTheme() {
+function getSavedHexaTheme() {
   try {
     const saved = localStorage.getItem(HEXA_THEME_KEY);
 
@@ -9053,9 +9053,13 @@ button:disabled {
 }
 
 .workspace-page {
-  max-width: 1350px;
+  max-width: 1380px;
   margin: 0 auto;
   padding: 30px;
+  border: 1px solid rgba(148, 163, 255, 0.18);
+  border-radius: 30px;
+  background: linear-gradient(180deg, rgba(10, 14, 24, 0.9), rgba(12, 18, 29, 0.94));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 30px 90px rgba(1, 4, 11, 0.42);
 }
 
 /* ============================================================
@@ -9123,19 +9127,17 @@ button:disabled {
 }
 
 .hero-primary {
-  border: 1px solid transparent;
-  background: linear-gradient(
-    135deg,
-    var(--hexa-accent),
-    #596cff
-  );
+  border: 1px solid rgba(120, 227, 255, 0.2);
+  background: linear-gradient(135deg, var(--hexa-accent), #4a7dff, #38d8ff);
   color: white;
+  box-shadow: 0 18px 30px rgba(124, 92, 255, 0.28), inset 0 1px 0 rgba(255,255,255,.18);
 }
 
 .hero-secondary {
   background: rgba(255,255,255,.04);
   border: 1px solid var(--hexa-border);
   color: white;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
 }
 
 .hero-orbit {
@@ -9205,18 +9207,19 @@ button:disabled {
 
 .feature-card {
   text-align: left;
-  border: 1px solid var(--hexa-border);
-  border-radius: 17px;
-  background: var(--hexa-panel);
+  border: 1px solid rgba(148, 163, 255, 0.18);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(16, 22, 35, 0.92), rgba(13, 17, 27, 0.92));
   color: white;
   padding: 20px;
   transition: .18s ease;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 16px 30px rgba(0, 0, 0, 0.12);
 }
 
 .feature-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(124,92,255,.35);
-  background: var(--hexa-panel-2);
+  border-color: rgba(124,92,255,.45);
+  background: linear-gradient(180deg, rgba(19, 27, 39, 0.96), rgba(14, 19, 30, 0.96));
 }
 
 .feature-card > span {
@@ -9626,22 +9629,26 @@ button:disabled {
   align-items: center;
   gap: 15px;
   margin-bottom: 28px;
+  padding: 12px 14px 18px;
+  border-bottom: 1px solid rgba(148, 163, 255, 0.16);
 }
 
 .page-heading-icon {
-  width: 50px;
-  height: 50px;
+  width: 52px;
+  height: 52px;
   display: grid;
   place-items: center;
-  border-radius: 15px;
-  background: rgba(124,92,255,.10);
-  border: 1px solid rgba(124,92,255,.15);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(124,92,255,.18), rgba(69,215,255,.12));
+  border: 1px solid rgba(124, 92, 255, 0.24);
   font-size: 21px;
+  box-shadow: 0 12px 30px rgba(124,92,255,.16);
 }
 
 .page-heading h1 {
   margin: 0;
   font-size: 27px;
+  letter-spacing: -0.04em;
 }
 
 .page-heading p {
