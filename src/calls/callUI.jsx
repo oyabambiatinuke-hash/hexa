@@ -1,13 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { getIceServers } from "../webrtc/iceServers.js";
 import "./CallUI.css";
-
-const ICE_SERVERS = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-  ],
-};
 
 export default function CallUI({
   callId,
@@ -45,7 +39,9 @@ export default function CallUI({
   };
 
   const createPeer = async (stream) => {
-    const peer = new RTCPeerConnection(ICE_SERVERS);
+    const peer = new RTCPeerConnection({
+      iceServers: await getIceServers(supabase),
+    });
 
     peerRef.current = peer;
 

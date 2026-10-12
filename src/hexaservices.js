@@ -1,3 +1,5 @@
+import { getIceServers as fetchIceServers } from "./webrtc/iceServers.js";
+
 /* =========================================================
    HEXA SERVICES
    GIPHY + WEBRTC + TURN + OFFLINE + NOTIFICATIONS
@@ -6,9 +8,7 @@
 const GIPHY_KEY =
   import.meta.env.VITE_GIPHY_API_KEY;
 
-const TURN_TOKEN_URL =
-  import.meta.env.VITE_TURN_TOKEN_URL ||
-  "/api/turn-credentials";
+const TURN_TOKEN_URL = "/api/hexa-turn";
 
 /* =========================================================
    GIPHY
@@ -140,52 +140,7 @@ export async function registerGiphyAction(
    ========================================================= */
 
 export async function getTurnCredentials() {
-  const response = await fetch(
-    TURN_TOKEN_URL,
-    {
-      method: "GET",
-      credentials: "include",
-      headers: {
-        Accept: "application/json",
-      },
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      `TURN credential request failed: ${response.status}`
-    );
-  }
-
-  const data = await response.json();
-
-  /*
-    Expected response:
-
-    {
-      ice_servers: [
-        {
-          urls: "stun:...",
-        },
-        {
-          urls: [
-            "turn:...",
-            "turns:..."
-          ],
-          username: "...",
-          credential: "..."
-        }
-      ]
-    }
-  */
-
-  if (!data.ice_servers) {
-    throw new Error(
-      "TURN response does not contain ice_servers."
-    );
-  }
-
-  return data.ice_servers;
+  return fetchIceServers(undefined, TURN_TOKEN_URL);
 }
 
 /* =========================================================

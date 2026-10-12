@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { CallManager } from "./callmanager";
+import { CallManager } from "./callmanager.js";
 
 export default function CallWindow({
   supabase,

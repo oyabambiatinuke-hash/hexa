@@ -1,5 +1,21 @@
 # React + Vite
 
+## Cloudflare TURN configuration
+
+The Vercel endpoint at `/api/hexa-turn` returns short-lived Cloudflare TURN
+credentials to authenticated Supabase users. Add these **server-side** variables
+to the Vercel project and redeploy:
+
+- `SUPABASE_URL` (or `VITE_SUPABASE_URL`)
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `CLOUDFLARE_TURN_KEY_ID`
+- `CLOUDFLARE_TURN_KEY`
+
+Keep `SUPABASE_SERVICE_ROLE_KEY` and `CLOUDFLARE_TURN_KEY` out of all `VITE_*`
+variables; Vite exposes `VITE_*` values in the browser bundle. Clients request
+the temporary ICE server configuration using their Supabase access token and
+fall back to public STUN servers if TURN is unavailable.
+
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 Currently, two official plugins are available:
