@@ -760,106 +760,144 @@ function safeAlert(message, kind = "info") {
    PROFILE
    ============================================================ */
 
-async function ensureHexaProfile(user) {
-  if (!user?.id) return null;
+const HEXA_PROFILE_BOOTSTRAPS_IN_FLIGHT = new Map();
 
+function isRetryableHexaProfileError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  const status = Number(error?.status || error?.statusCode || 0);
+  return (
+    [401, 408, 429, 500, 502, 503, 504].includes(status) ||
+    /failed to fetch|fetch failed|network|timeout|timed out|connection reset|connection closed|jwt issued at future|temporar|websocket/.test(message)
+  );
+}
+
+const waitForHexaProfileRetry = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function ensureHexaProfileAttempt(user) {
   const metadata = user.user_metadata || {};
+  const fullName = metadata.full_name || metadata.name || metadata.display_name || "";
+  const avatarUrl = metadata.avatar_url || metadata.picture || null;
 
-  const fullName =
-    metadata.full_name ||
-    metadata.name ||
-    metadata.display_name ||
-    "";
+  // Crucial: do not INSERT when the lookup failed. A timeout/401 can make an
+  // existing profile look absent and cause a duplicate profiles_pkey error.
+  const { data: existing, error: selectError } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", user.id)
+    .maybeSingle();
 
-  const avatarUrl =
-    metadata.avatar_url ||
-    metadata.picture ||
-    null;
+  if (selectError) throw selectError;
 
-  try {
-    const { data: existing, error: selectError } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (selectError) {
-      console.warn("HEXA profile lookup:", selectError.message);
-    }
-
-    if (existing) {
-      const patch = {
-        email: user.email || existing.email || null,
-        is_anonymous: Boolean(user.is_anonymous),
-        guest_created_at: existing.guest_created_at || user.created_at || new Date().toISOString(),
-        guest_last_seen_at: Boolean(user.is_anonymous) ? new Date().toISOString() : existing.guest_last_seen_at || null,
-        updated_at: new Date().toISOString(),
-      };
-      try {
-        const { data: refreshed } = await supabase.from("profiles").update(patch).eq("id", user.id).select("*").single();
-        return refreshed || { ...existing, ...patch };
-      } catch {
-        return existing;
-      }
-    }
-
-    const requestedUsername = String(metadata.username || "")
-      .trim()
-      .replace(/^@/, "")
-      .toLowerCase();
-    let username = requestedUsername || makeUsername(user.email, fullName);
-
-    const { data: sameUsername } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("username", username)
-      .maybeSingle();
-
-    if (sameUsername && sameUsername.id !== user.id) {
-      // Keep account creation resilient if another profile already owns the name.
-      // The suffix keeps usernames unique until the user changes it in Settings.
-      username = `${username.slice(0, 19)}${Math.floor(10000 + Math.random() * 89999)}`;
-    }
-
-    const payload = {
-      id: user.id,
-      email: user.email || null,
-      username,
-      full_name: fullName || username,
-      avatar_url: avatarUrl,
+  if (existing) {
+    const patch = {
+      email: user.email || existing.email || null,
       is_anonymous: Boolean(user.is_anonymous),
-      guest_created_at: user.created_at || new Date().toISOString(),
-      guest_last_seen_at: new Date().toISOString(),
+      guest_created_at: existing.guest_created_at || user.created_at || new Date().toISOString(),
+      guest_last_seen_at: Boolean(user.is_anonymous)
+        ? new Date().toISOString()
+        : existing.guest_last_seen_at || null,
       updated_at: new Date().toISOString(),
     };
-
-    const { data: created, error: insertError } = await supabase
+    const { data: refreshed, error: updateError } = await supabase
       .from("profiles")
-      .insert(payload)
+      .update(patch)
+      .eq("id", user.id)
       .select("*")
-      .single();
+      .maybeSingle();
+    if (updateError) {
+      // The profile already exists; preserve it if an optional metadata refresh fails.
+      console.warn("HEXA profile refresh:", updateError.message);
+      return existing;
+    }
+    return refreshed || { ...existing, ...patch };
+  }
 
-    if (insertError) {
-      /*
-        A database trigger may already create the profile.
-        In that case, retry the lookup instead of breaking login.
-      */
+  const requestedUsername = String(metadata.username || "")
+    .trim()
+    .replace(/^@/, "")
+    .toLowerCase();
+  let username = requestedUsername || makeUsername(user.email, fullName);
 
-      console.warn("HEXA profile creation:", insertError.message);
+  const { data: sameUsername, error: usernameLookupError } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("username", username)
+    .maybeSingle();
+  if (usernameLookupError) throw usernameLookupError;
 
-      const { data: retry } = await supabase
+  if (sameUsername && sameUsername.id !== user.id) {
+    username = `${username.slice(0, 19)}${Math.floor(10000 + Math.random() * 89999)}`;
+  }
+
+  const now = new Date().toISOString();
+  const payload = {
+    id: user.id,
+    email: user.email || null,
+    username,
+    full_name: fullName || username,
+    avatar_url: avatarUrl,
+    is_anonymous: Boolean(user.is_anonymous),
+    guest_created_at: user.created_at || now,
+    guest_last_seen_at: now,
+    updated_at: now,
+  };
+
+  const { data: created, error: insertError } = await supabase
+    .from("profiles")
+    .insert(payload)
+    .select("*")
+    .single();
+
+  if (insertError) {
+    // Another request or a database trigger may have inserted the profile first.
+    if (insertError.code === "23505") {
+      const { data: retry, error: retryError } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .maybeSingle();
-
-      return retry || null;
+      if (retryError) throw retryError;
+      if (retry) return retry;
     }
+    throw insertError;
+  }
 
-    return created;
-  } catch (error) {
-    console.warn("HEXA profile bootstrap:", error);
+  return created;
+}
+
+async function ensureHexaProfile(user) {
+  if (!user?.id) return null;
+
+  // Auth callbacks, sign-in handlers and the workspace can overlap. Share a
+  // single bootstrap request per user to prevent concurrent duplicate INSERTs.
+  const inFlight = HEXA_PROFILE_BOOTSTRAPS_IN_FLIGHT.get(user.id);
+  if (inFlight) return inFlight;
+
+  const task = (async () => {
+    const retryDelays = [0, 650, 1400];
+    for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
+      if (retryDelays[attempt]) await waitForHexaProfileRetry(retryDelays[attempt]);
+      try {
+        return await ensureHexaProfileAttempt(user);
+      } catch (error) {
+        if (attempt < retryDelays.length - 1 && isRetryableHexaProfileError(error)) {
+          console.warn(`HEXA profile bootstrap retry ${attempt + 1}:`, error?.message || error);
+          continue;
+        }
+        console.warn("HEXA profile bootstrap:", error?.message || error);
+        return null;
+      }
+    }
     return null;
+  })();
+
+  HEXA_PROFILE_BOOTSTRAPS_IN_FLIGHT.set(user.id, task);
+  try {
+    return await task;
+  } finally {
+    if (HEXA_PROFILE_BOOTSTRAPS_IN_FLIGHT.get(user.id) === task) {
+      HEXA_PROFILE_BOOTSTRAPS_IN_FLIGHT.delete(user.id);
+    }
   }
 }
 
@@ -2132,7 +2170,16 @@ async function askKora({ profile, messages = [], prompt = "", webSearch = false 
     }),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.error || data?.message || `Kora request failed (${response.status})`);
+  if (!response.ok) {
+    if (response.status === 429) {
+      const retryAfter = response.headers.get("Retry-After");
+      const waitHint = retryAfter && /^\d+$/.test(retryAfter)
+        ? ` Please try again in about ${retryAfter} seconds.`
+        : " Please wait a little before trying again.";
+      throw new Error((data?.error || data?.message || "Kora has reached its current request limit.") + waitHint);
+    }
+    throw new Error(data?.error || data?.message || `Kora request failed (${response.status})`);
+  }
   return String(data?.reply ?? data?.output ?? data?.message ?? data?.text ?? data?.content ?? "").trim();
 }
 
@@ -7854,7 +7901,11 @@ function IncomingCallWatcher({ profile }) {
         .eq("status", "ringing")
         .order("created_at", { ascending: false })
         .limit(1);
-      if (!error && ringing?.[0] && active) {
+      if (error) {
+        console.warn("HEXA incoming-call check:", error.message);
+        return;
+      }
+      if (ringing?.[0] && active) {
         const call = ringing[0];
         const { data: peer } = await supabase
           .from("profiles")
@@ -8757,28 +8808,8 @@ export default function App() {
 
             setSession(nextSession || null);
 
-            /*
-              Do not perform long database operations directly inside
-              the Supabase auth callback. Schedule them after the
-              callback finishes.
-            */
-            if (
-              nextSession?.user &&
-              (event === "SIGNED_IN" ||
-                event === "USER_UPDATED" ||
-                event === "INITIAL_SESSION")
-            ) {
-              setTimeout(() => {
-                ensureHexaProfile(nextSession.user).catch(
-                  (profileError) => {
-                    console.warn(
-                      "HEXA profile bootstrap:",
-                      profileError
-                    );
-                  }
-                );
-              }, 0);
-            }
+            // AuthenticatedHEXA loads the profile once the session is rendered.
+            // Keep database work out of this synchronous auth-state callback.
           }
         );
 
