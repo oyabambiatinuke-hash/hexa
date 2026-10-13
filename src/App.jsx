@@ -10,7 +10,7 @@ import "./App.css";
   Authentication + Workspace
   ============================================================
 
-  REQUIRED VITE VARIABLES:
+  REQUIRED VITE VARIABLES::
 
   VITE_SUPABASE_URL
   VITE_SUPABASE_PUBLISHABLE_KEY
